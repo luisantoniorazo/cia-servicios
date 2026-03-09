@@ -2,9 +2,9 @@
 
 ## Información General
 - **Nombre**: CIA SERVICIOS - Control Estratégico de Servicios y Proyectos
-- **Versión**: 2.0.0
+- **Versión**: 2.1.0
 - **Última Actualización**: Marzo 2026
-- **Stack Tecnológico**: FastAPI + React + MongoDB
+- **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2
 
 ## Problem Statement Original
 Aplicación empresarial de renta mensual que permita gestionar, monitorear y optimizar todos los procesos operativos, comerciales y estratégicos de una empresa mexicana de servicios y proyectos industriales. Sistema multi-tenant con Super Admin para gestión de suscripciones.
@@ -32,6 +32,10 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 │  │Super Admin │ │Company Auth│ │  Business Logic        │       │
 │  │   Auth     │ │  (by slug) │ │  (multi-tenant)        │       │
 │  └────────────┘ └────────────┘ └────────────────────────┘       │
+│  ┌────────────┐ ┌────────────┐ ┌────────────────────────┐       │
+│  │ AI Module  │ │ PDF Gen    │ │  File Storage          │       │
+│  │ (GPT-5.2)  │ │ (ReportLab)│ │  (MongoDB base64)      │       │
+│  └────────────┘ └────────────┘ └────────────────────────┘       │
 └─────────────────────────────────────────────────────────────────┘
                            │
 ┌─────────────────────────────────────────────────────────────────┐
@@ -40,27 +44,6 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 │  purchase_orders | suppliers | documents | field_reports        │
 └─────────────────────────────────────────────────────────────────┘
 ```
-
-## User Personas & Accesos
-1. **Super Administrador** → /admin-portal
-   - Gestiona todas las empresas
-   - Controla suscripciones y cobranza
-   - Ve estadísticas globales
-   
-2. **Administrador de Empresa** → /empresa/{slug}/login
-   - Configura su empresa
-   - Gestiona usuarios y roles
-   - Acceso total a módulos
-   
-3. **Gerente de Proyecto** → /empresa/{slug}/login
-   - Gestiona proyectos y fases
-   - Reportes de campo
-   
-4. **Usuario Comercial** → /empresa/{slug}/login
-   - CRM, cotizaciones, clientes
-   
-5. **Usuario Operativo** → /empresa/{slug}/login
-   - Compras, documentos
 
 ## Módulos Implementados ✅
 
@@ -75,7 +58,7 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - [x] JWT para Super Admin (sin company_id)
 - [x] JWT para usuarios de empresa (con company_id y slug)
 - [x] URLs únicas por empresa
-- [x] Gestión de usuarios por empresa
+- [x] Gestión de usuarios por empresa con roles
 
 ### 3. Dashboard Estratégico
 - [x] KPIs principales (proyectos, facturación, clientes, conversión)
@@ -98,11 +81,13 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - [x] Pipeline comercial con 7 etapas
 - [x] Cotizaciones detalladas por conceptos
 - [x] Cálculo automático de IVA
+- [x] **Generación de PDF** ✨
 
-### 7. Control Financiero
+### 7. Control Financiero (Facturación)
 - [x] Facturas con seguimiento de pagos
 - [x] Avance de cobranza
 - [x] Registro de pagos parciales
+- [x] **Generación de PDF** ✨
 
 ### 8. Control de Compras
 - [x] Órdenes de compra
@@ -117,6 +102,7 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - [x] Repositorio por categorías
 - [x] Vinculación a proyectos
 - [x] Control de versiones
+- [x] **Subida/descarga de archivos (hasta 5MB)** ✨
 
 ### 11. Reportes de Campo
 - [x] Reportes diarios de avance
@@ -134,9 +120,13 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - [x] Gestión de usuarios con roles (admin, manager, user)
 - [x] Crear/Editar/Eliminar usuarios
 
-### 14. Inteligencia Empresarial
-- [x] Arquitectura lista para IA
-- [x] Interface de asistente preparada
+### 14. Inteligencia Empresarial ✨ NUEVO
+- [x] Chat con IA (GPT-5.2)
+- [x] Análisis financiero automatizado
+- [x] Estado de proyectos en tiempo real
+- [x] Pipeline comercial con predicciones
+- [x] Recomendaciones accionables
+- [x] Análisis detallado de proyectos
 
 ## Roles del Sistema
 | Rol | Descripción | Permisos |
@@ -150,22 +140,20 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 
 ### Autenticación
 - `POST /api/super-admin/login` - Login Super Admin
-- `POST /api/super-admin/setup` - Setup inicial Super Admin
-- `GET /api/empresa/{slug}/info` - Info pública de empresa
 - `POST /api/empresa/{slug}/login` - Login de empresa
 - `GET /api/auth/me` - Usuario actual
 
-### Super Admin
-- `GET /api/super-admin/dashboard` - Métricas globales
-- `GET /api/super-admin/companies` - Listar empresas
-- `POST /api/super-admin/companies` - Crear empresa con admin
-- `PATCH /api/super-admin/companies/{id}/status` - Cambiar estado
+### IA y Análisis
+- `POST /api/ai/chat` - Chat con IA (GPT-5.2)
+- `POST /api/ai/analyze-project/{project_id}` - Análisis de proyecto
 
-### Gestión de Usuarios (Admin de Empresa)
-- `GET /api/admin/users` - Listar usuarios de mi empresa
-- `POST /api/admin/users` - Crear usuario
-- `PUT /api/admin/users/{id}` - Actualizar usuario
-- `DELETE /api/admin/users/{id}` - Eliminar usuario
+### Generación de PDF
+- `GET /api/pdf/quote/{quote_id}` - PDF de cotización
+- `GET /api/pdf/invoice/{invoice_id}` - PDF de factura
+
+### Archivos
+- `POST /api/files/upload` - Subir archivo (base64, max 5MB)
+- `GET /api/files/{doc_id}/download` - Descargar archivo
 
 ## Credenciales Demo
 ```
@@ -180,6 +168,19 @@ Company Admin (CIA Servicios Demo):
   URL: /empresa/cia-servicios-demo-sa-de-cv/login
 ```
 
+## Integraciones de Terceros
+| Servicio | Uso | Estado |
+|----------|-----|--------|
+| OpenAI GPT-5.2 | Chat IA, análisis de negocio | ✅ Activo |
+| ReportLab | Generación de PDFs | ✅ Activo |
+| Emergent LLM Key | Autenticación de IA | ✅ Configurado |
+
+## Testing Status (Marzo 2026)
+- **Iteración 2**: Backend 100% (18/18), Frontend 100%
+- **Iteración 3**: Backend 100% (16/16), Frontend 100%
+- **Total APIs probadas**: 34+
+- **Integraciones reales**: IA, PDF, Archivos
+
 ## Prioritized Backlog
 
 ### P0 - Completado ✅
@@ -188,25 +189,26 @@ Company Admin (CIA Servicios Demo):
 - [x] Gestión de usuarios por empresa con roles
 - [x] CRUD completo de todos los módulos
 - [x] Dashboard con KPIs
+- [x] **Integración de IA (GPT-5.2)**
+- [x] **Generación de PDFs (cotizaciones, facturas)**
+- [x] **Almacenamiento de archivos (MongoDB base64)**
 
 ### P1 - Próxima Fase
-- [ ] Integración de almacenamiento (Azure Blob/S3) para archivos y fotos
-- [ ] Generación de PDFs (cotizaciones, facturas, reportes)
-- [ ] Integración de IA (OpenAI/Claude/Gemini) - playbooks ya obtenidos
 - [ ] Notificaciones por email (vencimientos, recordatorios)
 - [ ] Exportación de reportes a Excel
-
-### P2 - Mejoras
 - [ ] Dashboard configurable por usuario
 - [ ] Workflow de aprobaciones
+
+### P2 - Mejoras
 - [ ] Integración con facturación electrónica (CFDI)
 - [ ] App móvil para reportes de campo
 - [ ] Calendario de proyectos con Gantt
+- [ ] Migración de archivos a S3/Azure (para archivos > 5MB)
 
 ### P3 - Futuro
 - [ ] IA para automatización de cotizaciones
 - [ ] Predicción de proyectos
-- [ ] Análisis financiero automatizado
+- [ ] Análisis financiero automatizado avanzado
 - [ ] API pública para integraciones
 
 ## Notas Técnicas
@@ -216,17 +218,18 @@ Company Admin (CIA Servicios Demo):
 - **Backend Port**: 8001
 - **Frontend Port**: 3000
 - **Base de datos**: MongoDB
-
-## Testing Status (Marzo 2026)
-- Backend: 100% (18/18 tests passed)
-- Frontend: 100% (all flows tested)
-- Issue menor: Console warnings en Recharts (cosmético)
+- **Max file size**: 5MB (almacenado en base64)
 
 ## Changelog
+### v2.1.0 (Marzo 2026)
+- ✨ Integración de IA con GPT-5.2 (chat, análisis de proyectos)
+- ✨ Generación de PDF para cotizaciones y facturas
+- ✨ Subida y descarga de archivos (hasta 5MB)
+- ✨ Página de Inteligencia Empresarial con consultas rápidas
+- 🔧 Mejoras en manejo de errores con getApiErrorMessage
+
 ### v2.0.0 (Marzo 2026)
 - Separación de portales Super Admin y Empresa
 - URLs únicas por empresa (/empresa/{slug}/login)
 - Gestión de usuarios con roles por empresa
 - Corrección de rutas /users → /admin/users
-- Función getApiErrorMessage para manejo de errores
-- Corrección de slugs en base de datos
