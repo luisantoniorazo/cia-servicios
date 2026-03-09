@@ -53,6 +53,8 @@ import {
   DollarSign,
   PlusCircle,
   MinusCircle,
+  Download,
+  Loader2,
 } from "lucide-react";
 
 const QUOTE_STATUSES = [
@@ -168,6 +170,36 @@ export const Quotes = () => {
       fetchData();
     } catch (error) {
       toast.error("Error al eliminar cotización");
+    }
+  };
+
+  const handleDownloadPDF = async (quoteId) => {
+    try {
+      toast.info("Generando PDF...");
+      const response = await api.get(`/pdf/quote/${quoteId}`);
+      const { filename, content } = response.data;
+      
+      // Convert base64 to blob and download
+      const byteCharacters = atob(content);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+      
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success("PDF descargado");
+    } catch (error) {
+      toast.error("Error al generar PDF");
     }
   };
 
@@ -330,6 +362,11 @@ export const Quotes = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleDownloadPDF(quote.id)}>
+                              <Download className="mr-2 h-4 w-4 text-blue-500" />
+                              Descargar PDF
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => handleStatusChange(quote.id, "authorized")}>
                               <CheckCircle className="mr-2 h-4 w-4 text-emerald-500" />
                               Autorizar

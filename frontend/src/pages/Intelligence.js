@@ -1,9 +1,12 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
+import { getApiErrorMessage } from "../lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
+import { Skeleton } from "../components/ui/skeleton";
+import { ScrollArea } from "../components/ui/scroll-area";
 import { toast } from "sonner";
 import {
   Sparkles,
@@ -11,237 +14,245 @@ import {
   TrendingUp,
   FileText,
   Zap,
-  Lock,
   Send,
   Loader2,
+  Bot,
+  User,
+  RefreshCw,
+  BarChart3,
 } from "lucide-react";
 
 export const Intelligence = () => {
-  const { company } = useAuth();
+  const { api, company } = useAuth();
   const [prompt, setPrompt] = useState("");
-  const [response, setResponse] = useState("");
+  const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const messagesEndRef = useRef(null);
 
-  const features = [
-    {
-      icon: Brain,
-      title: "Análisis Predictivo",
-      description: "Predicción de proyectos y servicios basada en datos históricos",
-      status: "coming_soon",
-    },
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const quickPrompts = [
     {
       icon: TrendingUp,
-      title: "Análisis Financiero",
-      description: "Insights automáticos sobre rentabilidad y flujo de efectivo",
-      status: "coming_soon",
+      label: "Análisis Financiero",
+      prompt: "Dame un análisis de la situación financiera actual de la empresa, incluyendo facturación, cobranza y proyección.",
+    },
+    {
+      icon: BarChart3,
+      label: "Estado de Proyectos",
+      prompt: "¿Cuál es el estado general de los proyectos activos? Identifica riesgos y oportunidades.",
     },
     {
       icon: FileText,
-      title: "Automatización de Cotizaciones",
-      description: "Generación automática de cotizaciones basadas en proyectos similares",
-      status: "coming_soon",
+      label: "Pipeline Comercial",
+      prompt: "Analiza el pipeline de cotizaciones y prospectos. ¿Qué probabilidad de conversión tenemos?",
     },
     {
       icon: Zap,
-      title: "Optimización de Recursos",
-      description: "Recomendaciones para optimizar tiempos y costos",
-      status: "coming_soon",
+      label: "Recomendaciones",
+      prompt: "Dame 3 recomendaciones accionables para mejorar la eficiencia operativa esta semana.",
     },
   ];
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!prompt.trim()) return;
+    if (!prompt.trim() || isLoading) return;
 
+    const userMessage = prompt.trim();
+    setPrompt("");
+    setMessages((prev) => [...prev, { role: "user", content: userMessage }]);
     setIsLoading(true);
-    setResponse("");
 
-    // Simulated response - will be replaced with actual AI integration
-    setTimeout(() => {
-      setResponse(`**Análisis de CIA SERVICIOS**
+    try {
+      const response = await api.post("/ai/chat", {
+        message: userMessage,
+        context: `Empresa: ${company?.business_name || "N/A"}`,
+      });
 
-Basado en tu consulta: "${prompt}"
-
-Esta funcionalidad de Inteligencia Artificial está siendo desarrollada. Próximamente podrás:
-
-1. **Obtener insights** sobre tus proyectos y clientes
-2. **Predecir** tendencias de negocio
-3. **Automatizar** la generación de cotizaciones
-4. **Optimizar** recursos y tiempos
-
-La integración con OpenAI GPT-5.2, Claude Sonnet 4.5 y Gemini 3 Flash está preparada y lista para activarse.
-
-*Contacta al administrador para activar las funcionalidades de IA.*`);
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: response.data.response, model: response.data.model },
+      ]);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Error al comunicarse con IA"));
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "Lo siento, hubo un error al procesar tu solicitud. Por favor intenta de nuevo.", error: true },
+      ]);
+    } finally {
       setIsLoading(false);
-    }, 2000);
+    }
+  };
+
+  const handleQuickPrompt = (promptText) => {
+    setPrompt(promptText);
+  };
+
+  const clearChat = () => {
+    setMessages([]);
   };
 
   return (
     <div className="space-y-6 animate-fade-in" data-testid="intelligence-page">
       {/* Header */}
-      <div>
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-8 w-8 text-purple-500" />
-          <h1 className="text-3xl font-bold font-[Chivo] text-slate-900">Inteligencia Empresarial</h1>
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-8 w-8 text-purple-500" />
+            <h1 className="text-3xl font-bold font-[Chivo] text-slate-900">Inteligencia Empresarial</h1>
+          </div>
+          <p className="text-muted-foreground">Análisis avanzado y predicciones con IA</p>
         </div>
-        <p className="text-muted-foreground">Análisis avanzado y predicciones con IA</p>
+        {messages.length > 0 && (
+          <Button variant="outline" onClick={clearChat} className="gap-2">
+            <RefreshCw className="h-4 w-4" />
+            Nueva conversación
+          </Button>
+        )}
       </div>
 
       {/* AI Status Card */}
       <Card className="border-purple-200 bg-gradient-to-br from-purple-50 to-blue-50">
-        <CardContent className="py-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="p-3 bg-purple-100 rounded-full">
-                <Brain className="h-6 w-6 text-purple-600" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-slate-900">Módulo de IA</h3>
-                <p className="text-sm text-muted-foreground">
-                  Arquitectura preparada para OpenAI, Claude y Gemini
-                </p>
-              </div>
+        <CardContent className="py-4">
+          <div className="flex items-center gap-4">
+            <div className="p-3 bg-purple-100 rounded-full">
+              <Brain className="h-6 w-6 text-purple-600" />
             </div>
-            <Badge variant="outline" className="border-purple-300 text-purple-700">
-              <Lock className="h-3 w-3 mr-1" />
-              Próximamente
-            </Badge>
+            <div className="flex-1">
+              <div className="flex items-center gap-2">
+                <h3 className="font-semibold text-slate-900">Módulo de IA Activo</h3>
+                <Badge className="bg-emerald-100 text-emerald-700">GPT-5.2</Badge>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Powered by OpenAI • Análisis contextual de {company?.business_name || "tu empresa"}
+              </p>
+            </div>
           </div>
         </CardContent>
       </Card>
 
-      {/* Features Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {features.map((feature, index) => (
-          <Card key={index} className="relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-bl from-purple-100/50 to-transparent rounded-bl-full" />
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div className="p-2 bg-purple-100 rounded-sm w-fit">
-                  <feature.icon className="h-5 w-5 text-purple-600" />
-                </div>
-                <Badge variant="outline" className="text-xs">
-                  Próximamente
-                </Badge>
-              </div>
-              <CardTitle className="text-lg mt-3">{feature.title}</CardTitle>
-              <CardDescription>{feature.description}</CardDescription>
-            </CardHeader>
-          </Card>
-        ))}
-      </div>
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Quick Prompts */}
+        <div className="lg:col-span-1 space-y-3">
+          <h3 className="font-semibold text-slate-700">Consultas rápidas</h3>
+          {quickPrompts.map((qp, idx) => (
+            <Card
+              key={idx}
+              className="cursor-pointer hover:border-purple-300 hover:bg-purple-50/50 transition-colors"
+              onClick={() => handleQuickPrompt(qp.prompt)}
+            >
+              <CardContent className="p-3 flex items-center gap-3">
+                <qp.icon className="h-5 w-5 text-purple-500" />
+                <span className="text-sm font-medium">{qp.label}</span>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
 
-      {/* AI Chat Interface (Demo) */}
-      <Card data-testid="ai-chat-card">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-purple-500" />
-            Asistente IA
-          </CardTitle>
-          <CardDescription>
-            Consulta información sobre tu empresa (versión demo)
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Textarea
-              placeholder="Ejemplo: ¿Cuáles son mis proyectos más rentables? ¿Cómo puedo mejorar mi tasa de conversión?"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              rows={3}
-              className="resize-none"
-              data-testid="ai-prompt-input"
-            />
-            <div className="flex justify-end">
+        {/* Chat Area */}
+        <Card className="lg:col-span-3">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <Bot className="h-5 w-5 text-purple-500" />
+              Asistente IA
+            </CardTitle>
+            <CardDescription>
+              Pregunta sobre proyectos, finanzas, clientes o solicita análisis
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {/* Messages */}
+            <ScrollArea className="h-[400px] pr-4 mb-4">
+              {messages.length === 0 ? (
+                <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
+                  <Brain className="h-12 w-12 mb-4 text-purple-200" />
+                  <p className="font-medium">¿En qué puedo ayudarte hoy?</p>
+                  <p className="text-sm mt-1">Pregunta sobre tu negocio o usa las consultas rápidas</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {messages.map((msg, idx) => (
+                    <div
+                      key={idx}
+                      className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                    >
+                      {msg.role === "assistant" && (
+                        <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                          <Bot className="h-4 w-4 text-purple-600" />
+                        </div>
+                      )}
+                      <div
+                        className={`max-w-[80%] rounded-lg p-3 ${
+                          msg.role === "user"
+                            ? "bg-primary text-primary-foreground"
+                            : msg.error
+                            ? "bg-red-50 text-red-800 border border-red-200"
+                            : "bg-slate-100 text-slate-800"
+                        }`}
+                      >
+                        <div className="whitespace-pre-wrap text-sm">{msg.content}</div>
+                        {msg.model && (
+                          <div className="text-xs mt-2 opacity-60">Modelo: {msg.model}</div>
+                        )}
+                      </div>
+                      {msg.role === "user" && (
+                        <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0">
+                          <User className="h-4 w-4 text-white" />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {isLoading && (
+                    <div className="flex gap-3 justify-start">
+                      <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center">
+                        <Bot className="h-4 w-4 text-purple-600" />
+                      </div>
+                      <div className="bg-slate-100 rounded-lg p-3">
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="text-sm text-muted-foreground">Analizando...</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+              )}
+            </ScrollArea>
+
+            {/* Input */}
+            <form onSubmit={handleSubmit} className="flex gap-2">
+              <Textarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="Escribe tu consulta aquí..."
+                className="min-h-[60px] resize-none"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSubmit(e);
+                  }
+                }}
+                data-testid="ai-prompt-input"
+              />
               <Button
                 type="submit"
-                className="bg-purple-600 hover:bg-purple-700"
-                disabled={isLoading || !prompt.trim()}
-                data-testid="ai-submit-btn"
+                disabled={!prompt.trim() || isLoading}
+                className="bg-purple-600 hover:bg-purple-700 px-6"
+                data-testid="ai-send-btn"
               >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Analizando...
-                  </>
-                ) : (
-                  <>
-                    <Send className="mr-2 h-4 w-4" />
-                    Consultar
-                  </>
-                )}
+                {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               </Button>
-            </div>
-          </form>
-
-          {response && (
-            <div className="p-4 bg-slate-50 rounded-sm border-l-4 border-purple-500 animate-slide-in">
-              <div className="flex items-center gap-2 mb-3">
-                <Sparkles className="h-4 w-4 text-purple-500" />
-                <span className="font-medium text-sm text-purple-700">Respuesta IA</span>
-              </div>
-              <div className="prose prose-sm max-w-none">
-                {response.split("\n").map((line, i) => (
-                  <p key={i} className="mb-2 text-slate-700">
-                    {line.startsWith("**") ? (
-                      <strong>{line.replace(/\*\*/g, "")}</strong>
-                    ) : line.startsWith("*") ? (
-                      <em className="text-muted-foreground">{line.replace(/\*/g, "")}</em>
-                    ) : (
-                      line
-                    )}
-                  </p>
-                ))}
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Integration Info */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Integraciones de IA Disponibles</CardTitle>
-          <CardDescription>Modelos de lenguaje configurados para este sistema</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 border rounded-sm">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-8 h-8 bg-emerald-100 rounded flex items-center justify-center">
-                  <span className="text-emerald-700 font-bold text-xs">GPT</span>
-                </div>
-                <div>
-                  <h4 className="font-medium">OpenAI GPT-5.2</h4>
-                  <p className="text-xs text-muted-foreground">Análisis avanzado</p>
-                </div>
-              </div>
-            </div>
-            <div className="p-4 border rounded-sm">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-8 h-8 bg-orange-100 rounded flex items-center justify-center">
-                  <span className="text-orange-700 font-bold text-xs">C</span>
-                </div>
-                <div>
-                  <h4 className="font-medium">Claude Sonnet 4.5</h4>
-                  <p className="text-xs text-muted-foreground">Análisis detallado</p>
-                </div>
-              </div>
-            </div>
-            <div className="p-4 border rounded-sm">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-8 h-8 bg-blue-100 rounded flex items-center justify-center">
-                  <span className="text-blue-700 font-bold text-xs">G</span>
-                </div>
-                <div>
-                  <h4 className="font-medium">Gemini 3 Flash</h4>
-                  <p className="text-xs text-muted-foreground">Respuestas rápidas</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 };

@@ -49,6 +49,7 @@ import {
   AlertTriangle,
   CreditCard,
   Trash2,
+  Download,
 } from "lucide-react";
 
 export const Invoices = () => {
@@ -147,6 +148,36 @@ export const Invoices = () => {
       fetchData();
     } catch (error) {
       toast.error("Error al eliminar factura");
+    }
+  };
+
+  const handleDownloadPDF = async (invoiceId) => {
+    try {
+      toast.info("Generando PDF...");
+      const response = await api.get(`/pdf/invoice/${invoiceId}`);
+      const { filename, content } = response.data;
+      
+      // Convert base64 to blob and download
+      const byteCharacters = atob(content);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+      
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success("PDF descargado");
+    } catch (error) {
+      toast.error("Error al generar PDF");
     }
   };
 
@@ -324,6 +355,10 @@ export const Invoices = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleDownloadPDF(invoice.id)}>
+                              <Download className="mr-2 h-4 w-4 text-blue-500" />
+                              Descargar PDF
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => openPaymentDialog(invoice)}>
                               <CreditCard className="mr-2 h-4 w-4 text-emerald-500" />
                               Registrar Pago

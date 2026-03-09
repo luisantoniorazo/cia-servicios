@@ -1651,6 +1651,421 @@ async def get_quote_pipeline(company_id: str, current_user: dict = Depends(get_c
     
     return [{"status": k, **v} for k, v in pipeline.items()]
 
+# ============== AI INTEGRATION ==============
+from emergentintegrations.llm.chat import LlmChat, UserMessage
+import base64
+from io import BytesIO
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import inch
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+
+EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
+
+class AIMessage(BaseModel):
+    message: str
+    context: Optional[str] = None
+
+class AIResponse(BaseModel):
+    response: str
+    model: str = "gpt-5.2"
+
+@api_router.post("/ai/chat", response_model=AIResponse)
+async def ai_chat(data: AIMessage, current_user: dict = Depends(get_current_user)):
+    """Chat con IA para análisis empresarial"""
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="API key de IA no configurada")
+    
+    company_id = current_user.get("company_id")
+    
+    # Build context with company data
+    context_parts = []
+    if company_id:
+        # Get company info
+        company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+        if company:
+            context_parts.append(f"Empresa: {company.get('business_name')}")
+        
+        # Get recent projects
+        projects = await db.projects.find({"company_id": company_id}, {"_id": 0}).to_list(10)
+        if projects:
+            active = len([p for p in projects if p.get("status") == "active"])
+            context_parts.append(f"Proyectos activos: {active}, Total: {len(projects)}")
+        
+        # Get financial summary
+        invoices = await db.invoices.find({"company_id": company_id}, {"_id": 0}).to_list(100)
+        total_invoiced = sum(inv.get("total", 0) for inv in invoices)
+        total_collected = sum(inv.get("paid_amount", 0) for inv in invoices)
+        context_parts.append(f"Facturado: ${total_invoiced:,.2f}, Cobrado: ${total_collected:,.2f}")
+        
+        # Get CRM stats
+        clients = await db.clients.find({"company_id": company_id}, {"_id": 0}).to_list(100)
+        prospects = len([c for c in clients if c.get("is_prospect")])
+        context_parts.append(f"Clientes: {len(clients) - prospects}, Prospectos: {prospects}")
+    
+    system_message = f"""Eres un asistente de inteligencia empresarial para CIA SERVICIOS, una empresa mexicana de servicios y proyectos industriales. 
+Tu rol es ayudar con análisis de proyectos, predicciones financieras, recomendaciones de negocio y optimización de recursos.
+
+Contexto actual de la empresa:
+{chr(10).join(context_parts) if context_parts else 'Sin datos disponibles'}
+
+{data.context if data.context else ''}
+
+Responde en español de manera profesional y concisa. Proporciona insights accionables basados en los datos disponibles."""
+
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"cia-{current_user.get('sub', 'unknown')}",
+            system_message=system_message
+        ).with_model("openai", "gpt-5.2")
+        
+        user_message = UserMessage(text=data.message)
+        response = await chat.send_message(user_message)
+        
+        return AIResponse(response=response, model="gpt-5.2")
+    except Exception as e:
+        logger.error(f"AI Chat error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error en servicio de IA: {str(e)}")
+
+@api_router.post("/ai/analyze-project/{project_id}")
+async def ai_analyze_project(project_id: str, current_user: dict = Depends(get_current_user)):
+    """Análisis detallado de un proyecto con IA"""
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    
+    if current_user.get("company_id") != project.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    # Get related data
+    client = await db.clients.find_one({"id": project.get("client_id")}, {"_id": 0})
+    invoices = await db.invoices.find({"project_id": project_id}, {"_id": 0}).to_list(100)
+    purchases = await db.purchase_orders.find({"project_id": project_id}, {"_id": 0}).to_list(100)
+    
+    total_invoiced = sum(inv.get("total", 0) for inv in invoices)
+    total_paid = sum(inv.get("paid_amount", 0) for inv in invoices)
+    total_purchases = sum(po.get("total", 0) for po in purchases)
+    
+    context = f"""
+Proyecto: {project.get('name')}
+Cliente: {client.get('name') if client else 'N/A'}
+Estado: {project.get('status')}
+Monto contratado: ${project.get('contract_amount', 0):,.2f}
+Progreso total: {project.get('total_progress', 0)}%
+Fases: {', '.join([f"{p.get('phase')}: {p.get('progress')}%" for p in project.get('phases', [])])}
+Facturado: ${total_invoiced:,.2f}
+Cobrado: ${total_paid:,.2f}
+Compras: ${total_purchases:,.2f}
+Fecha compromiso: {project.get('commitment_date', 'N/A')}
+"""
+    
+    system_message = """Eres un analista de proyectos industriales experto. Analiza el proyecto y proporciona:
+1. Resumen ejecutivo del estado actual
+2. Análisis de rentabilidad (margen estimado)
+3. Riesgos identificados
+4. Recomendaciones específicas
+5. Proyección de flujo de efectivo
+
+Responde en español con datos concretos y recomendaciones accionables."""
+
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"project-analysis-{project_id}",
+            system_message=system_message
+        ).with_model("openai", "gpt-5.2")
+        
+        response = await chat.send_message(UserMessage(text=f"Analiza este proyecto:\n{context}"))
+        
+        return {
+            "project_id": project_id,
+            "project_name": project.get("name"),
+            "analysis": response,
+            "summary": {
+                "contract_amount": project.get("contract_amount", 0),
+                "total_invoiced": total_invoiced,
+                "total_paid": total_paid,
+                "total_purchases": total_purchases,
+                "estimated_margin": project.get("contract_amount", 0) - total_purchases,
+                "collection_rate": (total_paid / total_invoiced * 100) if total_invoiced > 0 else 0
+            }
+        }
+    except Exception as e:
+        logger.error(f"AI Analysis error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error en análisis: {str(e)}")
+
+# ============== PDF GENERATION ==============
+def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
+    """Generate PDF for a quote"""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    styles = getSampleStyleSheet()
+    
+    # Custom styles
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#004e92'), alignment=TA_CENTER)
+    header_style = ParagraphStyle('Header', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#666666'))
+    
+    elements = []
+    
+    # Header with company info
+    elements.append(Paragraph(company.get('business_name', 'CIA SERVICIOS'), title_style))
+    elements.append(Paragraph(f"RFC: {company.get('rfc', '')} | Tel: {company.get('phone', '')} | Email: {company.get('email', '')}", header_style))
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Quote title
+    elements.append(Paragraph(f"COTIZACIÓN {quote.get('quote_number', '')}", styles['Heading2']))
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # Client info table
+    client_data = [
+        ['CLIENTE:', client.get('name', 'N/A')],
+        ['RFC:', client.get('rfc', 'N/A')],
+        ['Contacto:', client.get('contact_name', 'N/A')],
+        ['Email:', client.get('email', 'N/A')],
+        ['Fecha:', quote.get('created_at', '')[:10] if quote.get('created_at') else ''],
+        ['Vigencia:', quote.get('valid_until', '')[:10] if quote.get('valid_until') else 'N/A'],
+    ]
+    client_table = Table(client_data, colWidths=[1.5*inch, 4*inch])
+    client_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    elements.append(client_table)
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Quote title/description
+    if quote.get('title'):
+        elements.append(Paragraph(f"<b>Concepto:</b> {quote.get('title')}", styles['Normal']))
+    if quote.get('description'):
+        elements.append(Paragraph(f"<b>Descripción:</b> {quote.get('description')}", styles['Normal']))
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # Items table
+    items = quote.get('items', [])
+    if items:
+        table_data = [['#', 'Descripción', 'Cant.', 'Unidad', 'P. Unit.', 'Total']]
+        for i, item in enumerate(items, 1):
+            table_data.append([
+                str(i),
+                item.get('description', ''),
+                str(item.get('quantity', 1)),
+                item.get('unit', 'pza'),
+                f"${item.get('unit_price', 0):,.2f}",
+                f"${item.get('total', 0):,.2f}"
+            ])
+        
+        items_table = Table(table_data, colWidths=[0.4*inch, 3*inch, 0.6*inch, 0.6*inch, 1*inch, 1*inch])
+        items_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#004e92')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(items_table)
+    
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # Totals
+    totals_data = [
+        ['', '', 'Subtotal:', f"${quote.get('subtotal', 0):,.2f}"],
+        ['', '', 'IVA (16%):', f"${quote.get('tax', 0):,.2f}"],
+        ['', '', 'TOTAL:', f"${quote.get('total', 0):,.2f}"],
+    ]
+    totals_table = Table(totals_data, colWidths=[2*inch, 2*inch, 1.2*inch, 1.4*inch])
+    totals_table.setStyle(TableStyle([
+        ('FONTNAME', (2, -1), (3, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
+        ('BACKGROUND', (2, -1), (-1, -1), colors.HexColor('#e6f0fa')),
+    ]))
+    elements.append(totals_table)
+    
+    # Footer
+    elements.append(Spacer(1, 0.5*inch))
+    elements.append(Paragraph("Términos y condiciones aplican. Precios en MXN.", styles['Normal']))
+    
+    doc.build(elements)
+    return buffer.getvalue()
+
+def generate_invoice_pdf(invoice: dict, company: dict, client: dict) -> bytes:
+    """Generate PDF for an invoice"""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#004e92'), alignment=TA_CENTER)
+    
+    elements = []
+    
+    # Header
+    elements.append(Paragraph(company.get('business_name', 'CIA SERVICIOS'), title_style))
+    elements.append(Paragraph(f"RFC: {company.get('rfc', '')} | {company.get('address', '')}", styles['Normal']))
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Invoice title
+    elements.append(Paragraph(f"FACTURA {invoice.get('invoice_number', '')}", styles['Heading2']))
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # Info table
+    info_data = [
+        ['Cliente:', client.get('name', 'N/A'), 'Fecha:', invoice.get('created_at', '')[:10] if invoice.get('created_at') else ''],
+        ['RFC:', client.get('rfc', 'N/A'), 'Vencimiento:', invoice.get('due_date', '')[:10] if invoice.get('due_date') else 'N/A'],
+        ['Estado:', invoice.get('status', 'pending').upper(), '', ''],
+    ]
+    info_table = Table(info_data, colWidths=[1*inch, 2.5*inch, 1*inch, 2*inch])
+    info_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+    ]))
+    elements.append(info_table)
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Concept
+    elements.append(Paragraph(f"<b>Concepto:</b> {invoice.get('concept', '')}", styles['Normal']))
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Amounts
+    amounts_data = [
+        ['Subtotal:', f"${invoice.get('subtotal', 0):,.2f}"],
+        ['IVA (16%):', f"${invoice.get('tax', 0):,.2f}"],
+        ['TOTAL:', f"${invoice.get('total', 0):,.2f}"],
+        ['Pagado:', f"${invoice.get('paid_amount', 0):,.2f}"],
+        ['Saldo:', f"${invoice.get('total', 0) - invoice.get('paid_amount', 0):,.2f}"],
+    ]
+    amounts_table = Table(amounts_data, colWidths=[4*inch, 2*inch])
+    amounts_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 11),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#e6f0fa')),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#ffe6e6') if invoice.get('total', 0) > invoice.get('paid_amount', 0) else colors.HexColor('#e6ffe6')),
+    ]))
+    elements.append(amounts_table)
+    
+    # Footer
+    elements.append(Spacer(1, 0.5*inch))
+    elements.append(Paragraph("Este documento es una representación impresa.", styles['Normal']))
+    
+    doc.build(elements)
+    return buffer.getvalue()
+
+@api_router.get("/pdf/quote/{quote_id}")
+async def download_quote_pdf(quote_id: str, current_user: dict = Depends(get_current_user)):
+    """Generate and download quote PDF"""
+    quote = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
+    if not quote:
+        raise HTTPException(status_code=404, detail="Cotización no encontrada")
+    
+    if current_user.get("company_id") != quote.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    company = await db.companies.find_one({"id": quote.get("company_id")}, {"_id": 0})
+    client = await db.clients.find_one({"id": quote.get("client_id")}, {"_id": 0})
+    
+    pdf_bytes = generate_quote_pdf(quote, company or {}, client or {})
+    pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+    
+    return {
+        "filename": f"cotizacion_{quote.get('quote_number', quote_id)}.pdf",
+        "content": pdf_base64,
+        "content_type": "application/pdf"
+    }
+
+@api_router.get("/pdf/invoice/{invoice_id}")
+async def download_invoice_pdf(invoice_id: str, current_user: dict = Depends(get_current_user)):
+    """Generate and download invoice PDF"""
+    invoice = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    if current_user.get("company_id") != invoice.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    company = await db.companies.find_one({"id": invoice.get("company_id")}, {"_id": 0})
+    client = await db.clients.find_one({"id": invoice.get("client_id")}, {"_id": 0})
+    
+    pdf_bytes = generate_invoice_pdf(invoice, company or {}, client or {})
+    pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+    
+    return {
+        "filename": f"factura_{invoice.get('invoice_number', invoice_id)}.pdf",
+        "content": pdf_base64,
+        "content_type": "application/pdf"
+    }
+
+# ============== FILE UPLOAD ==============
+class FileUpload(BaseModel):
+    filename: str
+    content: str  # Base64 encoded
+    content_type: str
+    project_id: Optional[str] = None
+    category: str = "otros"
+
+@api_router.post("/files/upload")
+async def upload_file(file_data: FileUpload, current_user: dict = Depends(get_current_user)):
+    """Upload file and store in database as base64"""
+    company_id = current_user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No hay empresa asignada")
+    
+    # Validate file size (max 5MB)
+    try:
+        content_bytes = base64.b64decode(file_data.content)
+        if len(content_bytes) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="El archivo excede 5MB")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Contenido de archivo inválido")
+    
+    # Create document record
+    doc_id = str(uuid.uuid4())
+    doc = {
+        "id": doc_id,
+        "company_id": company_id,
+        "project_id": file_data.project_id,
+        "name": file_data.filename,
+        "category": file_data.category,
+        "file_data": file_data.content,
+        "content_type": file_data.content_type,
+        "file_size": len(content_bytes),
+        "version": 1,
+        "uploaded_by": current_user.get("sub"),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.documents.insert_one(doc)
+    
+    return {
+        "id": doc_id,
+        "filename": file_data.filename,
+        "size": len(content_bytes),
+        "message": "Archivo subido exitosamente"
+    }
+
+@api_router.get("/files/{doc_id}/download")
+async def download_file(doc_id: str, current_user: dict = Depends(get_current_user)):
+    """Download a file"""
+    doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    
+    if current_user.get("company_id") != doc.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    return {
+        "filename": doc.get("name"),
+        "content": doc.get("file_data"),
+        "content_type": doc.get("content_type", "application/octet-stream")
+    }
+
 # Include router and configure CORS
 app.include_router(api_router)
 

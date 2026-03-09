@@ -49,6 +49,8 @@ import {
   File,
   FolderOpen,
   AlertTriangle,
+  Upload,
+  Loader2,
 } from "lucide-react";
 
 const DOCUMENT_CATEGORIES = [
@@ -68,12 +70,13 @@ export const Documents = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [uploading, setUploading] = useState(false);
+  const [selectedFile, setSelectedFile] = useState(null);
   const [formData, setFormData] = useState({
     name: "",
     project_id: "",
     category: "",
     notes: "",
-    file_url: "",
   });
 
   useEffect(() => {
@@ -99,17 +102,84 @@ export const Documents = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!selectedFile) {
+      toast.error("Por favor selecciona un archivo");
+      return;
+    }
+
+    setUploading(true);
     try {
-      await api.post("/documents", {
-        company_id: company.id,
-        ...formData,
-      });
-      toast.success("Documento registrado");
-      setDialogOpen(false);
-      resetForm();
-      fetchData();
+      // Convert file to base64
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64Content = reader.result.split(',')[1]; // Remove data:... prefix
+        
+        await api.post("/files/upload", {
+          filename: formData.name || selectedFile.name,
+          content: base64Content,
+          content_type: selectedFile.type,
+          project_id: formData.project_id || null,
+          category: formData.category || "otros",
+        });
+        
+        toast.success("Documento subido exitosamente");
+        setDialogOpen(false);
+        resetForm();
+        fetchData();
+      };
+      reader.onerror = () => {
+        toast.error("Error al leer el archivo");
+      };
+      reader.readAsDataURL(selectedFile);
     } catch (error) {
-      toast.error(getApiErrorMessage(error, "Error al registrar documento"));
+      toast.error(getApiErrorMessage(error, "Error al subir documento"));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Max 5MB check
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("El archivo excede 5MB");
+        return;
+      }
+      setSelectedFile(file);
+      if (!formData.name) {
+        setFormData(prev => ({ ...prev, name: file.name }));
+      }
+    }
+  };
+
+  const handleDownload = async (docId, filename) => {
+    try {
+      toast.info("Descargando...");
+      const response = await api.get(`/files/${docId}/download`);
+      const { content, content_type } = response.data;
+      
+      // Convert base64 to blob
+      const byteCharacters = atob(content);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: content_type });
+      
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success("Descarga completada");
+    } catch (error) {
+      toast.error("Error al descargar");
     }
   };
 
@@ -130,8 +200,8 @@ export const Documents = () => {
       project_id: "",
       category: "",
       notes: "",
-      file_url: "",
     });
+    setSelectedFile(null);
   };
 
   const getProjectName = (projectId) => {
@@ -181,17 +251,6 @@ export const Documents = () => {
           Nuevo Documento
         </Button>
       </div>
-
-      {/* Storage Warning */}
-      <Card className="border-amber-200 bg-amber-50">
-        <CardContent className="flex items-center gap-3 py-4">
-          <AlertTriangle className="h-5 w-5 text-amber-600" />
-          <p className="text-sm text-amber-800">
-            <strong>Recordatorio:</strong> El almacenamiento de archivos está pendiente de configuración.
-            Por ahora, registra los documentos con URLs externas o referencias.
-          </p>
-        </CardContent>
-      </Card>
 
       {/* Category Filter */}
       <div className="flex flex-wrap gap-2">
@@ -279,10 +338,16 @@ export const Documents = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            {doc.file_url && (
-                              <DropdownMenuItem onClick={() => window.open(doc.file_url, "_blank")}>
+                            {doc.file_data && (
+                              <DropdownMenuItem onClick={() => handleDownload(doc.id, doc.name)}>
                                 <Download className="mr-2 h-4 w-4" />
                                 Descargar
+                              </DropdownMenuItem>
+                            )}
+                            {doc.file_url && !doc.file_data && (
+                              <DropdownMenuItem onClick={() => window.open(doc.file_url, "_blank")}>
+                                <Download className="mr-2 h-4 w-4" />
+                                Ver enlace
                               </DropdownMenuItem>
                             )}
                             <DropdownMenuItem
@@ -309,20 +374,50 @@ export const Documents = () => {
         <DialogContent className="sm:max-w-[500px]">
           <form onSubmit={handleSubmit}>
             <DialogHeader>
-              <DialogTitle>Registrar Documento</DialogTitle>
+              <DialogTitle>Subir Documento</DialogTitle>
               <DialogDescription>
-                Agrega un nuevo documento al repositorio
+                Sube un archivo al repositorio (máx. 5MB)
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
+              {/* File Upload */}
               <div className="grid gap-2">
-                <Label htmlFor="name">Nombre del Documento *</Label>
+                <Label htmlFor="file">Archivo *</Label>
+                <div className="border-2 border-dashed rounded-lg p-4 text-center hover:border-primary transition-colors">
+                  <input
+                    type="file"
+                    id="file"
+                    className="hidden"
+                    onChange={handleFileSelect}
+                    accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.dwg"
+                    data-testid="document-file-input"
+                  />
+                  <label htmlFor="file" className="cursor-pointer">
+                    {selectedFile ? (
+                      <div className="flex items-center justify-center gap-2 text-primary">
+                        <File className="h-6 w-6" />
+                        <span className="font-medium">{selectedFile.name}</span>
+                        <span className="text-sm text-muted-foreground">
+                          ({(selectedFile.size / 1024).toFixed(1)} KB)
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-2 text-muted-foreground">
+                        <Upload className="h-8 w-8" />
+                        <span>Haz clic para seleccionar archivo</span>
+                        <span className="text-xs">PDF, DOC, XLS, imágenes (máx. 5MB)</span>
+                      </div>
+                    )}
+                  </label>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="name">Nombre del Documento</Label>
                 <Input
                   id="name"
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="Plano estructural nave 5"
-                  required
+                  placeholder="Se usará el nombre del archivo si está vacío"
                   data-testid="document-name-input"
                 />
               </div>
@@ -334,7 +429,7 @@ export const Documents = () => {
                     onValueChange={(value) => setFormData({ ...formData, project_id: value })}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar" />
+                      <SelectValue placeholder="General" />
                     </SelectTrigger>
                     <SelectContent>
                       {projects.map((project) => (
@@ -346,13 +441,13 @@ export const Documents = () => {
                   </Select>
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="category">Categoría *</Label>
+                  <Label htmlFor="category">Categoría</Label>
                   <Select
                     value={formData.category}
                     onValueChange={(value) => setFormData({ ...formData, category: value })}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Seleccionar" />
+                      <SelectValue placeholder="Otros" />
                     </SelectTrigger>
                     <SelectContent>
                       {DOCUMENT_CATEGORIES.map((cat) => (
@@ -364,32 +459,28 @@ export const Documents = () => {
                   </Select>
                 </div>
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="file_url">URL del Archivo (opcional)</Label>
-                <Input
-                  id="file_url"
-                  value={formData.file_url}
-                  onChange={(e) => setFormData({ ...formData, file_url: e.target.value })}
-                  placeholder="https://drive.google.com/..."
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="notes">Notas</Label>
-                <Textarea
-                  id="notes"
-                  value={formData.notes}
-                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                  placeholder="Descripción o notas del documento..."
-                  rows={3}
-                />
-              </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                 Cancelar
               </Button>
-              <Button type="submit" className="btn-industrial" data-testid="save-document-btn">
-                Registrar
+              <Button 
+                type="submit" 
+                className="btn-industrial" 
+                disabled={!selectedFile || uploading}
+                data-testid="save-document-btn"
+              >
+                {uploading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Subiendo...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="mr-2 h-4 w-4" />
+                    Subir Documento
+                  </>
+                )}
               </Button>
             </DialogFooter>
           </form>
