@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
+import { getApiErrorMessage } from "../lib/utils";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -38,7 +39,7 @@ export const Login = () => {
         navigate("/dashboard");
       }
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Error al iniciar sesión");
+      toast.error(getApiErrorMessage(error, "Error al iniciar sesión"));
     } finally {
       setIsLoading(false);
     }
@@ -64,7 +65,7 @@ export const Login = () => {
       toast.success("Cuenta creada exitosamente");
       navigate("/dashboard");
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Error al registrarse");
+      toast.error(getApiErrorMessage(error, "Error al registrarse"));
     } finally {
       setIsLoading(false);
     }

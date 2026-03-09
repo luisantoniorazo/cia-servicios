@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { formatCurrency, formatDate, getStatusColor, getStatusLabel, generateInvoiceNumber } from "../lib/utils";
+import { formatCurrency, formatDate, getStatusColor, getStatusLabel, generateInvoiceNumber , getApiErrorMessage } from "../lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -121,7 +121,7 @@ export const Invoices = () => {
       resetForm();
       fetchData();
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Error al crear factura");
+      toast.error(getApiErrorMessage(error, "Error al crear factura"));
     }
   };
 

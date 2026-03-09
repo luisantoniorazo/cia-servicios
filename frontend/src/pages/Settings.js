@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { getStatusLabel } from "../lib/utils";
+import { getStatusLabel, getApiErrorMessage } from "../lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -63,6 +63,7 @@ export const Settings = () => {
   const [userForm, setUserForm] = useState({
     email: "",
     full_name: "",
+    phone: "",
     password: "",
     role: "user",
   });
@@ -85,7 +86,7 @@ export const Settings = () => {
 
   const fetchUsers = async () => {
     try {
-      const response = await api.get(`/users?company_id=${company.id}`);
+      const response = await api.get("/admin/users");
       setUsers(response.data);
     } catch (error) {
       console.error("Error fetching users:", error);
@@ -108,16 +109,13 @@ export const Settings = () => {
   const handleCreateUser = async (e) => {
     e.preventDefault();
     try {
-      await api.post("/users", {
-        ...userForm,
-        company_id: company.id,
-      });
+      await api.post("/admin/users", userForm);
       toast.success("Usuario creado exitosamente");
       setUserDialogOpen(false);
-      setUserForm({ email: "", full_name: "", password: "", role: "user" });
+      setUserForm({ email: "", full_name: "", phone: "", password: "", role: "user" });
       fetchUsers();
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Error al crear usuario");
+      toast.error(getApiErrorMessage(error, "Error al crear usuario"));
     }
   };
 
@@ -128,7 +126,7 @@ export const Settings = () => {
     }
     if (!window.confirm("¿Estás seguro de eliminar este usuario?")) return;
     try {
-      await api.delete(`/users/${userId}`);
+      await api.delete(`/admin/users/${userId}`);
       toast.success("Usuario eliminado");
       fetchUsers();
     } catch (error) {
@@ -375,6 +373,16 @@ export const Settings = () => {
                 />
               </div>
               <div className="grid gap-2">
+                <Label htmlFor="user_phone">Teléfono</Label>
+                <Input
+                  id="user_phone"
+                  value={userForm.phone}
+                  onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })}
+                  placeholder="+52 55 1234 5678"
+                  data-testid="new-user-phone-input"
+                />
+              </div>
+              <div className="grid gap-2">
                 <Label htmlFor="user_password">Contraseña *</Label>
                 <Input
                   id="user_password"
@@ -391,7 +399,7 @@ export const Settings = () => {
                   value={userForm.role}
                   onValueChange={(value) => setUserForm({ ...userForm, role: value })}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger data-testid="new-user-role-select">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { formatDate } from "../lib/utils";
+import { formatDate , getApiErrorMessage } from "../lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -110,7 +110,7 @@ export const Suppliers = () => {
       resetForm();
       fetchSuppliers();
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Error al guardar proveedor");
+      toast.error(getApiErrorMessage(error, "Error al guardar proveedor"));
     }
   };
 

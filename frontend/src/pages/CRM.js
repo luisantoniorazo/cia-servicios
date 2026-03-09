@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { formatCurrency, formatDate, getStatusColor, getStatusLabel } from "../lib/utils";
+import { formatCurrency, formatDate, getStatusColor, getStatusLabel, getApiErrorMessage } from "../lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -115,7 +115,7 @@ export const CRM = () => {
       resetForm();
       fetchClients();
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Error al guardar cliente");
+      toast.error(getApiErrorMessage(error, "Error al guardar cliente"));
     }
   };
 

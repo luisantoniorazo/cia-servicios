@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { formatDate } from "../lib/utils";
+import { formatDate , getApiErrorMessage } from "../lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -109,7 +109,7 @@ export const Documents = () => {
       resetForm();
       fetchData();
     } catch (error) {
-      toast.error(error.response?.data?.detail || "Error al registrar documento");
+      toast.error(getApiErrorMessage(error, "Error al registrar documento"));
     }
   };
 

@@ -13,7 +13,7 @@ from datetime import datetime, timezone, timedelta
 import jwt
 import bcrypt
 from enum import Enum
-import base64
+import re
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -29,7 +29,7 @@ JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
 
 # Create the main app
-app = FastAPI(title="CIA SERVICIOS API", version="1.0.0")
+app = FastAPI(title="CIA SERVICIOS API", version="2.0.0")
 api_router = APIRouter(prefix="/api")
 security = HTTPBearer()
 
@@ -49,6 +49,7 @@ class SubscriptionStatus(str, Enum):
     PENDING = "pending"
     SUSPENDED = "suspended"
     CANCELLED = "cancelled"
+    TRIAL = "trial"
 
 class ProjectStatus(str, Enum):
     QUOTATION = "quotation"
@@ -91,27 +92,54 @@ class PurchaseOrderStatus(str, Enum):
 # Company Models
 class CompanyBase(BaseModel):
     business_name: str
+    slug: str
     rfc: str
     address: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[EmailStr] = None
     logo_url: Optional[str] = None
     monthly_fee: float = 0.0
+    license_type: str = "basic"
+    max_users: int = 5
 
-class CompanyCreate(CompanyBase):
-    pass
+class CompanyCreate(BaseModel):
+    business_name: str
+    rfc: str
+    address: Optional[str] = None
+    phone: Optional[str] = None
+    email: Optional[EmailStr] = None
+    logo_url: Optional[str] = None
+    monthly_fee: float = 0.0
+    license_type: str = "basic"
+    max_users: int = 5
+    # Admin user data
+    admin_full_name: str
+    admin_email: EmailStr
+    admin_phone: Optional[str] = None
+    admin_password: str
+    recovery_email: Optional[EmailStr] = None
+    recovery_phone: Optional[str] = None
 
 class Company(CompanyBase):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     subscription_status: SubscriptionStatus = SubscriptionStatus.PENDING
+    subscription_start: Optional[datetime] = None
+    subscription_end: Optional[datetime] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class CompanyPublic(BaseModel):
+    id: str
+    business_name: str
+    slug: str
+    logo_url: Optional[str] = None
 
 # User Models
 class UserBase(BaseModel):
     email: EmailStr
     full_name: str
+    phone: Optional[str] = None
     role: UserRole = UserRole.USER
     company_id: Optional[str] = None
 
@@ -122,16 +150,25 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+class SuperAdminLogin(BaseModel):
+    email: EmailStr
+    password: str
+    admin_key: str  # Extra security for super admin
+
 class User(UserBase):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     is_active: bool = True
+    recovery_email: Optional[EmailStr] = None
+    recovery_phone: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_by: Optional[str] = None
 
 class UserResponse(BaseModel):
     id: str
     email: EmailStr
     full_name: str
+    phone: Optional[str] = None
     role: UserRole
     company_id: Optional[str] = None
     is_active: bool
@@ -141,6 +178,7 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     user: UserResponse
+    company: Optional[CompanyPublic] = None
 
 # Client/Prospect Models
 class ClientBase(BaseModel):
@@ -340,20 +378,6 @@ class FieldReport(FieldReportBase):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-# KPI Models
-class KPIData(BaseModel):
-    company_id: str
-    period: str
-    total_projects: int = 0
-    active_projects: int = 0
-    completed_projects: int = 0
-    total_revenue: float = 0.0
-    total_costs: float = 0.0
-    total_profit: float = 0.0
-    quote_conversion_rate: float = 0.0
-    avg_project_duration: float = 0.0
-    on_time_delivery_rate: float = 0.0
-
 # ============== AUTH HELPERS ==============
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -361,171 +385,529 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
-def create_token(user_id: str, email: str, role: str, company_id: Optional[str] = None) -> str:
+def create_token(user_id: str, email: str, role: str, company_id: Optional[str] = None, company_slug: Optional[str] = None) -> str:
     payload = {
         "sub": user_id,
         "email": email,
         "role": role,
         "company_id": company_id,
+        "company_slug": company_slug,
         "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def generate_slug(business_name: str) -> str:
+    """Generate URL-friendly slug from business name"""
+    slug = business_name.lower()
+    slug = re.sub(r'[^a-z0-9\s-]', '', slug)
+    slug = re.sub(r'[\s_]+', '-', slug)
+    slug = re.sub(r'-+', '-', slug)
+    slug = slug.strip('-')
+    return slug[:50]
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     try:
         payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return payload
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
+        raise HTTPException(status_code=401, detail="Token expirado")
     except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Token inválido")
 
 async def require_super_admin(current_user: dict = Depends(get_current_user)) -> dict:
     if current_user.get("role") != UserRole.SUPER_ADMIN:
-        raise HTTPException(status_code=403, detail="Super admin access required")
+        raise HTTPException(status_code=403, detail="Acceso de Super Admin requerido")
     return current_user
 
 async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
     if current_user.get("role") not in [UserRole.SUPER_ADMIN, UserRole.ADMIN]:
-        raise HTTPException(status_code=403, detail="Admin access required")
+        raise HTTPException(status_code=403, detail="Acceso de Administrador requerido")
     return current_user
 
-# ============== AUTH ROUTES ==============
-@api_router.post("/auth/register", response_model=TokenResponse)
-async def register(user_data: UserCreate):
-    existing = await db.users.find_one({"email": user_data.email}, {"_id": 0})
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    
-    user = User(**user_data.model_dump(exclude={"password"}))
-    user_dict = user.model_dump()
-    user_dict["password_hash"] = hash_password(user_data.password)
-    user_dict["created_at"] = user_dict["created_at"].isoformat()
-    
-    await db.users.insert_one(user_dict)
-    
-    token = create_token(user.id, user.email, user.role, user.company_id)
-    return TokenResponse(
-        access_token=token,
-        user=UserResponse(**user.model_dump())
-    )
+# ============== SUPER ADMIN AUTH ==============
+SUPER_ADMIN_KEY = os.environ.get('SUPER_ADMIN_KEY', 'cia-master-2024')
 
-@api_router.post("/auth/login", response_model=TokenResponse)
-async def login(credentials: UserLogin):
-    user_doc = await db.users.find_one({"email": credentials.email}, {"_id": 0})
+@api_router.post("/super-admin/login", response_model=TokenResponse)
+async def super_admin_login(credentials: SuperAdminLogin):
+    """Login exclusivo para Super Admin"""
+    if credentials.admin_key != SUPER_ADMIN_KEY:
+        raise HTTPException(status_code=401, detail="Clave de administrador inválida")
+    
+    user_doc = await db.users.find_one({"email": credentials.email, "role": UserRole.SUPER_ADMIN}, {"_id": 0})
     if not user_doc:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
     
     if not verify_password(credentials.password, user_doc.get("password_hash", "")):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
     
     if isinstance(user_doc.get("created_at"), str):
         user_doc["created_at"] = datetime.fromisoformat(user_doc["created_at"])
     
-    token = create_token(user_doc["id"], user_doc["email"], user_doc["role"], user_doc.get("company_id"))
+    token = create_token(user_doc["id"], user_doc["email"], user_doc["role"], None, None)
     return TokenResponse(
         access_token=token,
         user=UserResponse(**{k: v for k, v in user_doc.items() if k != "password_hash"})
+    )
+
+@api_router.post("/super-admin/setup")
+async def setup_super_admin():
+    """Crear Super Admin inicial (solo una vez)"""
+    existing = await db.users.find_one({"role": UserRole.SUPER_ADMIN}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail="Super Admin ya existe")
+    
+    super_admin = User(
+        email="superadmin@cia-servicios.com",
+        full_name="Super Administrador CIA",
+        role=UserRole.SUPER_ADMIN
+    )
+    admin_dict = super_admin.model_dump()
+    admin_dict["password_hash"] = hash_password("SuperAdmin2024!")
+    admin_dict["created_at"] = admin_dict["created_at"].isoformat()
+    await db.users.insert_one(admin_dict)
+    
+    return {
+        "message": "Super Admin creado exitosamente",
+        "email": "superadmin@cia-servicios.com",
+        "password": "SuperAdmin2024!",
+        "admin_key": SUPER_ADMIN_KEY
+    }
+
+# ============== COMPANY AUTH (Por Empresa) ==============
+@api_router.get("/empresa/{slug}/info", response_model=CompanyPublic)
+async def get_company_by_slug(slug: str):
+    """Obtener información pública de empresa por slug"""
+    company = await db.companies.find_one({"slug": slug}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    return CompanyPublic(
+        id=company["id"],
+        business_name=company["business_name"],
+        slug=company["slug"],
+        logo_url=company.get("logo_url")
+    )
+
+@api_router.post("/empresa/{slug}/login", response_model=TokenResponse)
+async def company_login(slug: str, credentials: UserLogin):
+    """Login para usuarios de una empresa específica"""
+    # Verificar que la empresa existe y está activa
+    company = await db.companies.find_one({"slug": slug}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    if company.get("subscription_status") not in [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]:
+        raise HTTPException(status_code=403, detail="La suscripción de esta empresa no está activa")
+    
+    # Buscar usuario de esa empresa
+    user_doc = await db.users.find_one({
+        "email": credentials.email,
+        "company_id": company["id"],
+        "role": {"$ne": UserRole.SUPER_ADMIN}
+    }, {"_id": 0})
+    
+    if not user_doc:
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+    
+    if not user_doc.get("is_active", True):
+        raise HTTPException(status_code=403, detail="Usuario desactivado")
+    
+    if not verify_password(credentials.password, user_doc.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+    
+    if isinstance(user_doc.get("created_at"), str):
+        user_doc["created_at"] = datetime.fromisoformat(user_doc["created_at"])
+    
+    token = create_token(user_doc["id"], user_doc["email"], user_doc["role"], company["id"], slug)
+    
+    return TokenResponse(
+        access_token=token,
+        user=UserResponse(**{k: v for k, v in user_doc.items() if k != "password_hash"}),
+        company=CompanyPublic(
+            id=company["id"],
+            business_name=company["business_name"],
+            slug=company["slug"],
+            logo_url=company.get("logo_url")
+        )
     )
 
 @api_router.get("/auth/me", response_model=UserResponse)
 async def get_me(current_user: dict = Depends(get_current_user)):
     user_doc = await db.users.find_one({"id": current_user["sub"]}, {"_id": 0, "password_hash": 0})
     if not user_doc:
-        raise HTTPException(status_code=404, detail="User not found")
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
     if isinstance(user_doc.get("created_at"), str):
         user_doc["created_at"] = datetime.fromisoformat(user_doc["created_at"])
     return UserResponse(**user_doc)
 
-# ============== COMPANY ROUTES ==============
-@api_router.post("/companies", response_model=Company)
-async def create_company(company_data: CompanyCreate, current_user: dict = Depends(require_super_admin)):
-    company = Company(**company_data.model_dump())
+# ============== SUPER ADMIN - COMPANY MANAGEMENT ==============
+@api_router.post("/super-admin/companies")
+async def create_company_with_admin(company_data: CompanyCreate, current_user: dict = Depends(require_super_admin)):
+    """Super Admin crea empresa con su administrador"""
+    # Generar slug
+    base_slug = generate_slug(company_data.business_name)
+    slug = base_slug
+    counter = 1
+    while await db.companies.find_one({"slug": slug}):
+        slug = f"{base_slug}-{counter}"
+        counter += 1
+    
+    # Verificar que el email del admin no existe
+    existing_user = await db.users.find_one({"email": company_data.admin_email}, {"_id": 0})
+    if existing_user:
+        raise HTTPException(status_code=400, detail="El email del administrador ya está registrado")
+    
+    # Crear empresa
+    company = Company(
+        business_name=company_data.business_name,
+        slug=slug,
+        rfc=company_data.rfc,
+        address=company_data.address,
+        phone=company_data.phone,
+        email=company_data.email,
+        logo_url=company_data.logo_url,
+        monthly_fee=company_data.monthly_fee,
+        license_type=company_data.license_type,
+        max_users=company_data.max_users,
+        subscription_status=SubscriptionStatus.PENDING
+    )
     company_dict = company.model_dump()
     company_dict["created_at"] = company_dict["created_at"].isoformat()
     company_dict["updated_at"] = company_dict["updated_at"].isoformat()
     await db.companies.insert_one(company_dict)
-    return company
+    
+    # Crear usuario admin de la empresa
+    admin_user = User(
+        email=company_data.admin_email,
+        full_name=company_data.admin_full_name,
+        phone=company_data.admin_phone,
+        role=UserRole.ADMIN,
+        company_id=company.id,
+        recovery_email=company_data.recovery_email,
+        recovery_phone=company_data.recovery_phone
+    )
+    admin_dict = admin_user.model_dump()
+    admin_dict["password_hash"] = hash_password(company_data.admin_password)
+    admin_dict["created_at"] = admin_dict["created_at"].isoformat()
+    admin_dict["created_by"] = current_user["sub"]
+    await db.users.insert_one(admin_dict)
+    
+    return {
+        "message": "Empresa y administrador creados exitosamente",
+        "company": {
+            "id": company.id,
+            "business_name": company.business_name,
+            "slug": slug,
+            "login_url": f"/empresa/{slug}/login"
+        },
+        "admin": {
+            "email": company_data.admin_email,
+            "full_name": company_data.admin_full_name
+        }
+    }
 
-@api_router.get("/companies", response_model=List[Company])
-async def list_companies(current_user: dict = Depends(require_super_admin)):
+@api_router.get("/super-admin/companies")
+async def list_all_companies(current_user: dict = Depends(require_super_admin)):
+    """Listar todas las empresas (Super Admin)"""
     companies = await db.companies.find({}, {"_id": 0}).to_list(1000)
+    
+    result = []
     for c in companies:
         if isinstance(c.get("created_at"), str):
             c["created_at"] = datetime.fromisoformat(c["created_at"])
         if isinstance(c.get("updated_at"), str):
             c["updated_at"] = datetime.fromisoformat(c["updated_at"])
-    return companies
+        
+        # Contar usuarios de la empresa
+        user_count = await db.users.count_documents({"company_id": c["id"], "role": {"$ne": UserRole.SUPER_ADMIN}})
+        c["user_count"] = user_count
+        
+        # Obtener admin
+        admin = await db.users.find_one({"company_id": c["id"], "role": UserRole.ADMIN}, {"_id": 0, "password_hash": 0})
+        c["admin_email"] = admin.get("email") if admin else None
+        c["admin_name"] = admin.get("full_name") if admin else None
+        
+        result.append(c)
+    
+    return result
 
-@api_router.get("/companies/{company_id}", response_model=Company)
-async def get_company(company_id: str, current_user: dict = Depends(get_current_user)):
+@api_router.get("/super-admin/companies/{company_id}")
+async def get_company_details(company_id: str, current_user: dict = Depends(require_super_admin)):
+    """Ver detalles de empresa (Solo lectura para Super Admin)"""
     company = await db.companies.find_one({"id": company_id}, {"_id": 0})
     if not company:
-        raise HTTPException(status_code=404, detail="Company not found")
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    if isinstance(company.get("created_at"), str):
+        company["created_at"] = datetime.fromisoformat(company["created_at"])
+    if isinstance(company.get("updated_at"), str):
+        company["updated_at"] = datetime.fromisoformat(company["updated_at"])
+    
+    # Estadísticas de la empresa
+    users = await db.users.count_documents({"company_id": company_id})
+    projects = await db.projects.count_documents({"company_id": company_id})
+    clients = await db.clients.count_documents({"company_id": company_id})
+    quotes = await db.quotes.count_documents({"company_id": company_id})
+    invoices = await db.invoices.find({"company_id": company_id}, {"_id": 0, "total": 1, "paid_amount": 1}).to_list(1000)
+    
+    total_invoiced = sum(inv.get("total", 0) for inv in invoices)
+    total_collected = sum(inv.get("paid_amount", 0) for inv in invoices)
+    
+    company["stats"] = {
+        "users": users,
+        "projects": projects,
+        "clients": clients,
+        "quotes": quotes,
+        "total_invoiced": total_invoiced,
+        "total_collected": total_collected
+    }
+    
+    # Lista de usuarios
+    company["users"] = await db.users.find(
+        {"company_id": company_id, "role": {"$ne": UserRole.SUPER_ADMIN}},
+        {"_id": 0, "password_hash": 0}
+    ).to_list(100)
+    
+    return company
+
+@api_router.patch("/super-admin/companies/{company_id}/status")
+async def update_company_subscription(
+    company_id: str,
+    status: SubscriptionStatus,
+    current_user: dict = Depends(require_super_admin)
+):
+    """Actualizar estado de suscripción"""
+    update_data = {
+        "subscription_status": status,
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    if status == SubscriptionStatus.ACTIVE:
+        update_data["subscription_start"] = datetime.now(timezone.utc).isoformat()
+    
+    result = await db.companies.update_one({"id": company_id}, {"$set": update_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    return {"message": "Estado de suscripción actualizado"}
+
+@api_router.put("/super-admin/companies/{company_id}")
+async def update_company_info(
+    company_id: str,
+    update_data: dict,
+    current_user: dict = Depends(require_super_admin)
+):
+    """Actualizar información de empresa"""
+    allowed_fields = ["business_name", "rfc", "address", "phone", "email", "logo_url", "monthly_fee", "license_type", "max_users"]
+    filtered_data = {k: v for k, v in update_data.items() if k in allowed_fields}
+    filtered_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    result = await db.companies.update_one({"id": company_id}, {"$set": filtered_data})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    return {"message": "Empresa actualizada"}
+
+@api_router.get("/super-admin/dashboard")
+async def super_admin_dashboard(current_user: dict = Depends(require_super_admin)):
+    """Dashboard de Super Admin con métricas globales"""
+    companies = await db.companies.find({}, {"_id": 0}).to_list(1000)
+    
+    total_companies = len(companies)
+    active = len([c for c in companies if c.get("subscription_status") == SubscriptionStatus.ACTIVE])
+    pending = len([c for c in companies if c.get("subscription_status") == SubscriptionStatus.PENDING])
+    suspended = len([c for c in companies if c.get("subscription_status") == SubscriptionStatus.SUSPENDED])
+    trial = len([c for c in companies if c.get("subscription_status") == SubscriptionStatus.TRIAL])
+    
+    monthly_revenue = sum(c.get("monthly_fee", 0) for c in companies if c.get("subscription_status") == SubscriptionStatus.ACTIVE)
+    
+    # Obtener empresas por cobrar (activas, primeros 5 días del mes)
+    now = datetime.now(timezone.utc)
+    if now.day <= 5:
+        pending_payment = [
+            {
+                "company": c["business_name"],
+                "amount": c.get("monthly_fee", 0),
+                "slug": c.get("slug")
+            }
+            for c in companies if c.get("subscription_status") == SubscriptionStatus.ACTIVE
+        ]
+    else:
+        pending_payment = []
+    
+    return {
+        "summary": {
+            "total_companies": total_companies,
+            "active": active,
+            "pending": pending,
+            "suspended": suspended,
+            "trial": trial,
+            "monthly_revenue": monthly_revenue
+        },
+        "pending_payment": pending_payment,
+        "companies": [
+            {
+                "id": c["id"],
+                "business_name": c["business_name"],
+                "slug": c.get("slug"),
+                "status": c.get("subscription_status"),
+                "monthly_fee": c.get("monthly_fee", 0),
+                "created_at": c.get("created_at")
+            }
+            for c in companies
+        ]
+    }
+
+# ============== COMPANY ADMIN - USER MANAGEMENT ==============
+@api_router.get("/admin/users")
+async def list_company_users(current_user: dict = Depends(require_admin)):
+    """Listar usuarios de la empresa (Admin de empresa)"""
+    company_id = current_user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No hay empresa asignada")
+    
+    users = await db.users.find(
+        {"company_id": company_id, "role": {"$ne": UserRole.SUPER_ADMIN}},
+        {"_id": 0, "password_hash": 0}
+    ).to_list(1000)
+    
+    for u in users:
+        if isinstance(u.get("created_at"), str):
+            u["created_at"] = datetime.fromisoformat(u["created_at"])
+    
+    return users
+
+@api_router.post("/admin/users")
+async def create_company_user(user_data: UserCreate, current_user: dict = Depends(require_admin)):
+    """Admin de empresa crea usuarios"""
+    company_id = current_user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No hay empresa asignada")
+    
+    # Verificar límite de usuarios
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    current_users = await db.users.count_documents({"company_id": company_id})
+    if current_users >= company.get("max_users", 5):
+        raise HTTPException(status_code=400, detail=f"Límite de usuarios alcanzado ({company.get('max_users', 5)})")
+    
+    # Verificar email único
+    existing = await db.users.find_one({"email": user_data.email}, {"_id": 0})
+    if existing:
+        raise HTTPException(status_code=400, detail="El email ya está registrado")
+    
+    # No permitir crear super_admin
+    if user_data.role == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="No se puede crear un Super Admin")
+    
+    user = User(
+        email=user_data.email,
+        full_name=user_data.full_name,
+        phone=user_data.phone,
+        role=user_data.role,
+        company_id=company_id
+    )
+    user_dict = user.model_dump()
+    user_dict["password_hash"] = hash_password(user_data.password)
+    user_dict["created_at"] = user_dict["created_at"].isoformat()
+    user_dict["created_by"] = current_user["sub"]
+    
+    await db.users.insert_one(user_dict)
+    return UserResponse(**user.model_dump())
+
+@api_router.put("/admin/users/{user_id}")
+async def update_company_user(user_id: str, update_data: dict, current_user: dict = Depends(require_admin)):
+    """Actualizar usuario de la empresa"""
+    company_id = current_user.get("company_id")
+    
+    user = await db.users.find_one({"id": user_id, "company_id": company_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    allowed_fields = ["full_name", "phone", "role", "is_active"]
+    filtered_data = {k: v for k, v in update_data.items() if k in allowed_fields}
+    
+    if "role" in filtered_data and filtered_data["role"] == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="No se puede asignar rol de Super Admin")
+    
+    await db.users.update_one({"id": user_id}, {"$set": filtered_data})
+    return {"message": "Usuario actualizado"}
+
+@api_router.delete("/admin/users/{user_id}")
+async def delete_company_user(user_id: str, current_user: dict = Depends(require_admin)):
+    """Eliminar usuario de la empresa"""
+    company_id = current_user.get("company_id")
+    
+    if user_id == current_user["sub"]:
+        raise HTTPException(status_code=400, detail="No puedes eliminarte a ti mismo")
+    
+    user = await db.users.find_one({"id": user_id, "company_id": company_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    if user.get("role") == UserRole.ADMIN:
+        # Verificar que no sea el único admin
+        admin_count = await db.users.count_documents({"company_id": company_id, "role": UserRole.ADMIN})
+        if admin_count <= 1:
+            raise HTTPException(status_code=400, detail="No se puede eliminar el único administrador")
+    
+    await db.users.delete_one({"id": user_id})
+    return {"message": "Usuario eliminado"}
+
+@api_router.post("/admin/users/{user_id}/reset-password")
+async def reset_user_password(user_id: str, new_password: str, current_user: dict = Depends(require_admin)):
+    """Admin resetea contraseña de usuario"""
+    company_id = current_user.get("company_id")
+    
+    user = await db.users.find_one({"id": user_id, "company_id": company_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"password_hash": hash_password(new_password)}}
+    )
+    return {"message": "Contraseña actualizada"}
+
+# ============== COMPANY DATA ROUTES ==============
+@api_router.get("/companies/{company_id}", response_model=Company)
+async def get_company(company_id: str, current_user: dict = Depends(get_current_user)):
+    """Obtener datos de la empresa del usuario"""
+    # Verificar acceso
+    if current_user.get("role") != UserRole.SUPER_ADMIN and current_user.get("company_id") != company_id:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
     if isinstance(company.get("created_at"), str):
         company["created_at"] = datetime.fromisoformat(company["created_at"])
     if isinstance(company.get("updated_at"), str):
         company["updated_at"] = datetime.fromisoformat(company["updated_at"])
     return Company(**company)
 
-@api_router.put("/companies/{company_id}", response_model=Company)
-async def update_company(company_id: str, company_data: CompanyCreate, current_user: dict = Depends(require_admin)):
-    update_dict = company_data.model_dump()
-    update_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = await db.companies.update_one({"id": company_id}, {"$set": update_dict})
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Company not found")
-    return await get_company(company_id, current_user)
-
-@api_router.patch("/companies/{company_id}/status")
-async def update_company_status(company_id: str, status: SubscriptionStatus, current_user: dict = Depends(require_super_admin)):
-    result = await db.companies.update_one(
-        {"id": company_id},
-        {"$set": {"subscription_status": status, "updated_at": datetime.now(timezone.utc).isoformat()}}
-    )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Company not found")
-    return {"message": "Status updated"}
-
-# ============== USER ROUTES ==============
-@api_router.get("/users", response_model=List[UserResponse])
-async def list_users(company_id: Optional[str] = None, current_user: dict = Depends(require_admin)):
-    query = {}
-    if company_id:
-        query["company_id"] = company_id
-    elif current_user.get("role") != UserRole.SUPER_ADMIN:
-        query["company_id"] = current_user.get("company_id")
+@api_router.put("/companies/{company_id}")
+async def update_company(company_id: str, update_data: dict, current_user: dict = Depends(require_admin)):
+    """Admin de empresa actualiza su información"""
+    if current_user.get("company_id") != company_id:
+        raise HTTPException(status_code=403, detail="Solo puedes editar tu empresa")
     
-    users = await db.users.find(query, {"_id": 0, "password_hash": 0}).to_list(1000)
-    for u in users:
-        if isinstance(u.get("created_at"), str):
-            u["created_at"] = datetime.fromisoformat(u["created_at"])
-    return users
-
-@api_router.post("/users", response_model=UserResponse)
-async def create_user(user_data: UserCreate, current_user: dict = Depends(require_admin)):
-    existing = await db.users.find_one({"email": user_data.email}, {"_id": 0})
-    if existing:
-        raise HTTPException(status_code=400, detail="Email already registered")
+    allowed_fields = ["address", "phone", "email", "logo_url"]
+    filtered_data = {k: v for k, v in update_data.items() if k in allowed_fields}
+    filtered_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     
-    user = User(**user_data.model_dump(exclude={"password"}))
-    user_dict = user.model_dump()
-    user_dict["password_hash"] = hash_password(user_data.password)
-    user_dict["created_at"] = user_dict["created_at"].isoformat()
-    
-    await db.users.insert_one(user_dict)
-    return UserResponse(**user.model_dump())
-
-@api_router.delete("/users/{user_id}")
-async def delete_user(user_id: str, current_user: dict = Depends(require_admin)):
-    result = await db.users.delete_one({"id": user_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="User not found")
-    return {"message": "User deleted"}
+    await db.companies.update_one({"id": company_id}, {"$set": filtered_data})
+    return {"message": "Empresa actualizada"}
 
 # ============== CLIENT/PROSPECT ROUTES ==============
 @api_router.post("/clients", response_model=Client)
 async def create_client(client_data: ClientCreate, current_user: dict = Depends(get_current_user)):
+    # Verificar acceso a la empresa
+    if current_user.get("company_id") != client_data.company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     client = Client(**client_data.model_dump())
     client_dict = client.model_dump()
     client_dict["created_at"] = client_dict["created_at"].isoformat()
@@ -535,6 +917,9 @@ async def create_client(client_data: ClientCreate, current_user: dict = Depends(
 
 @api_router.get("/clients", response_model=List[Client])
 async def list_clients(company_id: str, is_prospect: Optional[bool] = None, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     query = {"company_id": company_id}
     if is_prospect is not None:
         query["is_prospect"] = is_prospect
@@ -550,7 +935,11 @@ async def list_clients(company_id: str, is_prospect: Optional[bool] = None, curr
 async def get_client(client_id: str, current_user: dict = Depends(get_current_user)):
     client = await db.clients.find_one({"id": client_id}, {"_id": 0})
     if not client:
-        raise HTTPException(status_code=404, detail="Client not found")
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    if current_user.get("company_id") != client.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     if isinstance(client.get("created_at"), str):
         client["created_at"] = datetime.fromisoformat(client["created_at"])
     if isinstance(client.get("updated_at"), str):
@@ -559,23 +948,36 @@ async def get_client(client_id: str, current_user: dict = Depends(get_current_us
 
 @api_router.put("/clients/{client_id}", response_model=Client)
 async def update_client(client_id: str, client_data: ClientCreate, current_user: dict = Depends(get_current_user)):
+    client = await db.clients.find_one({"id": client_id}, {"_id": 0})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    if current_user.get("company_id") != client.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     update_dict = client_data.model_dump()
     update_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
-    result = await db.clients.update_one({"id": client_id}, {"$set": update_dict})
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Client not found")
+    await db.clients.update_one({"id": client_id}, {"$set": update_dict})
     return await get_client(client_id, current_user)
 
 @api_router.delete("/clients/{client_id}")
 async def delete_client(client_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.clients.delete_one({"id": client_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Client not found")
-    return {"message": "Client deleted"}
+    client = await db.clients.find_one({"id": client_id}, {"_id": 0})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    if current_user.get("company_id") != client.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    await db.clients.delete_one({"id": client_id})
+    return {"message": "Cliente eliminado"}
 
 # ============== PROJECT ROUTES ==============
 @api_router.post("/projects", response_model=Project)
 async def create_project(project_data: ProjectCreate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != project_data.company_id:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     project = Project(**project_data.model_dump())
     project_dict = project.model_dump()
     project_dict["created_at"] = project_dict["created_at"].isoformat()
@@ -589,6 +991,9 @@ async def create_project(project_data: ProjectCreate, current_user: dict = Depen
 
 @api_router.get("/projects", response_model=List[Project])
 async def list_projects(company_id: str, status: Optional[ProjectStatus] = None, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     query = {"company_id": company_id}
     if status:
         query["status"] = status
@@ -608,7 +1013,11 @@ async def list_projects(company_id: str, status: Optional[ProjectStatus] = None,
 async def get_project(project_id: str, current_user: dict = Depends(get_current_user)):
     project = await db.projects.find_one({"id": project_id}, {"_id": 0})
     if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    
+    if current_user.get("company_id") != project.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     if isinstance(project.get("created_at"), str):
         project["created_at"] = datetime.fromisoformat(project["created_at"])
     if isinstance(project.get("updated_at"), str):
@@ -621,22 +1030,30 @@ async def get_project(project_id: str, current_user: dict = Depends(get_current_
 
 @api_router.put("/projects/{project_id}", response_model=Project)
 async def update_project(project_id: str, project_data: ProjectCreate, current_user: dict = Depends(get_current_user)):
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    
+    if current_user.get("company_id") != project.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     update_dict = project_data.model_dump()
     update_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
     if update_dict.get("start_date"):
         update_dict["start_date"] = update_dict["start_date"].isoformat()
     if update_dict.get("commitment_date"):
         update_dict["commitment_date"] = update_dict["commitment_date"].isoformat()
-    result = await db.projects.update_one({"id": project_id}, {"$set": update_dict})
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Project not found")
+    await db.projects.update_one({"id": project_id}, {"$set": update_dict})
     return await get_project(project_id, current_user)
 
 @api_router.patch("/projects/{project_id}/phase")
 async def update_project_phase(project_id: str, phase: ProjectPhase, progress: int, current_user: dict = Depends(get_current_user)):
     project = await db.projects.find_one({"id": project_id}, {"_id": 0})
     if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    
+    if current_user.get("company_id") != project.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
     
     phases = project.get("phases", [])
     for p in phases:
@@ -650,28 +1067,41 @@ async def update_project_phase(project_id: str, phase: ProjectPhase, progress: i
         {"id": project_id},
         {"$set": {"phases": phases, "total_progress": total_progress, "updated_at": datetime.now(timezone.utc).isoformat()}}
     )
-    return {"message": "Phase updated", "total_progress": total_progress}
+    return {"message": "Fase actualizada", "total_progress": total_progress}
 
 @api_router.patch("/projects/{project_id}/status")
 async def update_project_status(project_id: str, status: ProjectStatus, current_user: dict = Depends(get_current_user)):
-    result = await db.projects.update_one(
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    
+    if current_user.get("company_id") != project.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    await db.projects.update_one(
         {"id": project_id},
         {"$set": {"status": status, "updated_at": datetime.now(timezone.utc).isoformat()}}
     )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return {"message": "Status updated"}
+    return {"message": "Estado actualizado"}
 
 @api_router.delete("/projects/{project_id}")
 async def delete_project(project_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.projects.delete_one({"id": project_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Project not found")
-    return {"message": "Project deleted"}
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    
+    if current_user.get("company_id") != project.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    await db.projects.delete_one({"id": project_id})
+    return {"message": "Proyecto eliminado"}
 
 # ============== QUOTE ROUTES ==============
 @api_router.post("/quotes", response_model=Quote)
 async def create_quote(quote_data: QuoteCreate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != quote_data.company_id:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     quote = Quote(**quote_data.model_dump())
     quote_dict = quote.model_dump()
     quote_dict["created_at"] = quote_dict["created_at"].isoformat()
@@ -683,6 +1113,9 @@ async def create_quote(quote_data: QuoteCreate, current_user: dict = Depends(get
 
 @api_router.get("/quotes", response_model=List[Quote])
 async def list_quotes(company_id: str, status: Optional[QuoteStatus] = None, client_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     query = {"company_id": company_id}
     if status:
         query["status"] = status
@@ -702,7 +1135,11 @@ async def list_quotes(company_id: str, status: Optional[QuoteStatus] = None, cli
 async def get_quote(quote_id: str, current_user: dict = Depends(get_current_user)):
     quote = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
     if not quote:
-        raise HTTPException(status_code=404, detail="Quote not found")
+        raise HTTPException(status_code=404, detail="Cotización no encontrada")
+    
+    if current_user.get("company_id") != quote.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     if isinstance(quote.get("created_at"), str):
         quote["created_at"] = datetime.fromisoformat(quote["created_at"])
     if isinstance(quote.get("updated_at"), str):
@@ -713,35 +1150,53 @@ async def get_quote(quote_id: str, current_user: dict = Depends(get_current_user
 
 @api_router.put("/quotes/{quote_id}", response_model=Quote)
 async def update_quote(quote_id: str, quote_data: QuoteCreate, current_user: dict = Depends(get_current_user)):
+    quote = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
+    if not quote:
+        raise HTTPException(status_code=404, detail="Cotización no encontrada")
+    
+    if current_user.get("company_id") != quote.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     update_dict = quote_data.model_dump()
     update_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
     if update_dict.get("valid_until"):
         update_dict["valid_until"] = update_dict["valid_until"].isoformat()
-    result = await db.quotes.update_one({"id": quote_id}, {"$set": update_dict})
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Quote not found")
+    await db.quotes.update_one({"id": quote_id}, {"$set": update_dict})
     return await get_quote(quote_id, current_user)
 
 @api_router.patch("/quotes/{quote_id}/status")
 async def update_quote_status(quote_id: str, status: QuoteStatus, current_user: dict = Depends(get_current_user)):
-    result = await db.quotes.update_one(
+    quote = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
+    if not quote:
+        raise HTTPException(status_code=404, detail="Cotización no encontrada")
+    
+    if current_user.get("company_id") != quote.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    await db.quotes.update_one(
         {"id": quote_id},
         {"$set": {"status": status, "updated_at": datetime.now(timezone.utc).isoformat()}}
     )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Quote not found")
-    return {"message": "Status updated"}
+    return {"message": "Estado actualizado"}
 
 @api_router.delete("/quotes/{quote_id}")
 async def delete_quote(quote_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.quotes.delete_one({"id": quote_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Quote not found")
-    return {"message": "Quote deleted"}
+    quote = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
+    if not quote:
+        raise HTTPException(status_code=404, detail="Cotización no encontrada")
+    
+    if current_user.get("company_id") != quote.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    await db.quotes.delete_one({"id": quote_id})
+    return {"message": "Cotización eliminada"}
 
 # ============== INVOICE ROUTES ==============
 @api_router.post("/invoices", response_model=Invoice)
 async def create_invoice(invoice_data: InvoiceCreate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != invoice_data.company_id:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     invoice = Invoice(**invoice_data.model_dump())
     invoice_dict = invoice.model_dump()
     invoice_dict["created_at"] = invoice_dict["created_at"].isoformat()
@@ -753,6 +1208,9 @@ async def create_invoice(invoice_data: InvoiceCreate, current_user: dict = Depen
 
 @api_router.get("/invoices", response_model=List[Invoice])
 async def list_invoices(company_id: str, status: Optional[InvoiceStatus] = None, client_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     query = {"company_id": company_id}
     if status:
         query["status"] = status
@@ -772,7 +1230,11 @@ async def list_invoices(company_id: str, status: Optional[InvoiceStatus] = None,
 async def get_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
     invoice = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
     if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found")
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    if current_user.get("company_id") != invoice.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     if isinstance(invoice.get("created_at"), str):
         invoice["created_at"] = datetime.fromisoformat(invoice["created_at"])
     if isinstance(invoice.get("updated_at"), str):
@@ -783,20 +1245,28 @@ async def get_invoice(invoice_id: str, current_user: dict = Depends(get_current_
 
 @api_router.put("/invoices/{invoice_id}", response_model=Invoice)
 async def update_invoice(invoice_id: str, invoice_data: InvoiceCreate, current_user: dict = Depends(get_current_user)):
+    invoice = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    if current_user.get("company_id") != invoice.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     update_dict = invoice_data.model_dump()
     update_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
     if update_dict.get("due_date"):
         update_dict["due_date"] = update_dict["due_date"].isoformat()
-    result = await db.invoices.update_one({"id": invoice_id}, {"$set": update_dict})
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Invoice not found")
+    await db.invoices.update_one({"id": invoice_id}, {"$set": update_dict})
     return await get_invoice(invoice_id, current_user)
 
 @api_router.patch("/invoices/{invoice_id}/payment")
 async def record_payment(invoice_id: str, amount: float, current_user: dict = Depends(get_current_user)):
     invoice = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
     if not invoice:
-        raise HTTPException(status_code=404, detail="Invoice not found")
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    if current_user.get("company_id") != invoice.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
     
     new_paid = invoice.get("paid_amount", 0) + amount
     new_status = InvoiceStatus.PAID if new_paid >= invoice["total"] else InvoiceStatus.PARTIAL
@@ -805,18 +1275,26 @@ async def record_payment(invoice_id: str, amount: float, current_user: dict = De
         {"id": invoice_id},
         {"$set": {"paid_amount": new_paid, "status": new_status, "updated_at": datetime.now(timezone.utc).isoformat()}}
     )
-    return {"message": "Payment recorded", "new_paid_amount": new_paid, "status": new_status}
+    return {"message": "Pago registrado", "new_paid_amount": new_paid, "status": new_status}
 
 @api_router.delete("/invoices/{invoice_id}")
 async def delete_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.invoices.delete_one({"id": invoice_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Invoice not found")
-    return {"message": "Invoice deleted"}
+    invoice = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    if current_user.get("company_id") != invoice.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    await db.invoices.delete_one({"id": invoice_id})
+    return {"message": "Factura eliminada"}
 
 # ============== PURCHASE ORDER ROUTES ==============
 @api_router.post("/purchase-orders", response_model=PurchaseOrder)
 async def create_purchase_order(po_data: PurchaseOrderCreate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != po_data.company_id:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     po = PurchaseOrder(**po_data.model_dump())
     po_dict = po.model_dump()
     po_dict["created_at"] = po_dict["created_at"].isoformat()
@@ -828,6 +1306,9 @@ async def create_purchase_order(po_data: PurchaseOrderCreate, current_user: dict
 
 @api_router.get("/purchase-orders", response_model=List[PurchaseOrder])
 async def list_purchase_orders(company_id: str, status: Optional[PurchaseOrderStatus] = None, project_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     query = {"company_id": company_id}
     if status:
         query["status"] = status
@@ -847,7 +1328,11 @@ async def list_purchase_orders(company_id: str, status: Optional[PurchaseOrderSt
 async def get_purchase_order(po_id: str, current_user: dict = Depends(get_current_user)):
     po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
     if not po:
-        raise HTTPException(status_code=404, detail="Purchase order not found")
+        raise HTTPException(status_code=404, detail="Orden de compra no encontrada")
+    
+    if current_user.get("company_id") != po.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     if isinstance(po.get("created_at"), str):
         po["created_at"] = datetime.fromisoformat(po["created_at"])
     if isinstance(po.get("updated_at"), str):
@@ -858,24 +1343,37 @@ async def get_purchase_order(po_id: str, current_user: dict = Depends(get_curren
 
 @api_router.patch("/purchase-orders/{po_id}/status")
 async def update_purchase_order_status(po_id: str, status: PurchaseOrderStatus, current_user: dict = Depends(get_current_user)):
-    result = await db.purchase_orders.update_one(
+    po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
+    if not po:
+        raise HTTPException(status_code=404, detail="Orden de compra no encontrada")
+    
+    if current_user.get("company_id") != po.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    await db.purchase_orders.update_one(
         {"id": po_id},
         {"$set": {"status": status, "updated_at": datetime.now(timezone.utc).isoformat()}}
     )
-    if result.matched_count == 0:
-        raise HTTPException(status_code=404, detail="Purchase order not found")
-    return {"message": "Status updated"}
+    return {"message": "Estado actualizado"}
 
 @api_router.delete("/purchase-orders/{po_id}")
 async def delete_purchase_order(po_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.purchase_orders.delete_one({"id": po_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Purchase order not found")
-    return {"message": "Purchase order deleted"}
+    po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
+    if not po:
+        raise HTTPException(status_code=404, detail="Orden de compra no encontrada")
+    
+    if current_user.get("company_id") != po.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    await db.purchase_orders.delete_one({"id": po_id})
+    return {"message": "Orden de compra eliminada"}
 
 # ============== SUPPLIER ROUTES ==============
 @api_router.post("/suppliers", response_model=Supplier)
 async def create_supplier(supplier_data: SupplierCreate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != supplier_data.company_id:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     supplier = Supplier(**supplier_data.model_dump())
     supplier_dict = supplier.model_dump()
     supplier_dict["created_at"] = supplier_dict["created_at"].isoformat()
@@ -884,6 +1382,9 @@ async def create_supplier(supplier_data: SupplierCreate, current_user: dict = De
 
 @api_router.get("/suppliers", response_model=List[Supplier])
 async def list_suppliers(company_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     suppliers = await db.suppliers.find({"company_id": company_id}, {"_id": 0}).to_list(1000)
     for s in suppliers:
         if isinstance(s.get("created_at"), str):
@@ -894,21 +1395,33 @@ async def list_suppliers(company_id: str, current_user: dict = Depends(get_curre
 async def get_supplier(supplier_id: str, current_user: dict = Depends(get_current_user)):
     supplier = await db.suppliers.find_one({"id": supplier_id}, {"_id": 0})
     if not supplier:
-        raise HTTPException(status_code=404, detail="Supplier not found")
+        raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+    
+    if current_user.get("company_id") != supplier.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     if isinstance(supplier.get("created_at"), str):
         supplier["created_at"] = datetime.fromisoformat(supplier["created_at"])
     return Supplier(**supplier)
 
 @api_router.delete("/suppliers/{supplier_id}")
 async def delete_supplier(supplier_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.suppliers.delete_one({"id": supplier_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Supplier not found")
-    return {"message": "Supplier deleted"}
+    supplier = await db.suppliers.find_one({"id": supplier_id}, {"_id": 0})
+    if not supplier:
+        raise HTTPException(status_code=404, detail="Proveedor no encontrado")
+    
+    if current_user.get("company_id") != supplier.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    await db.suppliers.delete_one({"id": supplier_id})
+    return {"message": "Proveedor eliminado"}
 
 # ============== DOCUMENT ROUTES ==============
 @api_router.post("/documents", response_model=Document)
 async def create_document(doc_data: DocumentCreate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != doc_data.company_id:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     doc = Document(**doc_data.model_dump())
     doc.uploaded_by = current_user.get("sub")
     doc_dict = doc.model_dump()
@@ -918,6 +1431,9 @@ async def create_document(doc_data: DocumentCreate, current_user: dict = Depends
 
 @api_router.get("/documents", response_model=List[Document])
 async def list_documents(company_id: str, project_id: Optional[str] = None, category: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     query = {"company_id": company_id}
     if project_id:
         query["project_id"] = project_id
@@ -933,21 +1449,33 @@ async def list_documents(company_id: str, project_id: Optional[str] = None, cate
 async def get_document(doc_id: str, current_user: dict = Depends(get_current_user)):
     doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
     if not doc:
-        raise HTTPException(status_code=404, detail="Document not found")
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    
+    if current_user.get("company_id") != doc.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     if isinstance(doc.get("created_at"), str):
         doc["created_at"] = datetime.fromisoformat(doc["created_at"])
     return Document(**doc)
 
 @api_router.delete("/documents/{doc_id}")
 async def delete_document(doc_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.documents.delete_one({"id": doc_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Document not found")
-    return {"message": "Document deleted"}
+    doc = await db.documents.find_one({"id": doc_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    
+    if current_user.get("company_id") != doc.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    await db.documents.delete_one({"id": doc_id})
+    return {"message": "Documento eliminado"}
 
 # ============== FIELD REPORT ROUTES ==============
 @api_router.post("/field-reports", response_model=FieldReport)
 async def create_field_report(report_data: FieldReportCreate, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != report_data.company_id:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     report = FieldReport(**report_data.model_dump())
     report.reported_by = current_user.get("sub")
     report_dict = report.model_dump()
@@ -958,6 +1486,9 @@ async def create_field_report(report_data: FieldReportCreate, current_user: dict
 
 @api_router.get("/field-reports", response_model=List[FieldReport])
 async def list_field_reports(company_id: str, project_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     query = {"company_id": company_id}
     if project_id:
         query["project_id"] = project_id
@@ -973,7 +1504,11 @@ async def list_field_reports(company_id: str, project_id: Optional[str] = None, 
 async def get_field_report(report_id: str, current_user: dict = Depends(get_current_user)):
     report = await db.field_reports.find_one({"id": report_id}, {"_id": 0})
     if not report:
-        raise HTTPException(status_code=404, detail="Field report not found")
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+    
+    if current_user.get("company_id") != report.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     if isinstance(report.get("created_at"), str):
         report["created_at"] = datetime.fromisoformat(report["created_at"])
     if isinstance(report.get("report_date"), str):
@@ -982,15 +1517,22 @@ async def get_field_report(report_id: str, current_user: dict = Depends(get_curr
 
 @api_router.delete("/field-reports/{report_id}")
 async def delete_field_report(report_id: str, current_user: dict = Depends(get_current_user)):
-    result = await db.field_reports.delete_one({"id": report_id})
-    if result.deleted_count == 0:
-        raise HTTPException(status_code=404, detail="Field report not found")
-    return {"message": "Field report deleted"}
+    report = await db.field_reports.find_one({"id": report_id}, {"_id": 0})
+    if not report:
+        raise HTTPException(status_code=404, detail="Reporte no encontrado")
+    
+    if current_user.get("company_id") != report.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    await db.field_reports.delete_one({"id": report_id})
+    return {"message": "Reporte eliminado"}
 
-# ============== KPI/DASHBOARD ROUTES ==============
+# ============== DASHBOARD ROUTES ==============
 @api_router.get("/dashboard/stats")
 async def get_dashboard_stats(company_id: str, current_user: dict = Depends(get_current_user)):
-    # Projects stats
+    if current_user.get("company_id") != company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     projects = await db.projects.find({"company_id": company_id}, {"_id": 0}).to_list(1000)
     total_projects = len(projects)
     active_projects = len([p for p in projects if p.get("status") == ProjectStatus.ACTIVE])
@@ -998,27 +1540,22 @@ async def get_dashboard_stats(company_id: str, current_user: dict = Depends(get_
     quotation_projects = len([p for p in projects if p.get("status") == ProjectStatus.QUOTATION])
     authorized_projects = len([p for p in projects if p.get("status") == ProjectStatus.AUTHORIZED])
     
-    # Financial stats
     invoices = await db.invoices.find({"company_id": company_id}, {"_id": 0}).to_list(1000)
     total_invoiced = sum(inv.get("total", 0) for inv in invoices)
     total_collected = sum(inv.get("paid_amount", 0) for inv in invoices)
     pending_collection = total_invoiced - total_collected
     
-    # Quote stats
     quotes = await db.quotes.find({"company_id": company_id}, {"_id": 0}).to_list(1000)
     total_quotes = len(quotes)
     authorized_quotes = len([q for q in quotes if q.get("status") == QuoteStatus.AUTHORIZED])
     conversion_rate = (authorized_quotes / total_quotes * 100) if total_quotes > 0 else 0
     
-    # Pipeline value
     pipeline_value = sum(q.get("total", 0) for q in quotes if q.get("status") not in [QuoteStatus.AUTHORIZED, QuoteStatus.DENIED])
     
-    # Clients stats
     clients = await db.clients.find({"company_id": company_id}, {"_id": 0}).to_list(1000)
     total_clients = len([c for c in clients if not c.get("is_prospect")])
     total_prospects = len([c for c in clients if c.get("is_prospect")])
     
-    # Calculate total costs and profit from projects
     total_revenue = sum(p.get("contract_amount", 0) for p in projects if p.get("status") in [ProjectStatus.ACTIVE, ProjectStatus.COMPLETED])
     total_costs = sum(p.get("total_cost", 0) for p in projects)
     total_profit = total_revenue - total_costs
@@ -1053,12 +1590,14 @@ async def get_dashboard_stats(company_id: str, current_user: dict = Depends(get_
 
 @api_router.get("/dashboard/project-progress")
 async def get_project_progress(company_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     projects = await db.projects.find(
         {"company_id": company_id, "status": {"$in": [ProjectStatus.ACTIVE, ProjectStatus.AUTHORIZED]}},
         {"_id": 0, "id": 1, "name": 1, "client_id": 1, "total_progress": 1, "phases": 1, "contract_amount": 1, "commitment_date": 1}
     ).to_list(100)
     
-    # Get client names
     for p in projects:
         client = await db.clients.find_one({"id": p.get("client_id")}, {"_id": 0, "name": 1})
         p["client_name"] = client.get("name") if client else "N/A"
@@ -1067,6 +1606,9 @@ async def get_project_progress(company_id: str, current_user: dict = Depends(get
 
 @api_router.get("/dashboard/monthly-revenue")
 async def get_monthly_revenue(company_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     invoices = await db.invoices.find({"company_id": company_id}, {"_id": 0}).to_list(1000)
     
     monthly_data = {}
@@ -1086,6 +1628,9 @@ async def get_monthly_revenue(company_id: str, current_user: dict = Depends(get_
 
 @api_router.get("/dashboard/quote-pipeline")
 async def get_quote_pipeline(company_id: str, current_user: dict = Depends(get_current_user)):
+    if current_user.get("company_id") != company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
     quotes = await db.quotes.find({"company_id": company_id}, {"_id": 0}).to_list(1000)
     
     pipeline = {
@@ -1105,158 +1650,6 @@ async def get_quote_pipeline(company_id: str, current_user: dict = Depends(get_c
             pipeline[status]["value"] += q.get("total", 0)
     
     return [{"status": k, **v} for k, v in pipeline.items()]
-
-# ============== SUPER ADMIN ROUTES ==============
-@api_router.get("/super-admin/subscription-summary")
-async def get_subscription_summary(current_user: dict = Depends(require_super_admin)):
-    companies = await db.companies.find({}, {"_id": 0}).to_list(1000)
-    
-    summary = {
-        "total_companies": len(companies),
-        "active": len([c for c in companies if c.get("subscription_status") == SubscriptionStatus.ACTIVE]),
-        "pending": len([c for c in companies if c.get("subscription_status") == SubscriptionStatus.PENDING]),
-        "suspended": len([c for c in companies if c.get("subscription_status") == SubscriptionStatus.SUSPENDED]),
-        "total_monthly_revenue": sum(c.get("monthly_fee", 0) for c in companies if c.get("subscription_status") == SubscriptionStatus.ACTIVE)
-    }
-    
-    return summary
-
-# ============== SEED DATA ==============
-@api_router.post("/seed-demo-data")
-async def seed_demo_data():
-    """Seed demo data for testing"""
-    # Check if super admin exists
-    existing_admin = await db.users.find_one({"email": "admin@cia-servicios.com"}, {"_id": 0})
-    if existing_admin:
-        return {"message": "Demo data already exists"}
-    
-    # Create super admin
-    super_admin = User(
-        email="admin@cia-servicios.com",
-        full_name="Super Administrador",
-        role=UserRole.SUPER_ADMIN
-    )
-    admin_dict = super_admin.model_dump()
-    admin_dict["password_hash"] = hash_password("admin123")
-    admin_dict["created_at"] = admin_dict["created_at"].isoformat()
-    await db.users.insert_one(admin_dict)
-    
-    # Create demo company
-    demo_company = Company(
-        business_name="CIA Servicios Demo S.A. de C.V.",
-        rfc="CSD123456ABC",
-        address="Av. Industrial 123, Col. Centro, CDMX",
-        phone="+52 55 1234 5678",
-        email="contacto@ciademo.com",
-        logo_url="https://customer-assets.emergentagent.com/job_cia-operacional/artifacts/0bkwa552_Logo%20CIA.jpg",
-        monthly_fee=2500.00,
-        subscription_status=SubscriptionStatus.ACTIVE
-    )
-    company_dict = demo_company.model_dump()
-    company_dict["created_at"] = company_dict["created_at"].isoformat()
-    company_dict["updated_at"] = company_dict["updated_at"].isoformat()
-    await db.companies.insert_one(company_dict)
-    
-    # Create company admin
-    company_admin = User(
-        email="gerente@ciademo.com",
-        full_name="Juan Carlos Méndez",
-        role=UserRole.ADMIN,
-        company_id=demo_company.id
-    )
-    ca_dict = company_admin.model_dump()
-    ca_dict["password_hash"] = hash_password("gerente123")
-    ca_dict["created_at"] = ca_dict["created_at"].isoformat()
-    await db.users.insert_one(ca_dict)
-    
-    # Create demo clients
-    clients_data = [
-        {"name": "Grupo Industrial Monterrey", "contact_name": "Ing. Roberto Garza", "email": "rgarza@gim.mx", "phone": "+52 81 8123 4567", "is_prospect": False, "probability": 100},
-        {"name": "Constructora Norte S.A.", "contact_name": "Arq. María Fernández", "email": "mfernandez@cnorte.com", "phone": "+52 81 8234 5678", "is_prospect": False, "probability": 100},
-        {"name": "Pemex Refinación", "contact_name": "Ing. Carlos Vega", "email": "cvega@pemex.gob.mx", "phone": "+52 55 5432 1098", "is_prospect": True, "probability": 60},
-        {"name": "Aceros Tec S.A.", "contact_name": "Lic. Ana Torres", "email": "atorres@acerostec.com", "phone": "+52 444 812 3456", "is_prospect": True, "probability": 40}
-    ]
-    
-    client_ids = []
-    for cd in clients_data:
-        client = Client(company_id=demo_company.id, **cd)
-        c_dict = client.model_dump()
-        c_dict["created_at"] = c_dict["created_at"].isoformat()
-        c_dict["updated_at"] = c_dict["updated_at"].isoformat()
-        await db.clients.insert_one(c_dict)
-        client_ids.append(client.id)
-    
-    # Create demo projects
-    projects_data = [
-        {"name": "Instalación Planta VW Puebla", "client_id": client_ids[0], "status": ProjectStatus.ACTIVE, "contract_amount": 850000, "total_progress": 65},
-        {"name": "Mantenimiento Caldera Industrial", "client_id": client_ids[1], "status": ProjectStatus.ACTIVE, "contract_amount": 320000, "total_progress": 40},
-        {"name": "Proyecto Refinería Tula", "client_id": client_ids[2], "status": ProjectStatus.QUOTATION, "contract_amount": 1500000, "total_progress": 0},
-        {"name": "Estructura Metálica Nave 5", "client_id": client_ids[0], "status": ProjectStatus.COMPLETED, "contract_amount": 450000, "total_progress": 100}
-    ]
-    
-    for pd in projects_data:
-        project = Project(
-            company_id=demo_company.id,
-            description=f"Proyecto de {pd['name']}",
-            location="Zona Industrial",
-            responsible_id=company_admin.id,
-            start_date=datetime.now(timezone.utc) - timedelta(days=30),
-            commitment_date=datetime.now(timezone.utc) + timedelta(days=60),
-            **pd
-        )
-        p_dict = project.model_dump()
-        p_dict["created_at"] = p_dict["created_at"].isoformat()
-        p_dict["updated_at"] = p_dict["updated_at"].isoformat()
-        p_dict["start_date"] = p_dict["start_date"].isoformat()
-        p_dict["commitment_date"] = p_dict["commitment_date"].isoformat()
-        await db.projects.insert_one(p_dict)
-    
-    # Create demo quotes
-    quotes_data = [
-        {"client_id": client_ids[2], "quote_number": "COT-2024-001", "title": "Cotización Refinería Tula", "status": QuoteStatus.UNDER_REVIEW, "total": 1500000},
-        {"client_id": client_ids[3], "quote_number": "COT-2024-002", "title": "Estructura Aceros Tec", "status": QuoteStatus.NEGOTIATION, "total": 280000}
-    ]
-    
-    for qd in quotes_data:
-        quote = Quote(
-            company_id=demo_company.id,
-            description=f"Cotización para {qd['title']}",
-            subtotal=qd['total'] / 1.16,
-            tax=qd['total'] - (qd['total'] / 1.16),
-            **qd
-        )
-        q_dict = quote.model_dump()
-        q_dict["created_at"] = q_dict["created_at"].isoformat()
-        q_dict["updated_at"] = q_dict["updated_at"].isoformat()
-        await db.quotes.insert_one(q_dict)
-    
-    # Create demo invoices
-    invoices_data = [
-        {"client_id": client_ids[0], "invoice_number": "FAC-2024-001", "concept": "Anticipo Planta VW", "total": 255000, "paid_amount": 255000, "status": InvoiceStatus.PAID},
-        {"client_id": client_ids[0], "invoice_number": "FAC-2024-002", "concept": "Avance 50% Planta VW", "total": 340000, "paid_amount": 170000, "status": InvoiceStatus.PARTIAL},
-        {"client_id": client_ids[1], "invoice_number": "FAC-2024-003", "concept": "Mantenimiento Caldera", "total": 128000, "paid_amount": 0, "status": InvoiceStatus.PENDING}
-    ]
-    
-    for invd in invoices_data:
-        invoice = Invoice(
-            company_id=demo_company.id,
-            subtotal=invd['total'] / 1.16,
-            tax=invd['total'] - (invd['total'] / 1.16),
-            due_date=datetime.now(timezone.utc) + timedelta(days=30),
-            **invd
-        )
-        inv_dict = invoice.model_dump()
-        inv_dict["created_at"] = inv_dict["created_at"].isoformat()
-        inv_dict["updated_at"] = inv_dict["updated_at"].isoformat()
-        inv_dict["due_date"] = inv_dict["due_date"].isoformat()
-        await db.invoices.insert_one(inv_dict)
-    
-    return {
-        "message": "Demo data created successfully",
-        "super_admin": {"email": "admin@cia-servicios.com", "password": "admin123"},
-        "company_admin": {"email": "gerente@ciademo.com", "password": "gerente123"},
-        "company_id": demo_company.id
-    }
 
 # Include router and configure CORS
 app.include_router(api_router)

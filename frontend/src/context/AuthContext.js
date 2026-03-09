@@ -18,6 +18,7 @@ export const AuthProvider = ({ children }) => {
   const [token, setToken] = useState(localStorage.getItem("cia_token"));
   const [loading, setLoading] = useState(true);
   const [company, setCompany] = useState(null);
+  const [companySlug, setCompanySlug] = useState(localStorage.getItem("cia_company_slug"));
 
   const api = axios.create({
     baseURL: `${API_URL}/api`,
@@ -38,7 +39,11 @@ export const AuthProvider = ({ children }) => {
     (response) => response,
     (error) => {
       if (error.response?.status === 401) {
-        logout();
+        // Don't auto-logout on 401 for login endpoints
+        const url = error.config?.url || "";
+        if (!url.includes("/login") && !url.includes("/setup") && !url.includes("/info")) {
+          logout();
+        }
       }
       return Promise.reject(error);
     }
@@ -69,38 +74,62 @@ export const AuthProvider = ({ children }) => {
     }
   }, [token, fetchUser]);
 
-  const login = async (email, password) => {
-    const response = await api.post("/auth/login", { email, password });
+  // Super Admin Login
+  const superAdminLogin = async (email, password, admin_key) => {
+    const response = await api.post("/super-admin/login", { email, password, admin_key });
     const { access_token, user: userData } = response.data;
     
     localStorage.setItem("cia_token", access_token);
+    localStorage.removeItem("cia_company_slug");
     setToken(access_token);
     setUser(userData);
-    
-    if (userData.company_id) {
-      const companyResponse = await api.get(`/companies/${userData.company_id}`);
-      setCompany(companyResponse.data);
-    }
+    setCompany(null);
+    setCompanySlug(null);
     
     return userData;
   };
 
-  const register = async (userData) => {
-    const response = await api.post("/auth/register", userData);
-    const { access_token, user: newUser } = response.data;
-    
-    localStorage.setItem("cia_token", access_token);
-    setToken(access_token);
-    setUser(newUser);
-    
-    return newUser;
+  // Super Admin Setup
+  const setupSuperAdmin = async () => {
+    const response = await api.post("/super-admin/setup");
+    return response.data;
   };
 
-  const logout = () => {
+  // Super Admin Logout
+  const superAdminLogout = () => {
     localStorage.removeItem("cia_token");
+    localStorage.removeItem("cia_company_slug");
     setToken(null);
     setUser(null);
     setCompany(null);
+    setCompanySlug(null);
+  };
+
+  // Company Login
+  const companyLogin = async (slug, email, password) => {
+    const response = await api.post(`/empresa/${slug}/login`, { email, password });
+    const { access_token, user: userData, company: companyData } = response.data;
+    
+    localStorage.setItem("cia_token", access_token);
+    localStorage.setItem("cia_company_slug", slug);
+    setToken(access_token);
+    setUser(userData);
+    setCompany(companyData);
+    setCompanySlug(slug);
+    
+    return { user: userData, company: companyData };
+  };
+
+  // Company Logout
+  const logout = () => {
+    const savedSlug = localStorage.getItem("cia_company_slug");
+    localStorage.removeItem("cia_token");
+    localStorage.removeItem("cia_company_slug");
+    setToken(null);
+    setUser(null);
+    setCompany(null);
+    setCompanySlug(null);
+    return savedSlug;
   };
 
   const isSuperAdmin = () => user?.role === "super_admin";
@@ -111,10 +140,16 @@ export const AuthProvider = ({ children }) => {
     user,
     token,
     company,
+    companySlug,
     loading,
-    login,
-    register,
+    // Super Admin
+    superAdminLogin,
+    setupSuperAdmin,
+    superAdminLogout,
+    // Company
+    companyLogin,
     logout,
+    // Helpers
     isSuperAdmin,
     isAdmin,
     isManager,

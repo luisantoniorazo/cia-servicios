@@ -127,3 +127,17 @@ export function generatePONumber() {
   const random = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
   return `OC-${year}-${random}`;
 }
+
+export function getApiErrorMessage(error, fallback = "Ha ocurrido un error") {
+  const detail = error?.response?.data?.detail;
+  if (typeof detail === "string") {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    return detail.map(d => d.msg || d.message || JSON.stringify(d)).join(", ");
+  }
+  if (typeof detail === "object" && detail !== null) {
+    return detail.msg || detail.message || JSON.stringify(detail);
+  }
+  return fallback;
+}
