@@ -1,0 +1,609 @@
+import React, { useState, useEffect } from "react";
+import { useAuth } from "../context/AuthContext";
+import { formatCurrency, formatDate, getStatusColor, getStatusLabel, getPhaseLabel } from "../lib/utils";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import { Textarea } from "../components/ui/textarea";
+import { Badge } from "../components/ui/badge";
+import { Progress } from "../components/ui/progress";
+import { Skeleton } from "../components/ui/skeleton";
+import { Calendar } from "../components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "../components/ui/popover";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "../components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "../components/ui/dropdown-menu";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
+import { toast } from "sonner";
+import { format } from "date-fns";
+import { es } from "date-fns/locale";
+import {
+  FolderKanban,
+  Plus,
+  MoreVertical,
+  Calendar as CalendarIcon,
+  MapPin,
+  User,
+  DollarSign,
+  Clock,
+  Eye,
+  Edit,
+  Trash2,
+  CheckCircle,
+  AlertCircle,
+  PlayCircle,
+  PauseCircle,
+} from "lucide-react";
+import { cn } from "../lib/utils";
+
+const PROJECT_STATUSES = [
+  { value: "quotation", label: "En Cotización" },
+  { value: "authorized", label: "Autorizado" },
+  { value: "active", label: "Activo" },
+  { value: "completed", label: "Completado" },
+  { value: "cancelled", label: "Cancelado" },
+];
+
+const PHASES = ["negotiation", "purchases", "process", "delivery"];
+
+export const Projects = () => {
+  const { api, company } = useAuth();
+  const [projects, setProjects] = useState([]);
+  const [clients, setClients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [formData, setFormData] = useState({
+    client_id: "",
+    name: "",
+    description: "",
+    location: "",
+    start_date: null,
+    commitment_date: null,
+    contract_amount: "",
+    status: "quotation",
+  });
+
+  useEffect(() => {
+    if (company?.id) {
+      fetchData();
+    }
+  }, [company]);
+
+  const fetchData = async () => {
+    try {
+      const [projectsRes, clientsRes] = await Promise.all([
+        api.get(`/projects?company_id=${company.id}`),
+        api.get(`/clients?company_id=${company.id}`),
+      ]);
+      setProjects(projectsRes.data);
+      setClients(clientsRes.data);
+    } catch (error) {
+      toast.error("Error al cargar proyectos");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateProject = async (e) => {
+    e.preventDefault();
+    try {
+      await api.post("/projects", {
+        company_id: company.id,
+        ...formData,
+        contract_amount: parseFloat(formData.contract_amount) || 0,
+      });
+      toast.success("Proyecto creado exitosamente");
+      setDialogOpen(false);
+      resetForm();
+      fetchData();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al crear proyecto");
+    }
+  };
+
+  const handleUpdateStatus = async (projectId, status) => {
+    try {
+      await api.patch(`/projects/${projectId}/status?status=${status}`);
+      toast.success("Estado actualizado");
+      fetchData();
+    } catch (error) {
+      toast.error("Error al actualizar estado");
+    }
+  };
+
+  const handleUpdatePhase = async (projectId, phase, progress) => {
+    try {
+      await api.patch(`/projects/${projectId}/phase?phase=${phase}&progress=${progress}`);
+      toast.success("Fase actualizada");
+      fetchData();
+      // Refresh selected project
+      if (selectedProject?.id === projectId) {
+        const res = await api.get(`/projects/${projectId}`);
+        setSelectedProject(res.data);
+      }
+    } catch (error) {
+      toast.error("Error al actualizar fase");
+    }
+  };
+
+  const handleDeleteProject = async (projectId) => {
+    if (!window.confirm("¿Estás seguro de eliminar este proyecto?")) return;
+    try {
+      await api.delete(`/projects/${projectId}`);
+      toast.success("Proyecto eliminado");
+      fetchData();
+    } catch (error) {
+      toast.error("Error al eliminar proyecto");
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      client_id: "",
+      name: "",
+      description: "",
+      location: "",
+      start_date: null,
+      commitment_date: null,
+      contract_amount: "",
+      status: "quotation",
+    });
+  };
+
+  const getClientName = (clientId) => {
+    const client = clients.find((c) => c.id === clientId);
+    return client?.name || "N/A";
+  };
+
+  const filteredProjects = statusFilter === "all" 
+    ? projects 
+    : projects.filter((p) => p.status === statusFilter);
+
+  const openDetailDialog = async (project) => {
+    try {
+      const res = await api.get(`/projects/${project.id}`);
+      setSelectedProject(res.data);
+      setDetailDialogOpen(true);
+    } catch (error) {
+      toast.error("Error al cargar detalles");
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-48" />
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {[...Array(4)].map((_, i) => (
+            <Skeleton key={i} className="h-24" />
+          ))}
+        </div>
+        <Skeleton className="h-96" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 animate-fade-in" data-testid="projects-page">
+      {/* Header */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold font-[Chivo] text-slate-900">Gestión de Proyectos</h1>
+          <p className="text-muted-foreground">Control de proyectos EPC y servicios</p>
+        </div>
+        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+          <DialogTrigger asChild>
+            <Button className="btn-industrial" data-testid="add-project-btn">
+              <Plus className="mr-2 h-4 w-4" />
+              Nuevo Proyecto
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-[600px]">
+            <form onSubmit={handleCreateProject}>
+              <DialogHeader>
+                <DialogTitle>Crear Nuevo Proyecto</DialogTitle>
+                <DialogDescription>
+                  Ingresa los datos del proyecto para iniciar su seguimiento
+                </DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="client_id">Cliente *</Label>
+                    <Select
+                      value={formData.client_id}
+                      onValueChange={(value) => setFormData({ ...formData, client_id: value })}
+                    >
+                      <SelectTrigger data-testid="project-client-select">
+                        <SelectValue placeholder="Seleccionar cliente" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {clients.map((client) => (
+                          <SelectItem key={client.id} value={client.id}>
+                            {client.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="status">Estado</Label>
+                    <Select
+                      value={formData.status}
+                      onValueChange={(value) => setFormData({ ...formData, status: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PROJECT_STATUSES.map((s) => (
+                          <SelectItem key={s.value} value={s.value}>
+                            {s.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="name">Nombre del Proyecto *</Label>
+                  <Input
+                    id="name"
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    placeholder="Instalación Planta Industrial"
+                    required
+                    data-testid="project-name-input"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="description">Descripción</Label>
+                  <Textarea
+                    id="description"
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="Descripción del proyecto..."
+                    rows={3}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="location">Ubicación</Label>
+                    <Input
+                      id="location"
+                      value={formData.location}
+                      onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                      placeholder="Ciudad, Estado"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="contract_amount">Monto del Contrato (MXN)</Label>
+                    <Input
+                      id="contract_amount"
+                      type="number"
+                      value={formData.contract_amount}
+                      onChange={(e) => setFormData({ ...formData, contract_amount: e.target.value })}
+                      placeholder="500000"
+                      data-testid="project-amount-input"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Fecha de Inicio</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "justify-start text-left font-normal",
+                            !formData.start_date && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {formData.start_date
+                            ? format(formData.start_date, "PPP", { locale: es })
+                            : "Seleccionar fecha"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar
+                          mode="single"
+                          selected={formData.start_date}
+                          onSelect={(date) => setFormData({ ...formData, start_date: date })}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Fecha Compromiso</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "justify-start text-left font-normal",
+                            !formData.commitment_date && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {formData.commitment_date
+                            ? format(formData.commitment_date, "PPP", { locale: es })
+                            : "Seleccionar fecha"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar
+                          mode="single"
+                          selected={formData.commitment_date}
+                          onSelect={(date) => setFormData({ ...formData, commitment_date: date })}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+                  Cancelar
+                </Button>
+                <Button type="submit" className="btn-industrial" data-testid="save-project-btn">
+                  Crear Proyecto
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        {PROJECT_STATUSES.map((status) => {
+          const count = projects.filter((p) => p.status === status.value).length;
+          return (
+            <Card
+              key={status.value}
+              className={cn(
+                "cursor-pointer transition-all hover:shadow-md",
+                statusFilter === status.value && "ring-2 ring-primary"
+              )}
+              onClick={() => setStatusFilter(status.value === statusFilter ? "all" : status.value)}
+            >
+              <CardContent className="p-4">
+                <div className="text-2xl font-bold font-[Chivo]">{count}</div>
+                <div className="text-sm text-muted-foreground">{status.label}</div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Projects Table */}
+      <Card data-testid="projects-table-card">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FolderKanban className="h-5 w-5 text-primary" />
+            Proyectos {statusFilter !== "all" && `- ${PROJECT_STATUSES.find((s) => s.value === statusFilter)?.label}`}
+          </CardTitle>
+          <CardDescription>
+            {filteredProjects.length} proyecto(s) encontrado(s)
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-sm border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-slate-50">
+                  <TableHead>Proyecto</TableHead>
+                  <TableHead>Cliente</TableHead>
+                  <TableHead>Monto</TableHead>
+                  <TableHead>Avance</TableHead>
+                  <TableHead>Fecha Compromiso</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="w-[50px]"></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredProjects.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      No hay proyectos registrados
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredProjects.map((project) => (
+                    <TableRow key={project.id} data-testid={`project-row-${project.id}`}>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{project.name}</div>
+                          {project.location && (
+                            <div className="text-sm text-muted-foreground flex items-center gap-1">
+                              <MapPin className="h-3 w-3" />
+                              {project.location}
+                            </div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>{getClientName(project.client_id)}</TableCell>
+                      <TableCell className="font-medium">
+                        {formatCurrency(project.contract_amount)}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Progress value={project.total_progress} className="w-20 h-2" />
+                          <span className="text-sm font-medium">{project.total_progress}%</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {project.commitment_date ? (
+                          <div className="flex items-center gap-1 text-sm">
+                            <Clock className="h-3 w-3" />
+                            {formatDate(project.commitment_date)}
+                          </div>
+                        ) : (
+                          "-"
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={getStatusColor(project.status)}>
+                          {getStatusLabel(project.status)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => openDetailDialog(project)}>
+                              <Eye className="mr-2 h-4 w-4" />
+                              Ver Detalles
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onClick={() => handleUpdateStatus(project.id, "active")}>
+                              <PlayCircle className="mr-2 h-4 w-4 text-emerald-500" />
+                              Activar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleUpdateStatus(project.id, "completed")}>
+                              <CheckCircle className="mr-2 h-4 w-4 text-blue-500" />
+                              Completar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleUpdateStatus(project.id, "cancelled")}>
+                              <PauseCircle className="mr-2 h-4 w-4 text-red-500" />
+                              Cancelar
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteProject(project.id)}
+                              className="text-red-600"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Eliminar
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Project Detail Dialog */}
+      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+        <DialogContent className="sm:max-w-[700px]">
+          <DialogHeader>
+            <DialogTitle>{selectedProject?.name}</DialogTitle>
+            <DialogDescription>
+              {getClientName(selectedProject?.client_id)} • {selectedProject?.location || "Sin ubicación"}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedProject && (
+            <div className="space-y-6">
+              {/* Progress Overview */}
+              <div className="flex items-center justify-between p-4 bg-slate-50 rounded-sm">
+                <div>
+                  <div className="text-sm text-muted-foreground">Avance Total</div>
+                  <div className="text-3xl font-bold text-primary">{selectedProject.total_progress}%</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-sm text-muted-foreground">Monto del Contrato</div>
+                  <div className="text-2xl font-bold">{formatCurrency(selectedProject.contract_amount)}</div>
+                </div>
+              </div>
+
+              {/* Phases */}
+              <div className="space-y-4">
+                <h4 className="font-semibold">Control por Fases</h4>
+                {selectedProject.phases?.map((phase, idx) => (
+                  <div key={idx} className="p-4 border rounded-sm space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">{getPhaseLabel(phase.phase)}</div>
+                        <div className="text-sm text-muted-foreground">Fase {idx + 1} de 4</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-2xl font-bold">{phase.progress}%</div>
+                      </div>
+                    </div>
+                    <Progress value={phase.progress} className="h-2" />
+                    <div className="flex gap-2">
+                      {[0, 25, 50, 75, 100].map((val) => (
+                        <Button
+                          key={val}
+                          size="sm"
+                          variant={phase.progress === val ? "default" : "outline"}
+                          onClick={() => handleUpdatePhase(selectedProject.id, phase.phase, val)}
+                        >
+                          {val}%
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Dates */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-4 bg-slate-50 rounded-sm">
+                  <div className="text-sm text-muted-foreground">Fecha de Inicio</div>
+                  <div className="font-medium">{formatDate(selectedProject.start_date) || "No definida"}</div>
+                </div>
+                <div className="p-4 bg-slate-50 rounded-sm">
+                  <div className="text-sm text-muted-foreground">Fecha Compromiso</div>
+                  <div className="font-medium">{formatDate(selectedProject.commitment_date) || "No definida"}</div>
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDetailDialogOpen(false)}>
+              Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+export default Projects;

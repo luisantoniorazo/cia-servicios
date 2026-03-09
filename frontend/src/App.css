@@ -1,34 +1,258 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+/* CIA Servicios - Custom Styles */
+
+.logo-container {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+.logo-image {
+  height: 40px;
+  width: auto;
+  object-fit: contain;
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+/* Login page background */
+.login-bg {
+  background: linear-gradient(135deg, #0f172a 0%, #1e3a5f 50%, #0c4a6e 100%);
+  min-height: 100vh;
 }
 
-.App-link {
-    color: #61dafb;
+/* Sidebar styles */
+.sidebar {
+  width: 256px;
+  background-color: #0f172a;
+  min-height: 100vh;
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 40;
+  transition: transform 0.3s ease;
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+.sidebar-collapsed {
+  width: 64px;
+}
+
+.main-content {
+  margin-left: 256px;
+  min-height: 100vh;
+  background-color: #f8fafc;
+}
+
+/* Bento grid for dashboard */
+.bento-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 1280px) {
+  .bento-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .bento-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .sidebar {
+    transform: translateX(-100%);
+  }
+  
+  .sidebar-open {
+    transform: translateX(0);
+  }
+  
+  .main-content {
+    margin-left: 0;
+  }
+}
+
+/* KPI Cards */
+.kpi-card {
+  background: white;
+  border-radius: 0.25rem;
+  border: 1px solid #e2e8f0;
+  padding: 1.5rem;
+  transition: all 0.2s ease;
+}
+
+.kpi-card:hover {
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+  transform: translateY(-2px);
+}
+
+.kpi-value {
+  font-family: 'Chivo', sans-serif;
+  font-size: 2rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.kpi-label {
+  font-size: 0.875rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 500;
+}
+
+/* Project phase progress */
+.phase-progress {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.phase-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background-color: #e2e8f0;
+}
+
+.phase-dot-active {
+  background-color: #004e92;
+}
+
+.phase-dot-complete {
+  background-color: #10b981;
+}
+
+/* Pipeline stages */
+.pipeline-stage {
+  padding: 1rem;
+  border-radius: 0.25rem;
+  background: #f8fafc;
+  border-left: 4px solid #e2e8f0;
+  transition: all 0.2s ease;
+}
+
+.pipeline-stage:hover {
+  background: #f1f5f9;
+}
+
+.pipeline-stage-prospect {
+  border-left-color: #94a3b8;
+}
+
+.pipeline-stage-negotiation {
+  border-left-color: #f59e0b;
+}
+
+.pipeline-stage-quote {
+  border-left-color: #3b82f6;
+}
+
+.pipeline-stage-review {
+  border-left-color: #8b5cf6;
+}
+
+.pipeline-stage-authorized {
+  border-left-color: #10b981;
+}
+
+.pipeline-stage-denied {
+  border-left-color: #ef4444;
+}
+
+/* Charts custom styles */
+.chart-container {
+  background: white;
+  border-radius: 0.25rem;
+  border: 1px solid #e2e8f0;
+  padding: 1.5rem;
+}
+
+/* Tables striped */
+.table-striped tbody tr:nth-child(even) {
+  background-color: #f8fafc;
+}
+
+/* Form styles */
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 0.5rem;
+}
+
+/* Status badges */
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.status-active {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.status-pending {
+  background-color: #fef3c7;
+  color: #92400e;
+}
+
+.status-completed {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
+.status-cancelled {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+/* Card header with icon */
+.card-header-icon {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.card-header-icon svg {
+  color: #004e92;
+}
+
+/* Scrollbar custom */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Print styles */
+@media print {
+  .sidebar,
+  .no-print {
+    display: none !important;
+  }
+  
+  .main-content {
+    margin-left: 0 !important;
+  }
 }
