@@ -372,14 +372,20 @@ export const SuperAdminDashboard = () => {
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-slate-400 hover:text-white"
-                            onClick={() => copyLoginUrl(company.slug)}
-                          >
-                            <Copy className="h-4 w-4" />
-                          </Button>
+                          <div className="flex items-center gap-2">
+                            <code className="text-xs bg-slate-900 px-2 py-1 rounded text-slate-300">
+                              /empresa/{company.slug}/login
+                            </code>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-slate-400 hover:text-white h-7 w-7 p-0"
+                              onClick={() => copyLoginUrl(company.slug)}
+                              title="Copiar URL completa"
+                            >
+                              <Copy className="h-3 w-3" />
+                            </Button>
+                          </div>
                         </TableCell>
                         <TableCell>
                           <DropdownMenu>
@@ -673,9 +679,18 @@ export const SuperAdminDashboard = () => {
 
               <div className="p-3 bg-slate-50 rounded-sm">
                 <div className="text-sm text-muted-foreground mb-2">URL de Acceso</div>
-                <code className="text-sm bg-white p-2 rounded border block">
-                  /empresa/{selectedCompany.slug}/login
-                </code>
+                <div className="flex items-center gap-2">
+                  <code className="text-sm bg-white p-2 rounded border flex-1">
+                    {window.location.origin}/empresa/{selectedCompany.slug}/login
+                  </code>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => copyLoginUrl(selectedCompany.slug)}
+                  >
+                    <Copy className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
 
               <div>

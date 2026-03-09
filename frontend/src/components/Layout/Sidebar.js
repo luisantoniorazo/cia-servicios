@@ -1,5 +1,5 @@
 import React from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { cn } from "../../lib/utils";
 import {
@@ -50,12 +50,21 @@ const menuItems = [
 ];
 
 export const Sidebar = ({ isOpen, onToggle }) => {
-  const { user, company, logout, isSuperAdmin } = useAuth();
+  const { user, company, logout, isSuperAdmin, companySlug } = useAuth();
   const navigate = useNavigate();
+  const { slug } = useParams();
+  
+  // Use slug from URL params or from auth context
+  const currentSlug = slug || companySlug;
+  const basePath = `/empresa/${currentSlug}`;
 
   const handleLogout = () => {
     logout();
-    navigate("/login");
+    if (currentSlug) {
+      navigate(`/empresa/${currentSlug}/login`);
+    } else {
+      navigate("/");
+    }
   };
 
   const getInitials = (name) => {
@@ -123,7 +132,7 @@ export const Sidebar = ({ isOpen, onToggle }) => {
               {isSuperAdmin() && (
                 <>
                   <NavLink
-                    to="/super-admin"
+                    to="/admin-portal/dashboard"
                     className={({ isActive }) =>
                       cn("sidebar-item", isActive && "sidebar-item-active")
                     }
@@ -139,7 +148,7 @@ export const Sidebar = ({ isOpen, onToggle }) => {
               {menuItems.map((item) => (
                 <NavLink
                   key={item.path}
-                  to={item.path}
+                  to={`${basePath}${item.path}`}
                   className={({ isActive }) =>
                     cn("sidebar-item", isActive && "sidebar-item-active")
                   }
@@ -179,7 +188,7 @@ export const Sidebar = ({ isOpen, onToggle }) => {
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate("/settings")}>
+                <DropdownMenuItem onClick={() => navigate(`${basePath}/settings`)}>
                   <Settings className="mr-2 h-4 w-4" />
                   Configuración
                 </DropdownMenuItem>
