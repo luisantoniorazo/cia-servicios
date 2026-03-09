@@ -1,0 +1,202 @@
+{
+  "identity": {
+    "name": "CIA SERVICIOS",
+    "tagline": "Control Estratégico de Servicios y Proyectos",
+    "tone": "Industrial, Executive, Precision, Trustworthy",
+    "logo_url": "https://customer-assets.emergentagent.com/job_cia-operacional/artifacts/0bkwa552_Logo%20CIA.jpg"
+  },
+  "typography": {
+    "font_family_heading": "Chivo, sans-serif",
+    "font_family_body": "Manrope, sans-serif",
+    "font_family_code": "JetBrains Mono, monospace",
+    "scale": {
+      "h1": "text-4xl font-bold tracking-tight text-slate-900",
+      "h2": "text-3xl font-bold tracking-tight text-slate-900",
+      "h3": "text-2xl font-semibold tracking-tight text-slate-800",
+      "h4": "text-xl font-semibold tracking-tight text-slate-800",
+      "body": "text-base font-medium text-slate-600 leading-relaxed",
+      "small": "text-sm font-medium text-slate-500",
+      "label": "text-xs font-bold uppercase tracking-wider text-slate-500"
+    },
+    "imports": [
+      "@import url('https://fonts.googleapis.com/css2?family=Chivo:wght@300;400;700;900&family=Manrope:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');"
+    ]
+  },
+  "colors": {
+    "primary": {
+      "DEFAULT": "#004e92",
+      "foreground": "#ffffff",
+      "50": "#f0f9ff",
+      "100": "#e0f2fe",
+      "200": "#bae6fd",
+      "300": "#7dd3fc",
+      "400": "#38bdf8",
+      "500": "#0ea5e9",
+      "600": "#0284c7",
+      "700": "#0369a1",
+      "800": "#075985",
+      "900": "#0c4a6e",
+      "950": "#082f49"
+    },
+    "secondary": {
+      "DEFAULT": "#475569",
+      "foreground": "#ffffff"
+    },
+    "accent": {
+      "DEFAULT": "#f59e0b",
+      "foreground": "#0f172a"
+    },
+    "background": "#f8fafc",
+    "surface": "#ffffff",
+    "border": "#cbd5e1",
+    "success": "#10b981",
+    "warning": "#f59e0b",
+    "error": "#ef4444",
+    "info": "#3b82f6",
+    "neutral": {
+      "50": "#f8fafc",
+      "100": "#f1f5f9",
+      "200": "#e2e8f0",
+      "300": "#cbd5e1",
+      "400": "#94a3b8",
+      "500": "#64748b",
+      "600": "#475569",
+      "700": "#334155",
+      "800": "#1e293b",
+      "900": "#0f172a",
+      "950": "#020617"
+    }
+  },
+  "visual_enhancers": {
+    "radius": "0.25rem",
+    "shadows": {
+      "card": "0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)",
+      "dropdown": "0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)",
+      "modal": "0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)"
+    },
+    "borders": "1px solid #e2e8f0",
+    "glass_effect": "bg-white/80 backdrop-blur-md border border-white/20 shadow-sm",
+    "gradients": {
+      "primary": "bg-gradient-to-r from-blue-900 to-blue-700",
+      "subtle": "bg-gradient-to-br from-slate-50 to-slate-100"
+    }
+  },
+  "layout_strategy": {
+    "grid_system": "Bento Grid (CSS Grid)",
+    "container_width": "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8",
+    "spacing": {
+      "section_gap": "gap-8",
+      "component_gap": "gap-4",
+      "internal_padding": "p-6"
+    },
+    "sidebar": {
+      "width": "w-64",
+      "collapsed_width": "w-16",
+      "bg": "bg-slate-900",
+      "text": "text-slate-300",
+      "active_text": "text-white",
+      "active_bg": "bg-blue-600"
+    }
+  },
+  "component_guidelines": {
+    "buttons": {
+      "base": "inline-flex items-center justify-center whitespace-nowrap rounded-sm text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+      "variants": {
+        "default": "bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm",
+        "secondary": "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        "outline": "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+        "ghost": "hover:bg-accent hover:text-accent-foreground",
+        "destructive": "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+      },
+      "sizes": {
+        "default": "h-10 px-4 py-2",
+        "sm": "h-9 rounded-sm px-3",
+        "lg": "h-11 rounded-sm px-8",
+        "icon": "h-10 w-10"
+      }
+    },
+    "cards": {
+      "base": "rounded-sm border bg-card text-card-foreground shadow-sm overflow-hidden",
+      "header": "flex flex-col space-y-1.5 p-6 border-b border-border/40 bg-slate-50/50",
+      "content": "p-6",
+      "footer": "flex items-center p-6 pt-0"
+    },
+    "inputs": {
+      "base": "flex h-10 w-full rounded-sm border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+    },
+    "tables": {
+      "wrapper": "relative w-full overflow-auto rounded-sm border",
+      "base": "w-full caption-bottom text-sm",
+      "header": "[&_tr]:border-b bg-slate-50",
+      "row": "border-b transition-colors hover:bg-slate-100/50 data-[state=selected]:bg-muted",
+      "cell": "p-4 align-middle [&:has([role=checkbox])]:pr-0 font-medium text-slate-700"
+    }
+  },
+  "media_assets": {
+    "hero_images": [
+      {
+        "url": "https://images.unsplash.com/photo-1765706957468-ae7c0db12830?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "alt": "Construction Site Scaffolding",
+        "category": "Project Management"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1762248322725-e29eedafd516?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "alt": "Large Industrial Dam Project",
+        "category": "Strategic Dashboard"
+      }
+    ],
+    "backgrounds": [
+      {
+        "url": "https://images.unsplash.com/photo-1768796369926-2e25a1e4fc9b?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "alt": "Modern Blue Industrial Building",
+        "category": "Login/Auth"
+      },
+      {
+        "url": "https://images.unsplash.com/photo-1697281679290-ad7be1b10682?crop=entropy&cs=srgb&fm=jpg&q=85",
+        "alt": "Steel Factory Interior",
+        "category": "Operational Control"
+      }
+    ],
+    "icons": {
+      "library": "lucide-react",
+      "style": "Stroke 1.5px, crisp rounded joins"
+    }
+  },
+  "animations": {
+    "micro_interactions": {
+      "hover": "transition-all duration-200 ease-in-out hover:shadow-md hover:-translate-y-0.5",
+      "click": "active:scale-95 duration-75",
+      "focus": "focus:ring-2 focus:ring-primary focus:ring-offset-2"
+    },
+    "transitions": {
+      "page_load": "animate-in fade-in slide-in-from-bottom-4 duration-500",
+      "modal_open": "animate-in zoom-in-95 duration-200",
+      "modal_close": "animate-out zoom-out-95 duration-200"
+    }
+  },
+  "charts_and_visualization": {
+    "library": "recharts",
+    "color_palette": [
+      "#004e92", 
+      "#f59e0b", 
+      "#10b981", 
+      "#64748b", 
+      "#8b5cf6"
+    ],
+    "style": "Minimalist, thin grid lines, custom tooltips with glassmorphism"
+  },
+  "universal_guidelines": [
+    "Use Manrope for all body text to ensure high readability of dense data.",
+    "Use Chivo only for headings (h1-h4) to impart an industrial/automotive character.",
+    "Avoid gradients on text. Use solid, high-contrast colors for accessibility.",
+    "Buttons should be 'pill-shaped' or slightly rounded (rounded-sm) for a technical look.",
+    "For the 'Intelligence' (IA) module, use a subtle purple/blue gradient border to distinguish it.",
+    "Always use a Sidebar Layout for the main app navigation.",
+    "Dashboard widgets should use a 'Bento Grid' layout - mixing different aspect ratios.",
+    "Tables must use 'striped' rows for legibility in long lists of projects/services.",
+    "Use 'sonner' for all toast notifications.",
+    "Ensure all interactive elements have data-testid attributes.",
+    "Theme: Primary is Light Mode for professional clarity. Dark mode usage is optional/secondary.",
+    "Do not use generic 'Lorem Ipsum'. Use realistic industrial data (e.g., 'Proyecto Planta VW Puebla', 'Mantenimiento Preventivo Caldera 4')."
+  ]
+}
