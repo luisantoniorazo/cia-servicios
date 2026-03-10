@@ -814,18 +814,126 @@ async def super_admin_dashboard(current_user: dict = Depends(require_super_admin
             "monthly_revenue": monthly_revenue
         },
         "pending_payment": pending_payment,
-        "companies": [
-            {
-                "id": c["id"],
-                "business_name": c["business_name"],
-                "slug": c.get("slug"),
-                "status": c.get("subscription_status"),
-                "monthly_fee": c.get("monthly_fee", 0),
-                "created_at": c.get("created_at")
-            }
-            for c in companies
-        ]
+        "companies": await get_companies_with_admin_info(companies)
     }
+
+async def get_companies_with_admin_info(companies: list) -> list:
+    """Helper to add admin info to each company"""
+    result = []
+    for c in companies:
+        admin = await db.users.find_one(
+            {"company_id": c["id"], "role": UserRole.ADMIN},
+            {"_id": 0, "email": 1, "is_active": 1, "full_name": 1}
+        )
+        result.append({
+            "id": c["id"],
+            "business_name": c["business_name"],
+            "slug": c.get("slug"),
+            "status": c.get("subscription_status"),
+            "monthly_fee": c.get("monthly_fee", 0),
+            "license_type": c.get("license_type", "basic"),
+            "created_at": c.get("created_at"),
+            "admin_email": admin.get("email") if admin else None,
+            "admin_name": admin.get("full_name") if admin else None,
+            "admin_blocked": not admin.get("is_active", True) if admin else False
+        })
+    return result
+
+# ============== SUPER ADMIN - COMPANY ADMIN MANAGEMENT ==============
+@api_router.get("/super-admin/companies/{company_id}/admin")
+async def get_company_admin(company_id: str, current_user: dict = Depends(require_super_admin)):
+    """Obtener datos del admin de una empresa"""
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    # Find admin user (role = admin)
+    admin = await db.users.find_one(
+        {"company_id": company_id, "role": UserRole.ADMIN},
+        {"_id": 0, "password_hash": 0}
+    )
+    
+    if not admin:
+        raise HTTPException(status_code=404, detail="Admin no encontrado para esta empresa")
+    
+    return {
+        "admin": admin,
+        "company_name": company.get("business_name")
+    }
+
+class AdminUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    recovery_email: Optional[EmailStr] = None
+    recovery_phone: Optional[str] = None
+    new_password: Optional[str] = None
+
+@api_router.put("/super-admin/companies/{company_id}/admin")
+async def update_company_admin(
+    company_id: str, 
+    update_data: AdminUpdate,
+    current_user: dict = Depends(require_super_admin)
+):
+    """Actualizar datos del admin de una empresa"""
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    admin = await db.users.find_one({"company_id": company_id, "role": UserRole.ADMIN})
+    if not admin:
+        raise HTTPException(status_code=404, detail="Admin no encontrado")
+    
+    # Build update dict
+    update_dict = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    
+    if update_data.full_name:
+        update_dict["full_name"] = update_data.full_name
+    if update_data.email:
+        # Check if email is already in use by another user
+        existing = await db.users.find_one({"email": update_data.email, "id": {"$ne": admin["id"]}})
+        if existing:
+            raise HTTPException(status_code=400, detail="El email ya está en uso")
+        update_dict["email"] = update_data.email
+    if update_data.phone:
+        update_dict["phone"] = update_data.phone
+    if update_data.recovery_email:
+        update_dict["recovery_email"] = update_data.recovery_email
+    if update_data.recovery_phone:
+        update_dict["recovery_phone"] = update_data.recovery_phone
+    if update_data.new_password:
+        if len(update_data.new_password) < 8:
+            raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 8 caracteres")
+        update_dict["password_hash"] = hash_password(update_data.new_password)
+    
+    await db.users.update_one({"id": admin["id"]}, {"$set": update_dict})
+    
+    return {"message": "Admin actualizado exitosamente"}
+
+@api_router.patch("/super-admin/companies/{company_id}/admin/toggle-status")
+async def toggle_company_admin_status(
+    company_id: str,
+    current_user: dict = Depends(require_super_admin)
+):
+    """Bloquear/desbloquear admin de una empresa"""
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    admin = await db.users.find_one({"company_id": company_id, "role": UserRole.ADMIN})
+    if not admin:
+        raise HTTPException(status_code=404, detail="Admin no encontrado")
+    
+    # Toggle is_active status
+    new_status = not admin.get("is_active", True)
+    
+    await db.users.update_one(
+        {"id": admin["id"]},
+        {"$set": {"is_active": new_status, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    action = "desbloqueado" if new_status else "bloqueado"
+    return {"message": f"Admin {action} exitosamente", "is_active": new_status}
 
 # ============== COMPANY ADMIN - USER MANAGEMENT ==============
 @api_router.get("/admin/users")

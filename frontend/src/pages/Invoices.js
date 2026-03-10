@@ -268,6 +268,35 @@ export const Invoices = () => {
     }
   };
 
+  const handleDownloadStatementPDF = async (clientId) => {
+    try {
+      toast.info("Generando estado de cuenta PDF...");
+      const response = await api.get(`/clients/${clientId}/statement/pdf`);
+      const { filename, content } = response.data;
+      
+      const byteCharacters = atob(content);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+      
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success("Estado de cuenta descargado");
+    } catch (error) {
+      toast.error("Error al generar estado de cuenta PDF");
+    }
+  };
+
   const fileToBase64 = (file) => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();

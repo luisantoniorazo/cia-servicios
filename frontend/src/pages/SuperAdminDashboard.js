@@ -59,6 +59,11 @@ import {
   AlertTriangle,
   Upload,
   Image,
+  UserX,
+  UserCheck2,
+  Edit,
+  Lock,
+  Unlock,
 } from "lucide-react";
 
 const LICENSE_TYPES = [
@@ -75,9 +80,19 @@ export const SuperAdminDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [adminDialogOpen, setAdminDialogOpen] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState(null);
+  const [selectedAdmin, setSelectedAdmin] = useState(null);
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
+  const [adminForm, setAdminForm] = useState({
+    full_name: "",
+    email: "",
+    phone: "",
+    recovery_email: "",
+    recovery_phone: "",
+    new_password: "",
+  });
   const [formData, setFormData] = useState({
     business_name: "",
     rfc: "",
@@ -162,6 +177,52 @@ export const SuperAdminDashboard = () => {
       setDetailDialogOpen(true);
     } catch (error) {
       toast.error("Error al cargar detalles");
+    }
+  };
+
+  const handleEditAdmin = async (companyId) => {
+    try {
+      const response = await api.get(`/super-admin/companies/${companyId}/admin`);
+      setSelectedAdmin({ ...response.data.admin, company_id: companyId, company_name: response.data.company_name });
+      setAdminForm({
+        full_name: response.data.admin.full_name || "",
+        email: response.data.admin.email || "",
+        phone: response.data.admin.phone || "",
+        recovery_email: response.data.admin.recovery_email || "",
+        recovery_phone: response.data.admin.recovery_phone || "",
+        new_password: "",
+      });
+      setAdminDialogOpen(true);
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Error al cargar datos del admin");
+    }
+  };
+
+  const handleUpdateAdmin = async (e) => {
+    e.preventDefault();
+    if (!selectedAdmin) return;
+    try {
+      await api.put(`/super-admin/companies/${selectedAdmin.company_id}/admin`, adminForm);
+      toast.success("Admin actualizado exitosamente");
+      setAdminDialogOpen(false);
+      fetchDashboard();
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Error al actualizar admin");
+    }
+  };
+
+  const handleToggleAdminStatus = async (companyId, currentStatus) => {
+    const action = currentStatus ? "bloquear" : "desbloquear";
+    if (!window.confirm(`¿Estás seguro de ${action} al admin de esta empresa?`)) return;
+    try {
+      const response = await api.patch(`/super-admin/companies/${companyId}/admin/toggle-status`);
+      toast.success(response.data.message);
+      fetchDashboard();
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Error al cambiar estado del admin");
     }
   };
 
@@ -396,8 +457,21 @@ export const SuperAdminDashboard = () => {
                           <div className="text-white font-medium">{company.business_name}</div>
                           <div className="text-sm text-slate-400">{company.slug}</div>
                         </TableCell>
-                        <TableCell className="text-slate-300">
-                          {company.admin_email || "-"}
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div>
+                              <div className="text-slate-300">{company.admin_email || "-"}</div>
+                              {company.admin_name && (
+                                <div className="text-xs text-slate-500">{company.admin_name}</div>
+                              )}
+                            </div>
+                            {company.admin_blocked && (
+                              <Badge className="bg-red-500/20 text-red-300 text-xs">
+                                <Lock className="h-3 w-3 mr-1" />
+                                Bloqueado
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-slate-300">
                           {LICENSE_TYPES.find((l) => l.value === company.license_type)?.label || "Básica"}
@@ -440,6 +514,29 @@ export const SuperAdminDashboard = () => {
                               >
                                 <Eye className="mr-2 h-4 w-4" />
                                 Ver Detalles
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-blue-400"
+                                onClick={() => handleEditAdmin(company.id)}
+                              >
+                                <Edit className="mr-2 h-4 w-4" />
+                                Editar Admin
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className={company.admin_blocked ? "text-emerald-400" : "text-orange-400"}
+                                onClick={() => handleToggleAdminStatus(company.id, !company.admin_blocked)}
+                              >
+                                {company.admin_blocked ? (
+                                  <>
+                                    <Unlock className="mr-2 h-4 w-4" />
+                                    Desbloquear Admin
+                                  </>
+                                ) : (
+                                  <>
+                                    <Lock className="mr-2 h-4 w-4" />
+                                    Bloquear Admin
+                                  </>
+                                )}
                               </DropdownMenuItem>
                               <DropdownMenuSeparator className="bg-slate-700" />
                               <DropdownMenuItem
@@ -801,6 +898,93 @@ export const SuperAdminDashboard = () => {
               Cerrar
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Admin Dialog */}
+      <Dialog open={adminDialogOpen} onOpenChange={setAdminDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <form onSubmit={handleUpdateAdmin}>
+            <DialogHeader>
+              <DialogTitle>Editar Admin</DialogTitle>
+              <DialogDescription>
+                {selectedAdmin?.company_name}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="grid gap-2">
+                <Label>Nombre Completo</Label>
+                <Input
+                  value={adminForm.full_name}
+                  onChange={(e) => setAdminForm({ ...adminForm, full_name: e.target.value })}
+                  placeholder="Nombre del administrador"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Email</Label>
+                  <Input
+                    type="email"
+                    value={adminForm.email}
+                    onChange={(e) => setAdminForm({ ...adminForm, email: e.target.value })}
+                    placeholder="admin@empresa.com"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Teléfono</Label>
+                  <Input
+                    value={adminForm.phone}
+                    onChange={(e) => setAdminForm({ ...adminForm, phone: e.target.value })}
+                    placeholder="+52 55 1234 5678"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Email de Recuperación</Label>
+                  <Input
+                    type="email"
+                    value={adminForm.recovery_email}
+                    onChange={(e) => setAdminForm({ ...adminForm, recovery_email: e.target.value })}
+                    placeholder="recuperacion@empresa.com"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Teléfono de Recuperación</Label>
+                  <Input
+                    value={adminForm.recovery_phone}
+                    onChange={(e) => setAdminForm({ ...adminForm, recovery_phone: e.target.value })}
+                    placeholder="+52 55 9876 5432"
+                  />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Nueva Contraseña (dejar vacío para mantener actual)</Label>
+                <Input
+                  type="password"
+                  value={adminForm.new_password}
+                  onChange={(e) => setAdminForm({ ...adminForm, new_password: e.target.value })}
+                  placeholder="Mínimo 8 caracteres"
+                />
+              </div>
+              {selectedAdmin && (
+                <div className="p-3 bg-slate-100 rounded-sm">
+                  <div className="text-sm text-muted-foreground">Estado actual</div>
+                  <Badge className={selectedAdmin.is_active !== false ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}>
+                    {selectedAdmin.is_active !== false ? "Activo" : "Bloqueado"}
+                  </Badge>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setAdminDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" className="bg-amber-500 hover:bg-amber-600 text-slate-900">
+                Guardar Cambios
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
