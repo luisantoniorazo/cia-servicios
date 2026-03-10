@@ -39,7 +39,10 @@ import {
   UserPlus,
   Trash2,
   AlertTriangle,
+  Shield,
+  Eye,
 } from "lucide-react";
+import { Checkbox } from "../components/ui/checkbox";
 
 const ROLES = [
   { value: "admin", label: "Administrador" },
@@ -47,11 +50,29 @@ const ROLES = [
   { value: "user", label: "Usuario" },
 ];
 
+const ALL_MODULES = [
+  { id: "dashboard", label: "Dashboard" },
+  { id: "projects", label: "Proyectos" },
+  { id: "crm", label: "CRM" },
+  { id: "quotes", label: "Cotizaciones" },
+  { id: "invoices", label: "Facturación" },
+  { id: "purchases", label: "Compras" },
+  { id: "suppliers", label: "Proveedores" },
+  { id: "documents", label: "Documentos" },
+  { id: "field-reports", label: "Reportes de Campo" },
+  { id: "kpis", label: "Indicadores" },
+  { id: "intelligence", label: "Inteligencia IA" },
+  { id: "settings", label: "Configuración" },
+];
+
 export const Settings = () => {
   const { api, company, user, setCompany, isAdmin } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [userDialogOpen, setUserDialogOpen] = useState(false);
+  const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
+  const [selectedPermissions, setSelectedPermissions] = useState([]);
   const [companyForm, setCompanyForm] = useState({
     business_name: "",
     rfc: "",
@@ -132,6 +153,32 @@ export const Settings = () => {
     } catch (error) {
       toast.error("Error al eliminar usuario");
     }
+  };
+
+  const openPermissionsDialog = (userItem) => {
+    setSelectedUser(userItem);
+    setSelectedPermissions(userItem.module_permissions || ALL_MODULES.map(m => m.id));
+    setPermissionsDialogOpen(true);
+  };
+
+  const handleSavePermissions = async () => {
+    if (!selectedUser) return;
+    try {
+      await api.put(`/admin/users/${selectedUser.id}/permissions`, selectedPermissions);
+      toast.success("Permisos actualizados");
+      setPermissionsDialogOpen(false);
+      fetchUsers();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Error al guardar permisos"));
+    }
+  };
+
+  const togglePermission = (moduleId) => {
+    setSelectedPermissions(prev => 
+      prev.includes(moduleId) 
+        ? prev.filter(id => id !== moduleId)
+        : [...prev, moduleId]
+    );
   };
 
   if (loading) {
@@ -309,14 +356,25 @@ export const Settings = () => {
                         </TableCell>
                         <TableCell>
                           {u.id !== user?.id && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDeleteUser(u.id)}
-                              className="text-red-600 hover:text-red-700"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => openPermissionsDialog(u)}
+                                className="text-slate-600 hover:text-primary"
+                                title="Configurar permisos"
+                              >
+                                <Shield className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleDeleteUser(u.id)}
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
                           )}
                         </TableCell>
                       </TableRow>
@@ -421,6 +479,69 @@ export const Settings = () => {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Permissions Dialog */}
+      <Dialog open={permissionsDialogOpen} onOpenChange={setPermissionsDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              Permisos de Módulos
+            </DialogTitle>
+            <DialogDescription>
+              {selectedUser?.full_name} - {selectedUser?.email}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground mb-4">
+              Selecciona los módulos a los que este usuario tendrá acceso:
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {ALL_MODULES.map((mod) => (
+                <div
+                  key={mod.id}
+                  className={`flex items-center gap-3 p-3 border rounded-sm cursor-pointer transition-colors ${
+                    selectedPermissions.includes(mod.id) 
+                      ? "border-primary bg-primary/5" 
+                      : "hover:bg-slate-50"
+                  }`}
+                  onClick={() => togglePermission(mod.id)}
+                >
+                  <Checkbox
+                    checked={selectedPermissions.includes(mod.id)}
+                    onCheckedChange={() => togglePermission(mod.id)}
+                  />
+                  <span className="text-sm">{mod.label}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-between mt-4 pt-4 border-t">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedPermissions(ALL_MODULES.map(m => m.id))}
+              >
+                Seleccionar todos
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSelectedPermissions([])}
+              >
+                Quitar todos
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPermissionsDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button className="btn-industrial" onClick={handleSavePermissions}>
+              Guardar Permisos
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

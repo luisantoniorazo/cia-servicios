@@ -72,6 +72,7 @@ class QuoteStatus(str, Enum):
     UNDER_REVIEW = "under_review"
     AUTHORIZED = "authorized"
     DENIED = "denied"
+    INVOICED = "invoiced"  # Converted to invoice
 
 class InvoiceStatus(str, Enum):
     PENDING = "pending"
@@ -153,7 +154,6 @@ class UserLogin(BaseModel):
 class SuperAdminLogin(BaseModel):
     email: EmailStr
     password: str
-    admin_key: str  # Extra security for super admin
 
 class User(UserBase):
     model_config = ConfigDict(extra="ignore")
@@ -161,6 +161,8 @@ class User(UserBase):
     is_active: bool = True
     recovery_email: Optional[EmailStr] = None
     recovery_phone: Optional[str] = None
+    # Module permissions
+    module_permissions: Optional[List[str]] = None  # List of allowed modules, None = all
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     created_by: Optional[str] = None
 
@@ -172,6 +174,7 @@ class UserResponse(BaseModel):
     role: UserRole
     company_id: Optional[str] = None
     is_active: bool
+    module_permissions: Optional[List[str]] = None
     created_at: datetime
 
 class TokenResponse(BaseModel):
@@ -285,11 +288,57 @@ class InvoiceBase(BaseModel):
     paid_amount: float = 0.0
     status: InvoiceStatus = InvoiceStatus.PENDING
     due_date: Optional[datetime] = None
+    # SAT Invoice data
+    sat_invoice_uuid: Optional[str] = None
+    sat_invoice_file: Optional[str] = None  # Base64 of PDF/XML
 
 class InvoiceCreate(InvoiceBase):
     pass
 
 class Invoice(InvoiceBase):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+# Payment Models (Abonos)
+class PaymentBase(BaseModel):
+    company_id: str
+    invoice_id: str
+    client_id: str
+    amount: float
+    payment_date: datetime
+    payment_method: str = "transferencia"  # transferencia, efectivo, cheque, tarjeta
+    reference: Optional[str] = None
+    notes: Optional[str] = None
+    proof_file: Optional[str] = None  # Base64 of payment proof image/PDF
+
+class PaymentCreate(PaymentBase):
+    pass
+
+class Payment(PaymentBase):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+# Project Task Models
+class ProjectTaskBase(BaseModel):
+    project_id: str
+    company_id: str
+    name: str
+    description: Optional[str] = None
+    assigned_to: Optional[str] = None
+    estimated_hours: float = 0.0
+    actual_hours: float = 0.0
+    estimated_cost: float = 0.0
+    actual_cost: float = 0.0
+    status: str = "pending"  # pending, in_progress, completed
+    due_date: Optional[datetime] = None
+
+class ProjectTaskCreate(ProjectTaskBase):
+    pass
+
+class ProjectTask(ProjectTaskBase):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -430,9 +479,6 @@ SUPER_ADMIN_KEY = os.environ.get('SUPER_ADMIN_KEY', 'cia-master-2024')
 @api_router.post("/super-admin/login", response_model=TokenResponse)
 async def super_admin_login(credentials: SuperAdminLogin):
     """Login exclusivo para Super Admin"""
-    if credentials.admin_key != SUPER_ADMIN_KEY:
-        raise HTTPException(status_code=401, detail="Clave de administrador inválida")
-    
     user_doc = await db.users.find_one({"email": credentials.email, "role": UserRole.SUPER_ADMIN}, {"_id": 0})
     if not user_doc:
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
@@ -1226,6 +1272,47 @@ async def list_invoices(company_id: str, status: Optional[InvoiceStatus] = None,
             inv["due_date"] = datetime.fromisoformat(inv["due_date"])
     return invoices
 
+@api_router.get("/invoices/overdue")
+async def get_overdue_invoices(company_id: str, current_user: dict = Depends(get_current_user)):
+    """Get all overdue invoices for collection reminders"""
+    if current_user.get("company_id") != company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    now = datetime.now(timezone.utc)
+    invoices = await db.invoices.find({
+        "company_id": company_id,
+        "status": {"$in": ["pending", "partial"]}
+    }, {"_id": 0}).to_list(1000)
+    
+    overdue = []
+    upcoming = []
+    
+    for inv in invoices:
+        due_date = inv.get("due_date")
+        if due_date:
+            if isinstance(due_date, str):
+                due_date = datetime.fromisoformat(due_date)
+            
+            # Get client info
+            client = await db.clients.find_one({"id": inv.get("client_id")}, {"_id": 0, "name": 1, "email": 1, "phone": 1})
+            inv["client_name"] = client.get("name") if client else "N/A"
+            inv["client_email"] = client.get("email") if client else None
+            inv["client_phone"] = client.get("phone") if client else None
+            inv["balance"] = inv["total"] - inv.get("paid_amount", 0)
+            
+            if due_date < now:
+                inv["days_overdue"] = (now - due_date).days
+                overdue.append(inv)
+            elif (due_date - now).days <= 7:
+                inv["days_until_due"] = (due_date - now).days
+                upcoming.append(inv)
+    
+    return {
+        "overdue": sorted(overdue, key=lambda x: x.get("days_overdue", 0), reverse=True),
+        "upcoming": sorted(upcoming, key=lambda x: x.get("days_until_due", 0)),
+        "total_overdue_amount": sum(inv["balance"] for inv in overdue)
+    }
+
 @api_router.get("/invoices/{invoice_id}", response_model=Invoice)
 async def get_invoice(invoice_id: str, current_user: dict = Depends(get_current_user)):
     invoice = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
@@ -1288,6 +1375,280 @@ async def delete_invoice(invoice_id: str, current_user: dict = Depends(get_curre
     
     await db.invoices.delete_one({"id": invoice_id})
     return {"message": "Factura eliminada"}
+
+# ============== QUOTE TO INVOICE ==============
+@api_router.post("/quotes/{quote_id}/to-invoice")
+async def convert_quote_to_invoice(quote_id: str, due_days: int = 30, current_user: dict = Depends(get_current_user)):
+    """Convert an authorized quote to an invoice"""
+    quote = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
+    if not quote:
+        raise HTTPException(status_code=404, detail="Cotización no encontrada")
+    
+    if current_user.get("company_id") != quote.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    if quote.get("status") != QuoteStatus.AUTHORIZED:
+        raise HTTPException(status_code=400, detail="Solo cotizaciones autorizadas pueden convertirse a factura")
+    
+    # Generate invoice number
+    count = await db.invoices.count_documents({"company_id": quote["company_id"]})
+    invoice_number = f"FAC-{datetime.now().year}-{str(count + 1).zfill(4)}"
+    
+    due_date = datetime.now(timezone.utc) + timedelta(days=due_days)
+    
+    invoice = Invoice(
+        company_id=quote["company_id"],
+        client_id=quote["client_id"],
+        project_id=quote.get("project_id"),
+        quote_id=quote_id,
+        invoice_number=invoice_number,
+        concept=quote.get("title", ""),
+        subtotal=quote.get("subtotal", 0),
+        tax=quote.get("tax", 0),
+        total=quote.get("total", 0),
+        due_date=due_date
+    )
+    
+    invoice_dict = invoice.model_dump()
+    invoice_dict["created_at"] = invoice_dict["created_at"].isoformat()
+    invoice_dict["updated_at"] = invoice_dict["updated_at"].isoformat()
+    invoice_dict["due_date"] = invoice_dict["due_date"].isoformat() if invoice_dict.get("due_date") else None
+    
+    await db.invoices.insert_one(invoice_dict)
+    
+    # Update quote status to converted
+    await db.quotes.update_one(
+        {"id": quote_id},
+        {"$set": {"status": "invoiced", "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    return {
+        "message": "Factura creada exitosamente",
+        "invoice_id": invoice.id,
+        "invoice_number": invoice_number
+    }
+
+@api_router.post("/invoices/{invoice_id}/upload-sat")
+async def upload_sat_invoice(invoice_id: str, sat_uuid: Optional[str] = None, sat_file: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """Upload SAT invoice file (XML/PDF)"""
+    invoice = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    if current_user.get("company_id") != invoice.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    update_data = {"updated_at": datetime.now(timezone.utc).isoformat()}
+    if sat_uuid:
+        update_data["sat_invoice_uuid"] = sat_uuid
+    if sat_file:
+        update_data["sat_invoice_file"] = sat_file
+    
+    await db.invoices.update_one({"id": invoice_id}, {"$set": update_data})
+    return {"message": "Factura SAT actualizada"}
+
+# ============== PAYMENT ROUTES (ABONOS) ==============
+@api_router.post("/payments")
+async def create_payment(payment_data: PaymentCreate, current_user: dict = Depends(get_current_user)):
+    """Register a payment (abono) for an invoice"""
+    if current_user.get("company_id") != payment_data.company_id:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    invoice = await db.invoices.find_one({"id": payment_data.invoice_id}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    payment = Payment(**payment_data.model_dump())
+    payment_dict = payment.model_dump()
+    payment_dict["created_at"] = payment_dict["created_at"].isoformat()
+    payment_dict["payment_date"] = payment_dict["payment_date"].isoformat() if payment_dict.get("payment_date") else None
+    
+    await db.payments.insert_one(payment_dict)
+    
+    # Update invoice paid_amount
+    new_paid = invoice.get("paid_amount", 0) + payment_data.amount
+    new_status = InvoiceStatus.PAID if new_paid >= invoice["total"] else InvoiceStatus.PARTIAL
+    
+    await db.invoices.update_one(
+        {"id": payment_data.invoice_id},
+        {"$set": {"paid_amount": new_paid, "status": new_status, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    return {
+        "message": "Abono registrado",
+        "payment_id": payment.id,
+        "new_balance": invoice["total"] - new_paid
+    }
+
+@api_router.get("/payments")
+async def list_payments(company_id: str, invoice_id: Optional[str] = None, client_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
+    """List payments for company"""
+    if current_user.get("company_id") != company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    query = {"company_id": company_id}
+    if invoice_id:
+        query["invoice_id"] = invoice_id
+    if client_id:
+        query["client_id"] = client_id
+    
+    payments = await db.payments.find(query, {"_id": 0}).sort("payment_date", -1).to_list(1000)
+    for p in payments:
+        if isinstance(p.get("created_at"), str):
+            p["created_at"] = datetime.fromisoformat(p["created_at"])
+        if isinstance(p.get("payment_date"), str):
+            p["payment_date"] = datetime.fromisoformat(p["payment_date"])
+    return payments
+
+@api_router.get("/clients/{client_id}/statement")
+async def get_client_statement(client_id: str, current_user: dict = Depends(get_current_user)):
+    """Get client account statement with invoices and payments"""
+    client = await db.clients.find_one({"id": client_id}, {"_id": 0})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    if current_user.get("company_id") != client.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    # Get all invoices for this client
+    invoices = await db.invoices.find({"client_id": client_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    
+    # Get all payments for this client
+    payments = await db.payments.find({"client_id": client_id}, {"_id": 0}).sort("payment_date", -1).to_list(1000)
+    
+    # Calculate totals
+    total_invoiced = sum(inv.get("total", 0) for inv in invoices)
+    total_paid = sum(p.get("amount", 0) for p in payments)
+    balance = total_invoiced - total_paid
+    
+    # Check overdue invoices
+    now = datetime.now(timezone.utc)
+    overdue_invoices = []
+    for inv in invoices:
+        due_date = inv.get("due_date")
+        if due_date:
+            if isinstance(due_date, str):
+                due_date = datetime.fromisoformat(due_date)
+            if due_date < now and inv.get("status") not in ["paid", "cancelled"]:
+                inv["days_overdue"] = (now - due_date).days
+                overdue_invoices.append(inv)
+    
+    return {
+        "client": {
+            "id": client["id"],
+            "name": client["name"],
+            "email": client.get("email"),
+            "phone": client.get("phone")
+        },
+        "summary": {
+            "total_invoiced": total_invoiced,
+            "total_paid": total_paid,
+            "balance": balance,
+            "overdue_count": len(overdue_invoices),
+            "overdue_amount": sum(inv["total"] - inv.get("paid_amount", 0) for inv in overdue_invoices)
+        },
+        "invoices": invoices,
+        "payments": payments,
+        "overdue_invoices": overdue_invoices
+    }
+
+# ============== PROJECT TASKS ROUTES ==============
+@api_router.post("/projects/{project_id}/tasks")
+async def create_project_task(project_id: str, task_data: ProjectTaskCreate, current_user: dict = Depends(get_current_user)):
+    """Create a task for a project"""
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    
+    if current_user.get("company_id") != project.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    # Check if user is project responsible or admin
+    user_role = current_user.get("role")
+    if user_role not in [UserRole.ADMIN, UserRole.MANAGER, UserRole.SUPER_ADMIN]:
+        if project.get("responsible_id") != current_user.get("sub"):
+            raise HTTPException(status_code=403, detail="Solo el responsable del proyecto o admin puede crear tareas")
+    
+    task = ProjectTask(**task_data.model_dump())
+    task_dict = task.model_dump()
+    task_dict["project_id"] = project_id
+    task_dict["created_at"] = task_dict["created_at"].isoformat()
+    task_dict["updated_at"] = task_dict["updated_at"].isoformat()
+    if task_dict.get("due_date"):
+        task_dict["due_date"] = task_dict["due_date"].isoformat()
+    
+    await db.project_tasks.insert_one(task_dict)
+    return task
+
+@api_router.get("/projects/{project_id}/tasks")
+async def list_project_tasks(project_id: str, current_user: dict = Depends(get_current_user)):
+    """List tasks for a project"""
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    
+    if current_user.get("company_id") != project.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    tasks = await db.project_tasks.find({"project_id": project_id}, {"_id": 0}).to_list(1000)
+    for t in tasks:
+        if isinstance(t.get("created_at"), str):
+            t["created_at"] = datetime.fromisoformat(t["created_at"])
+        if isinstance(t.get("updated_at"), str):
+            t["updated_at"] = datetime.fromisoformat(t["updated_at"])
+        if isinstance(t.get("due_date"), str):
+            t["due_date"] = datetime.fromisoformat(t["due_date"])
+    return tasks
+
+@api_router.put("/projects/{project_id}/tasks/{task_id}")
+async def update_project_task(project_id: str, task_id: str, task_data: dict, current_user: dict = Depends(get_current_user)):
+    """Update a project task"""
+    task = await db.project_tasks.find_one({"id": task_id, "project_id": project_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    
+    if current_user.get("company_id") != task.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    task_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    if task_data.get("due_date") and isinstance(task_data["due_date"], datetime):
+        task_data["due_date"] = task_data["due_date"].isoformat()
+    
+    await db.project_tasks.update_one({"id": task_id}, {"$set": task_data})
+    return {"message": "Tarea actualizada"}
+
+@api_router.delete("/projects/{project_id}/tasks/{task_id}")
+async def delete_project_task(project_id: str, task_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a project task"""
+    task = await db.project_tasks.find_one({"id": task_id, "project_id": project_id}, {"_id": 0})
+    if not task:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    
+    if current_user.get("company_id") != task.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    await db.project_tasks.delete_one({"id": task_id})
+    return {"message": "Tarea eliminada"}
+
+# ============== USER PERMISSIONS ROUTES ==============
+@api_router.put("/admin/users/{user_id}/permissions")
+async def update_user_permissions(user_id: str, permissions: List[str], current_user: dict = Depends(get_current_user)):
+    """Update user module permissions (admin only)"""
+    if current_user.get("role") not in [UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+        raise HTTPException(status_code=403, detail="Solo administradores pueden modificar permisos")
+    
+    user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    if current_user.get("role") == UserRole.ADMIN and current_user.get("company_id") != user.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"module_permissions": permissions}}
+    )
+    return {"message": "Permisos actualizados", "permissions": permissions}
 
 # ============== PURCHASE ORDER ROUTES ==============
 @api_router.post("/purchase-orders", response_model=PurchaseOrder)

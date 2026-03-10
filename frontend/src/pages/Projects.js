@@ -62,6 +62,7 @@ import {
   AlertCircle,
   PlayCircle,
   PauseCircle,
+  ListTodo,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -76,12 +77,15 @@ const PROJECT_STATUSES = [
 const PHASES = ["negotiation", "purchases", "process", "delivery"];
 
 export const Projects = () => {
-  const { api, company } = useAuth();
+  const { api, company, user } = useAuth();
   const [projects, setProjects] = useState([]);
   const [clients, setClients] = useState([]);
+  const [tasks, setTasks] = useState([]);
+  const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [formData, setFormData] = useState({
@@ -94,6 +98,15 @@ export const Projects = () => {
     contract_amount: "",
     status: "quotation",
   });
+  const [taskForm, setTaskForm] = useState({
+    name: "",
+    description: "",
+    assigned_to: "",
+    estimated_hours: "",
+    estimated_cost: "",
+    due_date: "",
+    status: "pending",
+  });
 
   useEffect(() => {
     if (company?.id) {
@@ -103,16 +116,28 @@ export const Projects = () => {
 
   const fetchData = async () => {
     try {
-      const [projectsRes, clientsRes] = await Promise.all([
+      const [projectsRes, clientsRes, usersRes] = await Promise.all([
         api.get(`/projects?company_id=${company.id}`),
         api.get(`/clients?company_id=${company.id}`),
+        api.get(`/admin/users`),
       ]);
       setProjects(projectsRes.data);
       setClients(clientsRes.data);
+      setUsers(usersRes.data || []);
     } catch (error) {
       toast.error("Error al cargar proyectos");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchProjectTasks = async (projectId) => {
+    try {
+      const response = await api.get(`/projects/${projectId}/tasks`);
+      setTasks(response.data);
+    } catch (error) {
+      console.error("Error fetching tasks:", error);
+      setTasks([]);
     }
   };
 
@@ -169,6 +194,53 @@ export const Projects = () => {
     }
   };
 
+  const handleCreateTask = async (e) => {
+    e.preventDefault();
+    if (!selectedProject) return;
+    try {
+      await api.post(`/projects/${selectedProject.id}/tasks`, {
+        project_id: selectedProject.id,
+        company_id: company.id,
+        name: taskForm.name,
+        description: taskForm.description,
+        assigned_to: taskForm.assigned_to || null,
+        estimated_hours: parseFloat(taskForm.estimated_hours) || 0,
+        estimated_cost: parseFloat(taskForm.estimated_cost) || 0,
+        due_date: taskForm.due_date || null,
+        status: taskForm.status,
+      });
+      toast.success("Tarea creada");
+      setTaskDialogOpen(false);
+      resetTaskForm();
+      fetchProjectTasks(selectedProject.id);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Error al crear tarea"));
+    }
+  };
+
+  const handleUpdateTaskStatus = async (taskId, status) => {
+    if (!selectedProject) return;
+    try {
+      await api.put(`/projects/${selectedProject.id}/tasks/${taskId}`, { status });
+      toast.success("Tarea actualizada");
+      fetchProjectTasks(selectedProject.id);
+    } catch (error) {
+      toast.error("Error al actualizar tarea");
+    }
+  };
+
+  const handleDeleteTask = async (taskId) => {
+    if (!selectedProject) return;
+    if (!window.confirm("¿Eliminar esta tarea?")) return;
+    try {
+      await api.delete(`/projects/${selectedProject.id}/tasks/${taskId}`);
+      toast.success("Tarea eliminada");
+      fetchProjectTasks(selectedProject.id);
+    } catch (error) {
+      toast.error("Error al eliminar tarea");
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       client_id: "",
@@ -180,6 +252,24 @@ export const Projects = () => {
       contract_amount: "",
       status: "quotation",
     });
+  };
+
+  const resetTaskForm = () => {
+    setTaskForm({
+      name: "",
+      description: "",
+      assigned_to: "",
+      estimated_hours: "",
+      estimated_cost: "",
+      due_date: "",
+      status: "pending",
+    });
+  };
+
+  const openProjectDetail = (project) => {
+    setSelectedProject(project);
+    fetchProjectTasks(project.id);
+    setDetailDialogOpen(true);
   };
 
   const getClientName = (clientId) => {
@@ -491,9 +581,17 @@ export const Projects = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openDetailDialog(project)}>
+                            <DropdownMenuItem onClick={() => openProjectDetail(project)}>
                               <Eye className="mr-2 h-4 w-4" />
                               Ver Detalles
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => {
+                              setSelectedProject(project);
+                              fetchProjectTasks(project.id);
+                              setTaskDialogOpen(true);
+                            }}>
+                              <ListTodo className="mr-2 h-4 w-4 text-purple-500" />
+                              Agregar Tarea
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => handleUpdateStatus(project.id, "active")}>
@@ -530,7 +628,7 @@ export const Projects = () => {
 
       {/* Project Detail Dialog */}
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
-        <DialogContent className="sm:max-w-[700px]">
+        <DialogContent className="sm:max-w-[800px] max-h-[85vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{selectedProject?.name}</DialogTitle>
             <DialogDescription>
@@ -582,6 +680,62 @@ export const Projects = () => {
                 ))}
               </div>
 
+              {/* Tasks Section */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-semibold flex items-center gap-2">
+                    <ListTodo className="h-4 w-4" />
+                    Tareas del Proyecto
+                  </h4>
+                  <Button size="sm" variant="outline" onClick={() => setTaskDialogOpen(true)}>
+                    <Plus className="mr-1 h-3 w-3" />
+                    Nueva Tarea
+                  </Button>
+                </div>
+                {tasks.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">No hay tareas registradas</p>
+                ) : (
+                  <div className="border rounded-sm divide-y max-h-48 overflow-y-auto">
+                    {tasks.map((task) => (
+                      <div key={task.id} className="p-3 flex items-center justify-between hover:bg-slate-50">
+                        <div className="flex-1">
+                          <div className="font-medium">{task.name}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {task.estimated_hours > 0 && <span>{task.estimated_hours}h</span>}
+                            {task.estimated_cost > 0 && <span className="ml-2">{formatCurrency(task.estimated_cost)}</span>}
+                            {task.due_date && <span className="ml-2">• Vence: {formatDate(task.due_date)}</span>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Select
+                            value={task.status}
+                            onValueChange={(value) => handleUpdateTaskStatus(task.id, value)}
+                          >
+                            <SelectTrigger className="w-32 h-8">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="pending">Pendiente</SelectItem>
+                              <SelectItem value="in_progress">En Progreso</SelectItem>
+                              <SelectItem value="completed">Completada</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleDeleteTask(task.id)}>
+                            <Trash2 className="h-3 w-3 text-red-500" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {tasks.length > 0 && (
+                  <div className="flex justify-between text-sm bg-slate-50 p-2 rounded">
+                    <span>Total estimado: {tasks.reduce((a, t) => a + (t.estimated_hours || 0), 0)}h</span>
+                    <span>Costo estimado: {formatCurrency(tasks.reduce((a, t) => a + (t.estimated_cost || 0), 0))}</span>
+                  </div>
+                )}
+              </div>
+
               {/* Dates */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="p-4 bg-slate-50 rounded-sm">
@@ -600,6 +754,91 @@ export const Projects = () => {
               Cerrar
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Task Dialog */}
+      <Dialog open={taskDialogOpen} onOpenChange={setTaskDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <form onSubmit={handleCreateTask}>
+            <DialogHeader>
+              <DialogTitle>Nueva Tarea</DialogTitle>
+              <DialogDescription>
+                Proyecto: {selectedProject?.name}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label>Nombre de la Tarea *</Label>
+                <Input
+                  value={taskForm.name}
+                  onChange={(e) => setTaskForm({ ...taskForm, name: e.target.value })}
+                  placeholder="Ej: Instalación de estructura"
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Descripción</Label>
+                <Textarea
+                  value={taskForm.description}
+                  onChange={(e) => setTaskForm({ ...taskForm, description: e.target.value })}
+                  placeholder="Detalles de la tarea..."
+                  rows={2}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Horas Estimadas</Label>
+                  <Input
+                    type="number"
+                    step="0.5"
+                    value={taskForm.estimated_hours}
+                    onChange={(e) => setTaskForm({ ...taskForm, estimated_hours: e.target.value })}
+                    placeholder="0"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Costo Estimado</Label>
+                  <Input
+                    type="number"
+                    value={taskForm.estimated_cost}
+                    onChange={(e) => setTaskForm({ ...taskForm, estimated_cost: e.target.value })}
+                    placeholder="0.00"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Fecha Límite</Label>
+                  <Input
+                    type="date"
+                    value={taskForm.due_date}
+                    onChange={(e) => setTaskForm({ ...taskForm, due_date: e.target.value })}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Asignar a</Label>
+                  <Select
+                    value={taskForm.assigned_to}
+                    onValueChange={(value) => setTaskForm({ ...taskForm, assigned_to: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sin asignar" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {users.map((u) => (
+                        <SelectItem key={u.id} value={u.id}>{u.full_name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setTaskDialogOpen(false)}>Cancelar</Button>
+              <Button type="submit" className="btn-industrial">Crear Tarea</Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

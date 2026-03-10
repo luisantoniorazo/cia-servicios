@@ -55,6 +55,7 @@ import {
   MinusCircle,
   Download,
   Loader2,
+  Receipt,
 } from "lucide-react";
 
 const QUOTE_STATUSES = [
@@ -200,6 +201,18 @@ export const Quotes = () => {
       toast.success("PDF descargado");
     } catch (error) {
       toast.error("Error al generar PDF");
+    }
+  };
+
+  const handleConvertToInvoice = async (quoteId) => {
+    if (!window.confirm("¿Deseas crear una factura a partir de esta cotización?")) return;
+    try {
+      const response = await api.post(`/quotes/${quoteId}/to-invoice?due_days=30`);
+      toast.success(`Factura ${response.data.invoice_number} creada exitosamente`);
+      fetchData();
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Error al crear factura");
     }
   };
 
@@ -366,6 +379,12 @@ export const Quotes = () => {
                               <Download className="mr-2 h-4 w-4 text-blue-500" />
                               Descargar PDF
                             </DropdownMenuItem>
+                            {quote.status === "authorized" && (
+                              <DropdownMenuItem onClick={() => handleConvertToInvoice(quote.id)}>
+                                <Receipt className="mr-2 h-4 w-4 text-emerald-500" />
+                                Pasar a Facturación
+                              </DropdownMenuItem>
+                            )}
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => handleStatusChange(quote.id, "authorized")}>
                               <CheckCircle className="mr-2 h-4 w-4 text-emerald-500" />

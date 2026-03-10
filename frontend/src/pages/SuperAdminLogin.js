@@ -6,7 +6,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { toast } from "sonner";
-import { Shield, Lock, Mail, Key, AlertTriangle } from "lucide-react";
+import { Shield, Lock, Mail, AlertTriangle } from "lucide-react";
 
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_cia-operacional/artifacts/0bkwa552_Logo%20CIA.jpg";
 
@@ -19,7 +19,6 @@ export const SuperAdminLogin = () => {
   const [loginForm, setLoginForm] = useState({
     email: "",
     password: "",
-    admin_key: "",
   });
 
   const handleLogin = async (e) => {
@@ -27,7 +26,7 @@ export const SuperAdminLogin = () => {
     setIsLoading(true);
     
     try {
-      await superAdminLogin(loginForm.email, loginForm.password, loginForm.admin_key);
+      await superAdminLogin(loginForm.email, loginForm.password);
       toast.success("Acceso concedido");
       navigate("/admin-portal/dashboard");
     } catch (error) {
@@ -50,7 +49,6 @@ export const SuperAdminLogin = () => {
       setLoginForm({
         email: response.email,
         password: response.password,
-        admin_key: response.admin_key,
       });
       setShowSetup(false);
     } catch (error) {
@@ -125,22 +123,6 @@ export const SuperAdminLogin = () => {
                     onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
                     required
                     data-testid="super-admin-password-input"
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="admin_key" className="text-slate-300">Clave de Administrador</Label>
-                <div className="relative">
-                  <Key className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
-                  <Input
-                    id="admin_key"
-                    type="password"
-                    placeholder="Clave maestra"
-                    className="pl-9 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-500"
-                    value={loginForm.admin_key}
-                    onChange={(e) => setLoginForm({ ...loginForm, admin_key: e.target.value })}
-                    required
-                    data-testid="super-admin-key-input"
                   />
                 </div>
               </div>

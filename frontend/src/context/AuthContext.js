@@ -75,8 +75,8 @@ export const AuthProvider = ({ children }) => {
   }, [token, fetchUser]);
 
   // Super Admin Login
-  const superAdminLogin = async (email, password, admin_key) => {
-    const response = await api.post("/super-admin/login", { email, password, admin_key });
+  const superAdminLogin = async (email, password) => {
+    const response = await api.post("/super-admin/login", { email, password });
     const { access_token, user: userData } = response.data;
     
     localStorage.setItem("cia_token", access_token);
