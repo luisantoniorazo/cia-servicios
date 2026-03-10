@@ -2,7 +2,7 @@
 
 ## Información General
 - **Nombre**: CIA SERVICIOS - Control Estratégico de Servicios y Proyectos
-- **Versión**: 2.3.0
+- **Versión**: 2.4.0
 - **Última Actualización**: Diciembre 2025
 - **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2
 
@@ -30,11 +30,13 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - [x] Gestión de usuarios por empresa con roles
 - [x] **Permisos por módulo** ✨
 
-### 2. Dashboard Estratégico
+### 2. Dashboard Estratégico ✨ MEJORADO
 - [x] KPIs principales
 - [x] Gráficos de facturación vs cobranza
 - [x] Pipeline de cotizaciones
 - [x] Avance de proyectos
+- [x] **Dashboard configurable** - Usuarios pueden mostrar/ocultar widgets
+- [x] **Widgets de alertas** - Facturas vencidas, seguimientos pendientes
 
 ### 3. Gestión de Proyectos
 - [x] CRUD completo
@@ -42,9 +44,10 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - [x] **Tareas con tiempo y costo estimado** ✨
 - [x] Asignación de responsables
 
-### 4. CRM Comercial
+### 4. CRM Comercial ✨ MEJORADO
 - [x] Gestión de clientes y prospectos
 - [x] Probabilidad de cierre
+- [x] **Plazo de crédito en días** para clientes
 - [x] **Estado de cuenta del cliente** ✨
 - [x] **Seguimientos programados (llamadas, emails, visitas, reuniones)** ✨
 - [x] **Panel de seguimientos pendientes** ✨
@@ -66,10 +69,11 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - [x] **Tabs: Todas, Pendientes, Parciales, Pagadas, Vencidas, Próx. Vencer**
 - [x] Generación de PDF
 
-### 7. Control de Compras
+### 7. Control de Compras ✨ MEJORADO
 - [x] Órdenes de compra
 - [x] Seguimiento por estados
 - [x] Vinculación a proyectos
+- [x] **Generación de PDF de orden de compra**
 
 ### 8. Proveedores
 - [x] Base de datos
@@ -165,8 +169,8 @@ Company Admin (CIA Servicios Demo):
 ```
 
 ## Testing Status
-- **Backend**: 100% (13/13 tests iteration 5)
-- **Frontend**: 100% verificado
+- **Backend**: 100% verified via curl
+- **Frontend**: 100% (iteration 6)
 - **Integraciones**: AI, PDF, archivos funcionando
 
 ## Prioritized Backlog
@@ -186,11 +190,16 @@ Company Admin (CIA Servicios Demo):
 - [x] Generación de PDF
 - [x] Seguimientos programados CRM ✨
 - [x] Gestión de admins desde Super Admin (editar/bloquear) ✨
+- [x] **Plazo de crédito (días) para clientes** ✨
+- [x] **Logo de empresa en documentos PDF** ✨
+- [x] **PDF de orden de compra** ✨
+- [x] **Dashboard configurable con widgets** ✨
+- [x] Seguimientos programados CRM ✨
+- [x] Gestión de admins desde Super Admin (editar/bloquear) ✨
 
 ### P1 - Próxima Fase
 - [ ] Notificaciones por email (recordatorios de cobranza)
 - [ ] Exportación a Excel
-- [ ] Dashboard configurable
 - [ ] Restricción de acceso basada en permisos (frontend)
 
 ### P2 - Mejoras
@@ -199,6 +208,14 @@ Company Admin (CIA Servicios Demo):
 - [ ] Calendario Gantt
 
 ## Changelog
+### v2.4.0 (Diciembre 2025)
+- ✨ Plazo de crédito en días para clientes en CRM
+- ✨ Logo de empresa incluido en documentos PDF
+- ✨ PDF de orden de compra descargable
+- ✨ Dashboard configurable con widgets mostrables/ocultables
+- ✨ Widgets de alertas en Dashboard (facturas vencidas, seguimientos)
+- 🔧 Corrección de visualización de logo en Settings
+
 ### v2.3.0 (Diciembre 2025)
 - ✨ Seguimientos programados en CRM (llamadas, emails, visitas, reuniones)
 - ✨ Panel de seguimientos pendientes con alertas
