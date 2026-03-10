@@ -48,6 +48,7 @@ import {
   CheckCircle,
   Clock,
   Trash2,
+  FileDown,
 } from "lucide-react";
 
 const PO_STATUSES = [
@@ -148,6 +149,35 @@ export const Purchases = () => {
       fetchData();
     } catch (error) {
       toast.error("Error al eliminar orden");
+    }
+  };
+
+  const handleDownloadPDF = async (poId) => {
+    try {
+      toast.info("Generando PDF...");
+      const response = await api.get(`/pdf/purchase-order/${poId}`);
+      const { filename, content } = response.data;
+      
+      const byteCharacters = atob(content);
+      const byteNumbers = new Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+      }
+      const byteArray = new Uint8Array(byteNumbers);
+      const blob = new Blob([byteArray], { type: 'application/pdf' });
+      
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success("PDF descargado");
+    } catch (error) {
+      toast.error("Error al generar PDF");
     }
   };
 
@@ -307,6 +337,13 @@ export const Purchases = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onClick={() => handleDownloadPDF(po.id)}
+                            >
+                              <FileDown className="mr-2 h-4 w-4" />
+                              Descargar PDF
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
                             {PO_STATUSES.map((s) => (
                               <DropdownMenuItem
                                 key={s.value}

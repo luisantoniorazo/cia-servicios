@@ -197,6 +197,7 @@ class ClientBase(BaseModel):
     is_prospect: bool = True
     probability: int = 0
     notes: Optional[str] = None
+    credit_days: int = 0  # Plazo de crédito en días
 
 class ClientCreate(ClientBase):
     pass
@@ -1076,7 +1077,10 @@ async def update_company(company_id: str, update_data: dict, current_user: dict 
     filtered_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     
     await db.companies.update_one({"id": company_id}, {"$set": filtered_data})
-    return {"message": "Empresa actualizada"}
+    
+    # Return updated company data
+    updated_company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    return updated_company
 
 @api_router.post("/companies/{company_id}/logo")
 async def upload_company_logo(company_id: str, logo_data: str, current_user: dict = Depends(require_admin)):
@@ -1096,7 +1100,10 @@ async def upload_company_logo(company_id: str, logo_data: str, current_user: dic
         {"id": company_id},
         {"$set": {"logo_file": logo_data, "updated_at": datetime.now(timezone.utc).isoformat()}}
     )
-    return {"message": "Logo actualizado"}
+    
+    # Return updated company
+    updated_company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    return updated_company
 
 # ============== CLIENT/PROSPECT ROUTES ==============
 @api_router.post("/clients", response_model=Client)
@@ -1815,14 +1822,12 @@ def generate_statement_pdf(client: dict, company: dict, invoices: list, payments
     doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
     styles = getSampleStyleSheet()
     
-    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=16, textColor=colors.HexColor('#004e92'), alignment=TA_CENTER)
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=16, textColor=colors.HexColor('#004e92'), alignment=TA_LEFT)
     
     elements = []
     
-    # Header
-    elements.append(Paragraph(company.get('business_name', 'CIA SERVICIOS'), title_style))
-    elements.append(Paragraph(f"RFC: {company.get('rfc', '')} | Tel: {company.get('phone', '')}", styles['Normal']))
-    elements.append(Spacer(1, 0.3*inch))
+    # Header with logo
+    add_company_header_to_pdf(elements, company, styles, title_style)
     
     # Title
     elements.append(Paragraph("ESTADO DE CUENTA", styles['Heading2']))
@@ -2441,7 +2446,7 @@ from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
-from reportlab.lib.enums import TA_CENTER, TA_RIGHT
+from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 
@@ -2579,6 +2584,43 @@ Responde en español con datos concretos y recomendaciones accionables."""
         raise HTTPException(status_code=500, detail=f"Error en análisis: {str(e)}")
 
 # ============== PDF GENERATION ==============
+def add_company_header_to_pdf(elements: list, company: dict, styles, title_style):
+    """Add company header with logo to PDF elements"""
+    from reportlab.platypus import Image as RLImage
+    
+    logo_file = company.get('logo_file')
+    
+    if logo_file:
+        try:
+            # Decode base64 logo
+            logo_bytes = base64.b64decode(logo_file)
+            logo_buffer = BytesIO(logo_bytes)
+            
+            # Create image with max dimensions
+            logo_img = RLImage(logo_buffer)
+            # Scale logo to fit (max 1.5 inch height, maintain aspect ratio)
+            logo_img.drawHeight = min(1.2*inch, logo_img.drawHeight)
+            logo_img.drawWidth = logo_img.drawWidth * (logo_img.drawHeight / logo_img.imageHeight) if hasattr(logo_img, 'imageHeight') else logo_img.drawWidth
+            
+            # Create header table with logo and company name side by side
+            header_data = [[logo_img, Paragraph(company.get('business_name', 'CIA SERVICIOS'), title_style)]]
+            header_table = Table(header_data, colWidths=[1.8*inch, 5*inch])
+            header_table.setStyle(TableStyle([
+                ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+                ('ALIGN', (1, 0), (1, 0), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ]))
+            elements.append(header_table)
+        except Exception as e:
+            # Fallback to text only if logo fails
+            elements.append(Paragraph(company.get('business_name', 'CIA SERVICIOS'), title_style))
+    else:
+        elements.append(Paragraph(company.get('business_name', 'CIA SERVICIOS'), title_style))
+    
+    header_style = ParagraphStyle('Header', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#666666'))
+    elements.append(Paragraph(f"RFC: {company.get('rfc', '')} | Tel: {company.get('phone', '')} | Email: {company.get('email', '')}", header_style))
+    elements.append(Spacer(1, 0.3*inch))
+
 def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
     """Generate PDF for a quote"""
     buffer = BytesIO()
@@ -2586,15 +2628,12 @@ def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
     styles = getSampleStyleSheet()
     
     # Custom styles
-    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#004e92'), alignment=TA_CENTER)
-    header_style = ParagraphStyle('Header', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#666666'))
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#004e92'), alignment=TA_LEFT)
     
     elements = []
     
-    # Header with company info
-    elements.append(Paragraph(company.get('business_name', 'CIA SERVICIOS'), title_style))
-    elements.append(Paragraph(f"RFC: {company.get('rfc', '')} | Tel: {company.get('phone', '')} | Email: {company.get('email', '')}", header_style))
-    elements.append(Spacer(1, 0.3*inch))
+    # Header with company info and logo
+    add_company_header_to_pdf(elements, company, styles, title_style)
     
     # Quote title
     elements.append(Paragraph(f"COTIZACIÓN {quote.get('quote_number', '')}", styles['Heading2']))
@@ -2682,14 +2721,12 @@ def generate_invoice_pdf(invoice: dict, company: dict, client: dict) -> bytes:
     doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
     styles = getSampleStyleSheet()
     
-    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#004e92'), alignment=TA_CENTER)
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#004e92'), alignment=TA_LEFT)
     
     elements = []
     
-    # Header
-    elements.append(Paragraph(company.get('business_name', 'CIA SERVICIOS'), title_style))
-    elements.append(Paragraph(f"RFC: {company.get('rfc', '')} | {company.get('address', '')}", styles['Normal']))
-    elements.append(Spacer(1, 0.3*inch))
+    # Header with logo
+    add_company_header_to_pdf(elements, company, styles, title_style)
     
     # Invoice title
     elements.append(Paragraph(f"FACTURA {invoice.get('invoice_number', '')}", styles['Heading2']))
@@ -2779,6 +2816,124 @@ async def download_invoice_pdf(invoice_id: str, current_user: dict = Depends(get
     
     return {
         "filename": f"factura_{invoice.get('invoice_number', invoice_id)}.pdf",
+        "content": pdf_base64,
+        "content_type": "application/pdf"
+    }
+
+def generate_purchase_order_pdf(po: dict, company: dict, supplier: dict) -> bytes:
+    """Generate PDF for a purchase order"""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#004e92'), alignment=TA_LEFT)
+    
+    elements = []
+    
+    # Header with logo
+    add_company_header_to_pdf(elements, company, styles, title_style)
+    
+    # PO title
+    elements.append(Paragraph(f"ORDEN DE COMPRA {po.get('order_number', '')}", styles['Heading2']))
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # Supplier info
+    supplier_data = [
+        ['PROVEEDOR:', supplier.get('name', 'N/A')],
+        ['RFC:', supplier.get('rfc', 'N/A')],
+        ['Contacto:', supplier.get('contact_name', 'N/A')],
+        ['Email:', supplier.get('email', 'N/A')],
+        ['Teléfono:', supplier.get('phone', 'N/A')],
+        ['Fecha:', po.get('created_at', '')[:10] if po.get('created_at') else ''],
+        ['Entrega esperada:', po.get('expected_delivery', '')[:10] if po.get('expected_delivery') else 'N/A'],
+    ]
+    supplier_table = Table(supplier_data, colWidths=[1.5*inch, 4*inch])
+    supplier_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    elements.append(supplier_table)
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Description
+    elements.append(Paragraph(f"<b>Descripción:</b> {po.get('description', '')}", styles['Normal']))
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # Items table
+    items = po.get('items', [])
+    if items:
+        table_data = [['#', 'Descripción', 'Cantidad', 'Unidad', 'P. Unit.', 'Total']]
+        for i, item in enumerate(items, 1):
+            table_data.append([
+                str(i),
+                item.get('description', ''),
+                str(item.get('quantity', 1)),
+                item.get('unit', 'pza'),
+                f"${item.get('unit_price', 0):,.2f}",
+                f"${item.get('total', 0):,.2f}"
+            ])
+        
+        items_table = Table(table_data, colWidths=[0.4*inch, 3*inch, 0.6*inch, 0.6*inch, 1*inch, 1*inch])
+        items_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2e7d32')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ]))
+        elements.append(items_table)
+    
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # Totals
+    totals_data = [
+        ['', '', 'Subtotal:', f"${po.get('subtotal', 0):,.2f}"],
+        ['', '', 'IVA (16%):', f"${po.get('tax', 0):,.2f}"],
+        ['', '', 'TOTAL:', f"${po.get('total', 0):,.2f}"],
+    ]
+    totals_table = Table(totals_data, colWidths=[2*inch, 2*inch, 1.2*inch, 1.4*inch])
+    totals_table.setStyle(TableStyle([
+        ('FONTNAME', (2, -1), (3, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
+        ('BACKGROUND', (2, -1), (-1, -1), colors.HexColor('#e8f5e9')),
+    ]))
+    elements.append(totals_table)
+    
+    # Status
+    elements.append(Spacer(1, 0.3*inch))
+    status_text = po.get('status', 'requested').upper()
+    elements.append(Paragraph(f"<b>ESTADO:</b> {status_text}", styles['Normal']))
+    
+    # Footer
+    elements.append(Spacer(1, 0.5*inch))
+    elements.append(Paragraph(f"Documento generado el {datetime.now().strftime('%d/%m/%Y %H:%M')}", styles['Normal']))
+    
+    doc.build(elements)
+    return buffer.getvalue()
+
+@api_router.get("/pdf/purchase-order/{po_id}")
+async def download_purchase_order_pdf(po_id: str, current_user: dict = Depends(get_current_user)):
+    """Generate and download purchase order PDF"""
+    po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
+    if not po:
+        raise HTTPException(status_code=404, detail="Orden de compra no encontrada")
+    
+    if current_user.get("company_id") != po.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    company = await db.companies.find_one({"id": po.get("company_id")}, {"_id": 0})
+    supplier = await db.suppliers.find_one({"id": po.get("supplier_id")}, {"_id": 0}) if po.get("supplier_id") else {}
+    
+    pdf_bytes = generate_purchase_order_pdf(po, company or {}, supplier or {})
+    pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+    
+    return {
+        "filename": f"orden_compra_{po.get('order_number', po_id)}.pdf",
         "content": pdf_base64,
         "content_type": "application/pdf"
     }

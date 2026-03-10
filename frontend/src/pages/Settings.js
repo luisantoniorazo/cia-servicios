@@ -148,16 +148,18 @@ export const Settings = () => {
   };
 
   const handleUploadLogo = async () => {
-    if (!logoFile) return;
+    if (!logoFile) return null;
     try {
       const logoBase64 = await fileToBase64(logoFile);
-      await api.post(`/companies/${company.id}/logo`, logoBase64, {
+      const response = await api.post(`/companies/${company.id}/logo`, logoBase64, {
         headers: { 'Content-Type': 'application/json' }
       });
       toast.success("Logo actualizado");
       setLogoFile(null);
+      return response.data; // Return updated company
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Error al subir logo"));
+      return null;
     }
   };
 
@@ -165,15 +167,21 @@ export const Settings = () => {
     e.preventDefault();
     try {
       const response = await api.put(`/companies/${company.id}`, companyForm);
-      setCompany(response.data);
-      toast.success("Información actualizada");
+      let updatedCompany = response.data;
       
       // Upload logo if changed
       if (logoFile) {
-        await handleUploadLogo();
+        const logoResponse = await handleUploadLogo();
+        if (logoResponse) {
+          updatedCompany = logoResponse;
+        }
       }
+      
+      // Update company state with all data including logo
+      setCompany(updatedCompany);
+      toast.success("Información actualizada");
     } catch (error) {
-      toast.error("Error al actualizar información");
+      toast.error(getApiErrorMessage(error, "Error al actualizar información"));
     }
   };
 
@@ -323,9 +331,11 @@ export const Settings = () => {
                 <Label>Logo de la Empresa</Label>
                 <div className="flex items-center gap-4">
                   {/* Logo Preview */}
-                  <div className="h-20 w-20 border rounded-lg flex items-center justify-center bg-slate-50">
+                  <div className="h-20 w-20 border rounded-lg flex items-center justify-center bg-slate-50 overflow-hidden">
                     {logoPreview ? (
                       <img src={logoPreview} alt="Logo" className="h-16 w-16 object-contain" />
+                    ) : company?.logo_file ? (
+                      <img src={`data:image/png;base64,${company.logo_file}`} alt="Logo" className="h-16 w-16 object-contain" />
                     ) : company?.logo_url ? (
                       <img src={company.logo_url} alt="Logo" className="h-16 w-16 object-contain" />
                     ) : (

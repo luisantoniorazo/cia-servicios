@@ -90,6 +90,7 @@ export const CRM = () => {
     is_prospect: true,
     probability: 0,
     notes: "",
+    credit_days: 0,
   });
   const [followupForm, setFollowupForm] = useState({
     scheduled_date: "",
@@ -133,6 +134,7 @@ export const CRM = () => {
           company_id: company.id,
           ...formData,
           probability: parseInt(formData.probability) || 0,
+          credit_days: parseInt(formData.credit_days) || 0,
         });
         toast.success("Cliente actualizado");
       } else {
@@ -140,6 +142,7 @@ export const CRM = () => {
           company_id: company.id,
           ...formData,
           probability: parseInt(formData.probability) || 0,
+          credit_days: parseInt(formData.credit_days) || 0,
         });
         toast.success("Cliente creado exitosamente");
       }
@@ -163,6 +166,7 @@ export const CRM = () => {
       is_prospect: client.is_prospect,
       probability: client.probability || 0,
       notes: client.notes || "",
+      credit_days: client.credit_days || 0,
     });
     setDialogOpen(true);
   };
@@ -238,6 +242,7 @@ export const CRM = () => {
       is_prospect: true,
       probability: 0,
       notes: "",
+      credit_days: 0,
     });
   };
 
@@ -391,7 +396,7 @@ export const CRM = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  {formData.is_prospect && (
+                  {formData.is_prospect ? (
                     <div className="grid gap-2">
                       <Label htmlFor="probability">Probabilidad de Cierre (%)</Label>
                       <Input
@@ -402,6 +407,18 @@ export const CRM = () => {
                         value={formData.probability}
                         onChange={(e) => setFormData({ ...formData, probability: e.target.value })}
                         placeholder="50"
+                      />
+                    </div>
+                  ) : (
+                    <div className="grid gap-2">
+                      <Label htmlFor="credit_days">Plazo de Crédito (días)</Label>
+                      <Input
+                        id="credit_days"
+                        type="number"
+                        min="0"
+                        value={formData.credit_days}
+                        onChange={(e) => setFormData({ ...formData, credit_days: parseInt(e.target.value) || 0 })}
+                        placeholder="30"
                       />
                     </div>
                   )}

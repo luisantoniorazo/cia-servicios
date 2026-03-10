@@ -1,0 +1,92 @@
+{
+  "summary": "Frontend testing of new features: Dashboard configurable widgets, CRM credit_days field, Purchase Order PDF download, and Settings logo preview. All 4 features verified working correctly.",
+
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dashboard charts", "issues": ["Console warnings about chart dimensions (-1x-1) - recharts library issue when container not ready, does not affect functionality"]}
+    ]
+  },
+
+  "passed_tests": {
+    "frontend_flows": [
+      "Company Admin login via /empresa/cia-servicios-demo-sa-de-cv/login - SUCCESS",
+      "Dashboard 'Configurar' button visible in top-right header area",
+      "Dashboard config Sheet opens with title 'Configurar Dashboard'",
+      "Dashboard Sheet shows 8 widget checkboxes (WIDGET_DEFINITIONS)",
+      "Widget visibility toggles work correctly",
+      "Dashboard config saves to localStorage with 'Configuración guardada' toast",
+      "CRM page loads with client table",
+      "CRM 'Nuevo Cliente/Prospecto' form opens",
+      "CRM form shows 'Probabilidad de Cierre (%)' when Tipo=Prospecto",
+      "CRM form shows 'Plazo de Crédito (días)' when Tipo=Cliente",
+      "CRM credit_days field accepts numeric input",
+      "Purchases (Compras) page loads with PO table",
+      "Purchases dropdown menu shows 'Descargar PDF' option at top",
+      "Purchases PDF download initiates with 'Generando PDF...' toast",
+      "Purchases PDF downloads with 'PDF descargado' success toast",
+      "Settings (Configuración) page loads correctly",
+      "Settings shows 'Logo de la Empresa' section",
+      "Settings logo preview displays company logo correctly",
+      "Settings 'Subir Logo' upload button available",
+      "Sidebar header shows company logo (CIA SERVICIOS)"
+    ]
+  },
+
+  "test_report_links": [],
+
+  "action_items": [],
+
+  "critical_code_review_comments": [],
+
+  "updated_files": [],
+
+  "success_rate": {
+    "backend": "Not tested (per request - backend already verified via curl)",
+    "frontend": "100% (all 4 requested features verified)"
+  },
+
+  "test_credentials": {
+    "company_admin": {
+      "email": "gerente@ciademo.com",
+      "password": "Admin2024!",
+      "url": "/empresa/cia-servicios-demo-sa-de-cv/login"
+    }
+  },
+
+  "seed_data_creation": "No new seed data created",
+
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+
+  "context_for_next_testing_agent": "All 4 new features verified working: 1) Dashboard has 'Configurar' button that opens Sheet with 8 toggleable widget checkboxes. 2) CRM client form conditionally shows 'Plazo de Crédito (días)' field when Tipo=Cliente, and 'Probabilidad de Cierre (%)' when Tipo=Prospecto. 3) Purchases page dropdown has 'Descargar PDF' option that triggers PDF generation/download via /api/pdf/purchase-order/{id} endpoint. 4) Settings page shows logo preview in 'Logo de la Empresa' section, supporting both logo_file (base64) and logo_url fallback.",
+
+  "features_verified": {
+    "dashboard_configurable_widgets": {
+      "status": "WORKING",
+      "selector": "[data-testid='dashboard-config-btn']",
+      "ui": "Button 'Configurar' opens Sheet with 8 widget checkboxes, saves to localStorage"
+    },
+    "crm_credit_days_field": {
+      "status": "WORKING",
+      "selector": "input#credit_days",
+      "ui": "Shows 'Plazo de Crédito (días)' when Tipo dropdown set to 'Cliente'"
+    },
+    "purchase_order_pdf_download": {
+      "status": "WORKING",
+      "endpoint": "GET /api/pdf/purchase-order/{id}",
+      "ui": "Dropdown > 'Descargar PDF' option triggers PDF generation/download"
+    },
+    "settings_logo_preview": {
+      "status": "WORKING",
+      "selector": "img[alt='Logo']",
+      "ui": "Shows logo preview in 'Logo de la Empresa' section with upload button"
+    }
+  }
+}
