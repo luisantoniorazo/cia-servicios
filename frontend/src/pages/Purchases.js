@@ -49,6 +49,8 @@ import {
   Clock,
   Trash2,
   FileDown,
+  Search,
+  X,
 } from "lucide-react";
 
 const PO_STATUSES = [
@@ -67,6 +69,7 @@ export const Purchases = () => {
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [searchFilter, setSearchFilter] = useState("");
   const [formData, setFormData] = useState({
     order_number: "",
     project_id: "",
@@ -208,6 +211,21 @@ export const Purchases = () => {
     return project?.name || "N/A";
   };
 
+  // Filter purchase orders based on search
+  const filteredPurchaseOrders = purchaseOrders.filter((po) => {
+    if (!searchFilter) return true;
+    const search = searchFilter.toLowerCase();
+    const supplierName = getSupplierName(po.supplier_id)?.toLowerCase() || "";
+    const projectName = getProjectName(po.project_id)?.toLowerCase() || "";
+    return (
+      po.order_number?.toLowerCase().includes(search) ||
+      po.description?.toLowerCase().includes(search) ||
+      supplierName.includes(search) ||
+      projectName.includes(search) ||
+      formatCurrency(po.total).includes(search)
+    );
+  });
+
   const stats = {
     total: purchaseOrders.length,
     pending: purchaseOrders.filter((po) => ["requested", "quoted", "approved"].includes(po.status)).length,
@@ -296,6 +314,32 @@ export const Purchases = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {/* Search Filter */}
+          <div className="flex items-center gap-2 mb-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por folio, proveedor, proyecto..."
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                className="pl-9"
+                data-testid="purchases-search-filter"
+              />
+              {searchFilter && (
+                <button
+                  onClick={() => setSearchFilter("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            {searchFilter && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                Filtro activo: "{searchFilter}"
+              </Badge>
+            )}
+          </div>
           <div className="rounded-sm border overflow-hidden">
             <Table>
               <TableHeader>
@@ -310,14 +354,14 @@ export const Purchases = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {purchaseOrders.length === 0 ? (
+                {filteredPurchaseOrders.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      No hay órdenes de compra registradas
+                      {searchFilter ? "No se encontraron órdenes de compra" : "No hay órdenes de compra registradas"}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  purchaseOrders.map((po) => (
+                  filteredPurchaseOrders.map((po) => (
                     <TableRow key={po.id} data-testid={`po-row-${po.id}`}>
                       <TableCell className="font-mono text-sm">{po.order_number}</TableCell>
                       <TableCell>{getSupplierName(po.supplier_id)}</TableCell>

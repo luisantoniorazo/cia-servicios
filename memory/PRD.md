@@ -2,7 +2,7 @@
 
 ## Información General
 - **Nombre**: CIA SERVICIOS - Control Estratégico de Servicios y Proyectos
-- **Versión**: 2.4.0
+- **Versión**: 2.5.0
 - **Última Actualización**: Diciembre 2025
 - **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2
 
@@ -208,6 +208,16 @@ Company Admin (CIA Servicios Demo):
 - [ ] Calendario Gantt
 
 ## Changelog
+### v2.5.0 (Diciembre 2025)
+- ✨ **Filtros activos en todas las tablas principales:**
+  - CRM: Buscar por nombre, email, teléfono, RFC
+  - Facturación: Buscar por folio, cliente, concepto, UUID SAT
+  - Proyectos: Buscar por nombre, cliente, ubicación
+  - Cotizaciones: Buscar por folio, título, cliente, estado
+  - Compras: Buscar por folio, proveedor, proyecto
+  - Proveedores: Buscar por nombre, contacto, email, categoría
+- 🔧 Badge visual "Filtro activo" con botón X para limpiar
+
 ### v2.4.0 (Diciembre 2025)
 - ✨ Plazo de crédito en días para clientes en CRM
 - ✨ Logo de empresa incluido en documentos PDF

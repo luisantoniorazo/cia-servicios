@@ -61,6 +61,8 @@ import {
   PhoneCall,
   MapPin,
   Video,
+  Search,
+  X,
 } from "lucide-react";
 
 const FOLLOWUP_TYPES = [
@@ -98,6 +100,7 @@ export const CRM = () => {
     followup_type: "llamada",
     notes: "",
   });
+  const [searchFilter, setSearchFilter] = useState("");
 
   useEffect(() => {
     if (company?.id) {
@@ -268,10 +271,24 @@ export const CRM = () => {
     setFollowupDialogOpen(true);
   };
 
-  const filteredClients = clients.filter((c) => {
+  // First filter by tab, then by search
+  const tabFilteredClients = clients.filter((c) => {
     if (activeTab === "prospects") return c.is_prospect;
     if (activeTab === "clients") return !c.is_prospect;
     return true;
+  });
+  
+  const filteredClients = tabFilteredClients.filter((client) => {
+    if (!searchFilter) return true;
+    const search = searchFilter.toLowerCase();
+    return (
+      client.name?.toLowerCase().includes(search) ||
+      client.contact_name?.toLowerCase().includes(search) ||
+      client.email?.toLowerCase().includes(search) ||
+      client.phone?.includes(search) ||
+      client.rfc?.toLowerCase().includes(search) ||
+      client.address?.toLowerCase().includes(search)
+    );
   });
 
   const stats = {
@@ -510,6 +527,32 @@ export const CRM = () => {
           </div>
         </CardHeader>
         <CardContent>
+          {/* Search Filter */}
+          <div className="flex items-center gap-2 mb-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nombre, email, teléfono, RFC..."
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                className="pl-9"
+                data-testid="crm-search-filter"
+              />
+              {searchFilter && (
+                <button
+                  onClick={() => setSearchFilter("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            {searchFilter && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                Filtro activo: "{searchFilter}"
+              </Badge>
+            )}
+          </div>
           <div className="rounded-sm border overflow-hidden">
             <Table>
               <TableHeader>

@@ -57,6 +57,8 @@ import {
   User,
   Calendar,
   Eye,
+  Search,
+  X,
 } from "lucide-react";
 
 const PAYMENT_METHODS = [
@@ -107,6 +109,26 @@ export const Invoices = () => {
     sat_uuid: "",
     sat_file: null,
   });
+  
+  const [searchFilter, setSearchFilter] = useState("");
+
+  // Filter invoices based on search
+  const getFilteredInvoices = (invoiceList) => {
+    if (!searchFilter) return invoiceList;
+    const search = searchFilter.toLowerCase();
+    return invoiceList.filter((inv) => {
+      const clientName = getClientName(inv.client_id)?.toLowerCase() || "";
+      const projectName = getProjectName(inv.project_id)?.toLowerCase() || "";
+      return (
+        inv.invoice_number?.toLowerCase().includes(search) ||
+        inv.concept?.toLowerCase().includes(search) ||
+        clientName.includes(search) ||
+        projectName.includes(search) ||
+        inv.sat_uuid?.toLowerCase().includes(search) ||
+        formatCurrency(inv.total).includes(search)
+      );
+    });
+  };
 
   useEffect(() => {
     if (company?.id) {
@@ -368,13 +390,15 @@ export const Invoices = () => {
     overdue: overdueData.overdue?.length || 0,
   };
 
-  const filteredInvoices = activeTab === "all" 
+  const baseFilteredInvoices = activeTab === "all" 
     ? invoices 
     : activeTab === "overdue"
     ? overdueData.overdue
     : activeTab === "upcoming"
     ? overdueData.upcoming
     : invoices.filter(inv => inv.status === activeTab);
+  
+  const filteredInvoices = getFilteredInvoices(baseFilteredInvoices);
 
   if (loading) {
     return (
@@ -507,6 +531,32 @@ export const Invoices = () => {
               </CardTitle>
             </CardHeader>
             <CardContent>
+              {/* Search Filter */}
+              <div className="flex items-center gap-2 mb-4">
+                <div className="relative flex-1 max-w-sm">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Buscar por folio, cliente, concepto, UUID SAT..."
+                    value={searchFilter}
+                    onChange={(e) => setSearchFilter(e.target.value)}
+                    className="pl-9"
+                    data-testid="invoices-search-filter"
+                  />
+                  {searchFilter && (
+                    <button
+                      onClick={() => setSearchFilter("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+                {searchFilter && (
+                  <Badge variant="secondary" className="flex items-center gap-1">
+                    Filtro activo: "{searchFilter}"
+                  </Badge>
+                )}
+              </div>
               <div className="rounded-sm border overflow-hidden">
                 <Table>
                   <TableHeader>

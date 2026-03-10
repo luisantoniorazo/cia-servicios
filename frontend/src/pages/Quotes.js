@@ -56,6 +56,8 @@ import {
   Download,
   Loader2,
   Receipt,
+  Search,
+  X,
 } from "lucide-react";
 
 const QUOTE_STATUSES = [
@@ -74,6 +76,7 @@ export const Quotes = () => {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [searchFilter, setSearchFilter] = useState("");
   const [formData, setFormData] = useState({
     client_id: "",
     quote_number: "",
@@ -232,6 +235,21 @@ export const Quotes = () => {
     return client?.name || "N/A";
   };
 
+  // Filter quotes based on search
+  const filteredQuotes = quotes.filter((quote) => {
+    if (!searchFilter) return true;
+    const search = searchFilter.toLowerCase();
+    const clientName = getClientName(quote.client_id)?.toLowerCase() || "";
+    return (
+      quote.quote_number?.toLowerCase().includes(search) ||
+      quote.title?.toLowerCase().includes(search) ||
+      quote.description?.toLowerCase().includes(search) ||
+      clientName.includes(search) ||
+      formatCurrency(quote.total).includes(search) ||
+      getStatusLabel(quote.status)?.toLowerCase().includes(search)
+    );
+  });
+
   const openNewQuoteDialog = () => {
     resetForm();
     setFormData((prev) => ({ ...prev, quote_number: generateQuoteNumber() }));
@@ -327,6 +345,32 @@ export const Quotes = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {/* Search Filter */}
+          <div className="flex items-center gap-2 mb-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por folio, título, cliente, estado..."
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                className="pl-9"
+                data-testid="quotes-search-filter"
+              />
+              {searchFilter && (
+                <button
+                  onClick={() => setSearchFilter("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            {searchFilter && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                Filtro activo: "{searchFilter}"
+              </Badge>
+            )}
+          </div>
           <div className="rounded-sm border overflow-hidden">
             <Table>
               <TableHeader>
@@ -341,14 +385,14 @@ export const Quotes = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {quotes.length === 0 ? (
+                {filteredQuotes.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
-                      No hay cotizaciones registradas
+                      {searchFilter ? "No se encontraron cotizaciones" : "No hay cotizaciones registradas"}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  quotes.map((quote) => (
+                  filteredQuotes.map((quote) => (
                     <TableRow key={quote.id} data-testid={`quote-row-${quote.id}`}>
                       <TableCell className="font-mono text-sm">{quote.quote_number}</TableCell>
                       <TableCell>

@@ -63,6 +63,8 @@ import {
   PlayCircle,
   PauseCircle,
   ListTodo,
+  Search,
+  X,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 
@@ -107,6 +109,24 @@ export const Projects = () => {
     due_date: "",
     status: "pending",
   });
+  
+  const [searchFilter, setSearchFilter] = useState("");
+
+  // Filter projects based on search
+  const getFilteredProjects = (projectList) => {
+    if (!searchFilter) return projectList;
+    const search = searchFilter.toLowerCase();
+    return projectList.filter((project) => {
+      const clientName = getClientName(project.client_id)?.toLowerCase() || "";
+      return (
+        project.name?.toLowerCase().includes(search) ||
+        project.description?.toLowerCase().includes(search) ||
+        project.location?.toLowerCase().includes(search) ||
+        clientName.includes(search) ||
+        formatCurrency(project.contract_amount).includes(search)
+      );
+    });
+  };
 
   useEffect(() => {
     if (company?.id) {
@@ -277,9 +297,11 @@ export const Projects = () => {
     return client?.name || "N/A";
   };
 
-  const filteredProjects = statusFilter === "all" 
+  const baseFilteredProjects = statusFilter === "all" 
     ? projects 
     : projects.filter((p) => p.status === statusFilter);
+  
+  const filteredProjects = getFilteredProjects(baseFilteredProjects);
 
   const openDetailDialog = async (project) => {
     try {
@@ -514,6 +536,32 @@ export const Projects = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {/* Search Filter */}
+          <div className="flex items-center gap-2 mb-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nombre, cliente, ubicación..."
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                className="pl-9"
+                data-testid="projects-search-filter"
+              />
+              {searchFilter && (
+                <button
+                  onClick={() => setSearchFilter("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            {searchFilter && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                Filtro activo: "{searchFilter}"
+              </Badge>
+            )}
+          </div>
           <div className="rounded-sm border overflow-hidden">
             <Table>
               <TableHeader>

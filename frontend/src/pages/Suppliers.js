@@ -47,7 +47,10 @@ import {
   Trash2,
   Edit,
   Package,
+  Search,
+  X,
 } from "lucide-react";
+import { Badge } from "../components/ui/badge";
 
 const SUPPLIER_CATEGORIES = [
   "Materiales",
@@ -65,6 +68,7 @@ export const Suppliers = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState(null);
+  const [searchFilter, setSearchFilter] = useState("");
   const [formData, setFormData] = useState({
     name: "",
     contact_name: "",
@@ -148,6 +152,21 @@ export const Suppliers = () => {
     return suppliers.filter((s) => s.category === category).length;
   };
 
+  // Filter suppliers based on search
+  const filteredSuppliers = suppliers.filter((supplier) => {
+    if (!searchFilter) return true;
+    const search = searchFilter.toLowerCase();
+    return (
+      supplier.name?.toLowerCase().includes(search) ||
+      supplier.contact_name?.toLowerCase().includes(search) ||
+      supplier.email?.toLowerCase().includes(search) ||
+      supplier.phone?.includes(search) ||
+      supplier.rfc?.toLowerCase().includes(search) ||
+      supplier.category?.toLowerCase().includes(search) ||
+      supplier.address?.toLowerCase().includes(search)
+    );
+  });
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -193,6 +212,32 @@ export const Suppliers = () => {
           </CardDescription>
         </CardHeader>
         <CardContent>
+          {/* Search Filter */}
+          <div className="flex items-center gap-2 mb-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nombre, contacto, email, categoría..."
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                className="pl-9"
+                data-testid="suppliers-search-filter"
+              />
+              {searchFilter && (
+                <button
+                  onClick={() => setSearchFilter("")}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            {searchFilter && (
+              <Badge variant="secondary" className="flex items-center gap-1">
+                Filtro activo: "{searchFilter}"
+              </Badge>
+            )}
+          </div>
           <div className="rounded-sm border overflow-hidden">
             <Table>
               <TableHeader>
@@ -206,14 +251,14 @@ export const Suppliers = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {suppliers.length === 0 ? (
+                {filteredSuppliers.length === 0 ? (
                   <TableRow>
                     <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                      No hay proveedores registrados
+                      {searchFilter ? "No se encontraron proveedores" : "No hay proveedores registrados"}
                     </TableCell>
                   </TableRow>
                 ) : (
-                  suppliers.map((supplier) => (
+                  filteredSuppliers.map((supplier) => (
                     <TableRow key={supplier.id} data-testid={`supplier-row-${supplier.id}`}>
                       <TableCell>
                         <div className="font-medium">{supplier.name}</div>
