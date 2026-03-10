@@ -99,6 +99,7 @@ class CompanyBase(BaseModel):
     phone: Optional[str] = None
     email: Optional[EmailStr] = None
     logo_url: Optional[str] = None
+    logo_file: Optional[str] = None  # Base64 encoded logo
     monthly_fee: float = 0.0
     license_type: str = "basic"
     max_users: int = 5
@@ -110,6 +111,7 @@ class CompanyCreate(BaseModel):
     phone: Optional[str] = None
     email: Optional[EmailStr] = None
     logo_url: Optional[str] = None
+    logo_file: Optional[str] = None  # Base64 encoded logo
     monthly_fee: float = 0.0
     license_type: str = "basic"
     max_users: int = 5
@@ -273,6 +275,26 @@ class Quote(QuoteBase):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+# Client Followup Models (Seguimientos)
+class FollowupBase(BaseModel):
+    company_id: str
+    client_id: str
+    scheduled_date: datetime
+    followup_type: str = "llamada"  # llamada, email, visita, reunion
+    notes: Optional[str] = None
+    status: str = "pending"  # pending, completed, cancelled
+    completed_date: Optional[datetime] = None
+    result: Optional[str] = None
+
+class FollowupCreate(FollowupBase):
+    pass
+
+class Followup(FollowupBase):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    created_by: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 # Invoice Models
 class InvoiceBase(BaseModel):
@@ -612,6 +634,7 @@ async def create_company_with_admin(company_data: CompanyCreate, current_user: d
         phone=company_data.phone,
         email=company_data.email,
         logo_url=company_data.logo_url,
+        logo_file=company_data.logo_file,
         monthly_fee=company_data.monthly_fee,
         license_type=company_data.license_type,
         max_users=company_data.max_users,
@@ -940,12 +963,32 @@ async def update_company(company_id: str, update_data: dict, current_user: dict 
     if current_user.get("company_id") != company_id:
         raise HTTPException(status_code=403, detail="Solo puedes editar tu empresa")
     
-    allowed_fields = ["address", "phone", "email", "logo_url"]
+    allowed_fields = ["address", "phone", "email", "logo_url", "logo_file"]
     filtered_data = {k: v for k, v in update_data.items() if k in allowed_fields}
     filtered_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     
     await db.companies.update_one({"id": company_id}, {"$set": filtered_data})
     return {"message": "Empresa actualizada"}
+
+@api_router.post("/companies/{company_id}/logo")
+async def upload_company_logo(company_id: str, logo_data: str, current_user: dict = Depends(require_admin)):
+    """Upload company logo as base64"""
+    if current_user.get("company_id") != company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    # Validate base64 and size
+    try:
+        content_bytes = base64.b64decode(logo_data)
+        if len(content_bytes) > 2 * 1024 * 1024:  # Max 2MB
+            raise HTTPException(status_code=400, detail="El logo excede 2MB")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="Formato de imagen inválido")
+    
+    await db.companies.update_one(
+        {"id": company_id},
+        {"$set": {"logo_file": logo_data, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"message": "Logo actualizado"}
 
 # ============== CLIENT/PROSPECT ROUTES ==============
 @api_router.post("/clients", response_model=Client)
@@ -1017,6 +1060,111 @@ async def delete_client(client_id: str, current_user: dict = Depends(get_current
     
     await db.clients.delete_one({"id": client_id})
     return {"message": "Cliente eliminado"}
+
+# ============== CLIENT FOLLOWUP ROUTES ==============
+@api_router.post("/clients/{client_id}/followups")
+async def create_followup(client_id: str, followup_data: FollowupCreate, current_user: dict = Depends(get_current_user)):
+    """Create a follow-up for a prospect/client"""
+    client = await db.clients.find_one({"id": client_id}, {"_id": 0})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    if current_user.get("company_id") != client.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    followup = Followup(**followup_data.model_dump())
+    followup_dict = followup.model_dump()
+    followup_dict["client_id"] = client_id
+    followup_dict["created_by"] = current_user.get("sub")
+    followup_dict["created_at"] = followup_dict["created_at"].isoformat()
+    followup_dict["scheduled_date"] = followup_dict["scheduled_date"].isoformat() if followup_dict.get("scheduled_date") else None
+    followup_dict["completed_date"] = followup_dict["completed_date"].isoformat() if followup_dict.get("completed_date") else None
+    
+    await db.followups.insert_one(followup_dict)
+    return {"message": "Seguimiento programado", "id": followup.id}
+
+@api_router.get("/clients/{client_id}/followups")
+async def list_followups(client_id: str, current_user: dict = Depends(get_current_user)):
+    """List follow-ups for a client"""
+    client = await db.clients.find_one({"id": client_id}, {"_id": 0})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    if current_user.get("company_id") != client.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    followups = await db.followups.find({"client_id": client_id}, {"_id": 0}).sort("scheduled_date", 1).to_list(1000)
+    for f in followups:
+        if isinstance(f.get("created_at"), str):
+            f["created_at"] = datetime.fromisoformat(f["created_at"])
+        if isinstance(f.get("scheduled_date"), str):
+            f["scheduled_date"] = datetime.fromisoformat(f["scheduled_date"])
+        if isinstance(f.get("completed_date"), str):
+            f["completed_date"] = datetime.fromisoformat(f["completed_date"])
+    return followups
+
+@api_router.get("/followups/pending")
+async def list_pending_followups(company_id: str, current_user: dict = Depends(get_current_user)):
+    """List all pending follow-ups for the company"""
+    if current_user.get("company_id") != company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    followups = await db.followups.find({
+        "company_id": company_id,
+        "status": "pending"
+    }, {"_id": 0}).sort("scheduled_date", 1).to_list(1000)
+    
+    for f in followups:
+        # Get client info
+        client = await db.clients.find_one({"id": f.get("client_id")}, {"_id": 0, "name": 1, "phone": 1, "email": 1})
+        f["client_name"] = client.get("name") if client else "N/A"
+        f["client_phone"] = client.get("phone") if client else None
+        f["client_email"] = client.get("email") if client else None
+        
+        if isinstance(f.get("created_at"), str):
+            f["created_at"] = datetime.fromisoformat(f["created_at"])
+        if isinstance(f.get("scheduled_date"), str):
+            f["scheduled_date"] = datetime.fromisoformat(f["scheduled_date"])
+    
+    return followups
+
+@api_router.put("/followups/{followup_id}")
+async def update_followup(followup_id: str, data: dict, current_user: dict = Depends(get_current_user)):
+    """Update a follow-up (complete, cancel, reschedule)"""
+    followup = await db.followups.find_one({"id": followup_id}, {"_id": 0})
+    if not followup:
+        raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
+    
+    if current_user.get("company_id") != followup.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    update_data = {}
+    if "status" in data:
+        update_data["status"] = data["status"]
+        if data["status"] == "completed":
+            update_data["completed_date"] = datetime.now(timezone.utc).isoformat()
+    if "result" in data:
+        update_data["result"] = data["result"]
+    if "scheduled_date" in data:
+        update_data["scheduled_date"] = data["scheduled_date"]
+    if "notes" in data:
+        update_data["notes"] = data["notes"]
+    
+    await db.followups.update_one({"id": followup_id}, {"$set": update_data})
+    return {"message": "Seguimiento actualizado"}
+
+@api_router.delete("/followups/{followup_id}")
+async def delete_followup(followup_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a follow-up"""
+    followup = await db.followups.find_one({"id": followup_id}, {"_id": 0})
+    if not followup:
+        raise HTTPException(status_code=404, detail="Seguimiento no encontrado")
+    
+    if current_user.get("company_id") != followup.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    await db.followups.delete_one({"id": followup_id})
+    return {"message": "Seguimiento eliminado"}
 
 # ============== PROJECT ROUTES ==============
 @api_router.post("/projects", response_model=Project)
@@ -1538,7 +1686,8 @@ async def get_client_statement(client_id: str, current_user: dict = Depends(get_
             "id": client["id"],
             "name": client["name"],
             "email": client.get("email"),
-            "phone": client.get("phone")
+            "phone": client.get("phone"),
+            "rfc": client.get("rfc")
         },
         "summary": {
             "total_invoiced": total_invoiced,
@@ -1550,6 +1699,169 @@ async def get_client_statement(client_id: str, current_user: dict = Depends(get_
         "invoices": invoices,
         "payments": payments,
         "overdue_invoices": overdue_invoices
+    }
+
+def generate_statement_pdf(client: dict, company: dict, invoices: list, payments: list, summary: dict) -> bytes:
+    """Generate PDF for client account statement"""
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=16, textColor=colors.HexColor('#004e92'), alignment=TA_CENTER)
+    
+    elements = []
+    
+    # Header
+    elements.append(Paragraph(company.get('business_name', 'CIA SERVICIOS'), title_style))
+    elements.append(Paragraph(f"RFC: {company.get('rfc', '')} | Tel: {company.get('phone', '')}", styles['Normal']))
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Title
+    elements.append(Paragraph("ESTADO DE CUENTA", styles['Heading2']))
+    elements.append(Paragraph(f"Fecha: {datetime.now().strftime('%d/%m/%Y')}", styles['Normal']))
+    elements.append(Spacer(1, 0.2*inch))
+    
+    # Client info
+    client_data = [
+        ['CLIENTE:', client.get('name', 'N/A')],
+        ['RFC:', client.get('rfc', 'N/A')],
+        ['Email:', client.get('email', 'N/A')],
+        ['Teléfono:', client.get('phone', 'N/A')],
+    ]
+    client_table = Table(client_data, colWidths=[1.5*inch, 4*inch])
+    client_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    elements.append(client_table)
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Summary
+    elements.append(Paragraph("<b>RESUMEN</b>", styles['Heading3']))
+    summary_data = [
+        ['Total Facturado:', f"${summary.get('total_invoiced', 0):,.2f}"],
+        ['Total Pagado:', f"${summary.get('total_paid', 0):,.2f}"],
+        ['Saldo Pendiente:', f"${summary.get('balance', 0):,.2f}"],
+    ]
+    if summary.get('overdue_count', 0) > 0:
+        summary_data.append(['Facturas Vencidas:', f"{summary.get('overdue_count')} (${summary.get('overdue_amount', 0):,.2f})"])
+    
+    summary_table = Table(summary_data, colWidths=[2*inch, 2*inch])
+    summary_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 11),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e6f0fa')),
+    ]))
+    elements.append(summary_table)
+    elements.append(Spacer(1, 0.3*inch))
+    
+    # Invoices table
+    if invoices:
+        elements.append(Paragraph("<b>FACTURAS</b>", styles['Heading3']))
+        inv_data = [['Folio', 'Fecha', 'Concepto', 'Total', 'Pagado', 'Saldo', 'Estado']]
+        for inv in invoices:
+            created = inv.get('created_at', '')
+            if isinstance(created, datetime):
+                created = created.strftime('%d/%m/%Y')
+            elif isinstance(created, str):
+                created = created[:10]
+            
+            inv_data.append([
+                inv.get('invoice_number', ''),
+                created,
+                inv.get('concept', '')[:20] + '...' if len(inv.get('concept', '')) > 20 else inv.get('concept', ''),
+                f"${inv.get('total', 0):,.2f}",
+                f"${inv.get('paid_amount', 0):,.2f}",
+                f"${inv.get('total', 0) - inv.get('paid_amount', 0):,.2f}",
+                inv.get('status', '').upper()
+            ])
+        
+        inv_table = Table(inv_data, colWidths=[0.9*inch, 0.8*inch, 1.5*inch, 0.9*inch, 0.9*inch, 0.9*inch, 0.7*inch])
+        inv_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#004e92')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('ALIGN', (3, 0), (-1, -1), 'RIGHT'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(inv_table)
+        elements.append(Spacer(1, 0.2*inch))
+    
+    # Payments table
+    if payments:
+        elements.append(Paragraph("<b>PAGOS RECIBIDOS</b>", styles['Heading3']))
+        pay_data = [['Fecha', 'Método', 'Referencia', 'Monto']]
+        for p in payments:
+            pay_date = p.get('payment_date', '')
+            if isinstance(pay_date, datetime):
+                pay_date = pay_date.strftime('%d/%m/%Y')
+            elif isinstance(pay_date, str):
+                pay_date = pay_date[:10]
+            
+            pay_data.append([
+                pay_date,
+                p.get('payment_method', ''),
+                p.get('reference', '-'),
+                f"${p.get('amount', 0):,.2f}"
+            ])
+        
+        pay_table = Table(pay_data, colWidths=[1.2*inch, 1.5*inch, 2*inch, 1.5*inch])
+        pay_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2e7d32')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+        ]))
+        elements.append(pay_table)
+    
+    # Footer
+    elements.append(Spacer(1, 0.5*inch))
+    elements.append(Paragraph(f"Documento generado el {datetime.now().strftime('%d/%m/%Y %H:%M')}", styles['Normal']))
+    
+    doc.build(elements)
+    return buffer.getvalue()
+
+@api_router.get("/clients/{client_id}/statement/pdf")
+async def get_client_statement_pdf(client_id: str, current_user: dict = Depends(get_current_user)):
+    """Get client account statement as PDF"""
+    client = await db.clients.find_one({"id": client_id}, {"_id": 0})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    
+    if current_user.get("company_id") != client.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    company = await db.companies.find_one({"id": client.get("company_id")}, {"_id": 0})
+    invoices = await db.invoices.find({"client_id": client_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    payments = await db.payments.find({"client_id": client_id}, {"_id": 0}).sort("payment_date", -1).to_list(1000)
+    
+    total_invoiced = sum(inv.get("total", 0) for inv in invoices)
+    total_paid = sum(p.get("amount", 0) for p in payments)
+    
+    summary = {
+        "total_invoiced": total_invoiced,
+        "total_paid": total_paid,
+        "balance": total_invoiced - total_paid,
+        "overdue_count": 0,
+        "overdue_amount": 0
+    }
+    
+    pdf_bytes = generate_statement_pdf(client, company or {}, invoices, payments, summary)
+    pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
+    
+    client_name_slug = client.get("name", "cliente").replace(" ", "_")[:20]
+    
+    return {
+        "filename": f"estado_cuenta_{client_name_slug}_{datetime.now().strftime('%Y%m%d')}.pdf",
+        "content": pdf_base64,
+        "content_type": "application/pdf"
     }
 
 # ============== PROJECT TASKS ROUTES ==============

@@ -57,6 +57,8 @@ import {
   LogOut,
   BarChart3,
   AlertTriangle,
+  Upload,
+  Image,
 } from "lucide-react";
 
 const LICENSE_TYPES = [
@@ -74,6 +76,8 @@ export const SuperAdminDashboard = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState(null);
+  const [logoFile, setLogoFile] = useState(null);
+  const [logoPreview, setLogoPreview] = useState(null);
   const [formData, setFormData] = useState({
     business_name: "",
     rfc: "",
@@ -81,6 +85,7 @@ export const SuperAdminDashboard = () => {
     phone: "",
     email: "",
     logo_url: "",
+    logo_file: "",
     monthly_fee: "",
     license_type: "basic",
     max_users: 5,
@@ -113,8 +118,15 @@ export const SuperAdminDashboard = () => {
   const handleCreateCompany = async (e) => {
     e.preventDefault();
     try {
+      // Convert logo to base64 if selected
+      let logoBase64 = null;
+      if (logoFile) {
+        logoBase64 = await fileToBase64(logoFile);
+      }
+      
       const response = await api.post("/super-admin/companies", {
         ...formData,
+        logo_file: logoBase64,
         monthly_fee: parseFloat(formData.monthly_fee) || 0,
         max_users: parseInt(formData.max_users) || 5,
       });
@@ -159,6 +171,30 @@ export const SuperAdminDashboard = () => {
     toast.success("URL copiada al portapapeles");
   };
 
+  const fileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleLogoSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        toast.error("El logo no debe exceder 2MB");
+        return;
+      }
+      setLogoFile(file);
+      // Preview
+      const reader = new FileReader();
+      reader.onload = () => setLogoPreview(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
   const resetForm = () => {
     setFormData({
       business_name: "",
@@ -167,6 +203,7 @@ export const SuperAdminDashboard = () => {
       phone: "",
       email: "",
       logo_url: "",
+      logo_file: "",
       monthly_fee: "",
       license_type: "basic",
       max_users: 5,
@@ -177,6 +214,8 @@ export const SuperAdminDashboard = () => {
       recovery_email: "",
       recovery_phone: "",
     });
+    setLogoFile(null);
+    setLogoPreview(null);
   };
 
   const handleLogout = () => {
@@ -499,12 +538,29 @@ export const SuperAdminDashboard = () => {
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label>URL del Logo</Label>
-                    <Input
-                      value={formData.logo_url}
-                      onChange={(e) => setFormData({ ...formData, logo_url: e.target.value })}
-                      placeholder="https://..."
-                    />
+                    <Label>Logo de la Empresa</Label>
+                    <div className="border-2 border-dashed rounded-lg p-3 text-center hover:border-primary transition-colors">
+                      <input
+                        type="file"
+                        id="logo-file"
+                        className="hidden"
+                        accept=".png,.jpg,.jpeg,.webp"
+                        onChange={handleLogoSelect}
+                      />
+                      <label htmlFor="logo-file" className="cursor-pointer">
+                        {logoPreview ? (
+                          <div className="flex items-center justify-center gap-2">
+                            <img src={logoPreview} alt="Logo preview" className="h-10 w-10 object-contain rounded" />
+                            <span className="text-sm text-muted-foreground">{logoFile?.name}</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center gap-2 text-muted-foreground">
+                            <Upload className="h-5 w-5" />
+                            <span className="text-sm">Subir logo (máx. 2MB)</span>
+                          </div>
+                        )}
+                      </label>
+                    </div>
                   </div>
                   <div className="col-span-2 grid gap-2">
                     <Label>Dirección</Label>

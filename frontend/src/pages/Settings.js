@@ -41,6 +41,8 @@ import {
   AlertTriangle,
   Shield,
   Eye,
+  Upload,
+  Image,
 } from "lucide-react";
 import { Checkbox } from "../components/ui/checkbox";
 
@@ -81,6 +83,8 @@ export const Settings = () => {
     email: "",
     logo_url: "",
   });
+  const [logoFile, setLogoFile] = useState(null);
+  const [logoPreview, setLogoPreview] = useState(null);
   const [userForm, setUserForm] = useState({
     email: "",
     full_name: "",
@@ -99,6 +103,10 @@ export const Settings = () => {
         email: company.email || "",
         logo_url: company.logo_url || "",
       });
+      // Set logo preview from existing logo_file
+      if (company.logo_file) {
+        setLogoPreview(`data:image/png;base64,${company.logo_file}`);
+      }
       fetchUsers();
     } else {
       setLoading(false);
@@ -116,12 +124,54 @@ export const Settings = () => {
     }
   };
 
+  const fileToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleLogoSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        toast.error("El logo no debe exceder 2MB");
+        return;
+      }
+      setLogoFile(file);
+      const reader = new FileReader();
+      reader.onload = () => setLogoPreview(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleUploadLogo = async () => {
+    if (!logoFile) return;
+    try {
+      const logoBase64 = await fileToBase64(logoFile);
+      await api.post(`/companies/${company.id}/logo`, logoBase64, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      toast.success("Logo actualizado");
+      setLogoFile(null);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Error al subir logo"));
+    }
+  };
+
   const handleUpdateCompany = async (e) => {
     e.preventDefault();
     try {
       const response = await api.put(`/companies/${company.id}`, companyForm);
       setCompany(response.data);
       toast.success("Información actualizada");
+      
+      // Upload logo if changed
+      if (logoFile) {
+        await handleUploadLogo();
+      }
     } catch (error) {
       toast.error("Error al actualizar información");
     }
@@ -270,23 +320,40 @@ export const Settings = () => {
                 />
               </div>
               <div className="col-span-full grid gap-2">
-                <Label htmlFor="logo_url">URL del Logo</Label>
-                <Input
-                  id="logo_url"
-                  value={companyForm.logo_url}
-                  onChange={(e) => setCompanyForm({ ...companyForm, logo_url: e.target.value })}
-                  placeholder="https://ejemplo.com/logo.png"
-                  disabled={!isAdmin()}
-                />
-                {companyForm.logo_url && (
-                  <div className="mt-2">
-                    <img 
-                      src={companyForm.logo_url} 
-                      alt="Logo preview" 
-                      className="h-16 w-auto object-contain border rounded p-2"
-                    />
+                <Label>Logo de la Empresa</Label>
+                <div className="flex items-center gap-4">
+                  {/* Logo Preview */}
+                  <div className="h-20 w-20 border rounded-lg flex items-center justify-center bg-slate-50">
+                    {logoPreview ? (
+                      <img src={logoPreview} alt="Logo" className="h-16 w-16 object-contain" />
+                    ) : company?.logo_url ? (
+                      <img src={company.logo_url} alt="Logo" className="h-16 w-16 object-contain" />
+                    ) : (
+                      <Image className="h-8 w-8 text-slate-300" />
+                    )}
                   </div>
-                )}
+                  {/* Upload Button */}
+                  {isAdmin() && (
+                    <div className="flex-1">
+                      <input
+                        type="file"
+                        id="logo-upload"
+                        className="hidden"
+                        accept=".png,.jpg,.jpeg,.webp"
+                        onChange={handleLogoSelect}
+                      />
+                      <label htmlFor="logo-upload">
+                        <Button type="button" variant="outline" className="cursor-pointer" asChild>
+                          <span>
+                            <Upload className="mr-2 h-4 w-4" />
+                            {logoFile ? logoFile.name : "Subir Logo"}
+                          </span>
+                        </Button>
+                      </label>
+                      <p className="text-xs text-muted-foreground mt-1">PNG, JPG o WebP (máx. 2MB)</p>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
             {isAdmin() && (

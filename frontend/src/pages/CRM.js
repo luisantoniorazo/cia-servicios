@@ -55,13 +55,29 @@ import {
   Trash2,
   TrendingUp,
   Percent,
+  Calendar,
+  Clock,
+  CheckCircle,
+  PhoneCall,
+  MapPin,
+  Video,
 } from "lucide-react";
+
+const FOLLOWUP_TYPES = [
+  { value: "llamada", label: "Llamada", icon: PhoneCall },
+  { value: "email", label: "Email", icon: Mail },
+  { value: "visita", label: "Visita", icon: MapPin },
+  { value: "reunion", label: "Reunión", icon: Video },
+];
 
 export const CRM = () => {
   const { api, company } = useAuth();
   const [clients, setClients] = useState([]);
+  const [followups, setFollowups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [followupDialogOpen, setFollowupDialogOpen] = useState(false);
+  const [selectedClient, setSelectedClient] = useState(null);
   const [editingClient, setEditingClient] = useState(null);
   const [activeTab, setActiveTab] = useState("all");
   const [formData, setFormData] = useState({
@@ -75,10 +91,17 @@ export const CRM = () => {
     probability: 0,
     notes: "",
   });
+  const [followupForm, setFollowupForm] = useState({
+    scheduled_date: "",
+    scheduled_time: "10:00",
+    followup_type: "llamada",
+    notes: "",
+  });
 
   useEffect(() => {
     if (company?.id) {
       fetchClients();
+      fetchPendingFollowups();
     }
   }, [company]);
 
@@ -90,6 +113,15 @@ export const CRM = () => {
       toast.error("Error al cargar clientes");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchPendingFollowups = async () => {
+    try {
+      const response = await api.get(`/followups/pending?company_id=${company.id}`);
+      setFollowups(response.data);
+    } catch (error) {
+      console.error("Error fetching followups:", error);
     }
   };
 
@@ -160,6 +192,40 @@ export const CRM = () => {
     }
   };
 
+  const handleCreateFollowup = async (e) => {
+    e.preventDefault();
+    if (!selectedClient) return;
+    try {
+      const scheduledDateTime = `${followupForm.scheduled_date}T${followupForm.scheduled_time}:00`;
+      await api.post(`/clients/${selectedClient.id}/followups`, {
+        company_id: company.id,
+        client_id: selectedClient.id,
+        scheduled_date: scheduledDateTime,
+        followup_type: followupForm.followup_type,
+        notes: followupForm.notes,
+      });
+      toast.success("Seguimiento programado");
+      setFollowupDialogOpen(false);
+      resetFollowupForm();
+      fetchPendingFollowups();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Error al crear seguimiento"));
+    }
+  };
+
+  const handleCompleteFollowup = async (followupId, result) => {
+    try {
+      await api.put(`/followups/${followupId}`, {
+        status: "completed",
+        result: result || "Completado",
+      });
+      toast.success("Seguimiento completado");
+      fetchPendingFollowups();
+    } catch (error) {
+      toast.error("Error al completar seguimiento");
+    }
+  };
+
   const resetForm = () => {
     setEditingClient(null);
     setFormData({
@@ -173,6 +239,28 @@ export const CRM = () => {
       probability: 0,
       notes: "",
     });
+  };
+
+  const resetFollowupForm = () => {
+    setSelectedClient(null);
+    setFollowupForm({
+      scheduled_date: "",
+      scheduled_time: "10:00",
+      followup_type: "llamada",
+      notes: "",
+    });
+  };
+
+  const openFollowupDialog = (client) => {
+    setSelectedClient(client);
+    // Set default date to tomorrow
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    setFollowupForm(prev => ({
+      ...prev,
+      scheduled_date: tomorrow.toISOString().split('T')[0],
+    }));
+    setFollowupDialogOpen(true);
   };
 
   const filteredClients = clients.filter((c) => {
@@ -475,10 +563,16 @@ export const CRM = () => {
                               Editar
                             </DropdownMenuItem>
                             {client.is_prospect && (
-                              <DropdownMenuItem onClick={() => handleConvertToClient(client)}>
-                                <UserCheck className="mr-2 h-4 w-4 text-emerald-500" />
-                                Convertir a Cliente
-                              </DropdownMenuItem>
+                              <>
+                                <DropdownMenuItem onClick={() => openFollowupDialog(client)}>
+                                  <Calendar className="mr-2 h-4 w-4 text-blue-500" />
+                                  Programar Seguimiento
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleConvertToClient(client)}>
+                                  <UserCheck className="mr-2 h-4 w-4 text-emerald-500" />
+                                  Convertir a Cliente
+                                </DropdownMenuItem>
+                              </>
                             )}
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
@@ -499,6 +593,139 @@ export const CRM = () => {
           </div>
         </CardContent>
       </Card>
+
+      {/* Pending Followups Section */}
+      {followups.length > 0 && (
+        <Card data-testid="followups-card">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Clock className="h-5 w-5 text-blue-500" />
+              Seguimientos Pendientes ({followups.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {followups.map((f) => {
+                const FollowupIcon = FOLLOWUP_TYPES.find(t => t.value === f.followup_type)?.icon || Phone;
+                const scheduledDate = new Date(f.scheduled_date);
+                const isToday = scheduledDate.toDateString() === new Date().toDateString();
+                const isPast = scheduledDate < new Date();
+                
+                return (
+                  <div 
+                    key={f.id} 
+                    className={`p-3 border rounded-lg flex items-center justify-between ${
+                      isPast ? "border-red-200 bg-red-50" : isToday ? "border-amber-200 bg-amber-50" : ""
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`p-2 rounded-full ${isPast ? "bg-red-100" : isToday ? "bg-amber-100" : "bg-blue-100"}`}>
+                        <FollowupIcon className={`h-4 w-4 ${isPast ? "text-red-600" : isToday ? "text-amber-600" : "text-blue-600"}`} />
+                      </div>
+                      <div>
+                        <div className="font-medium">{f.client_name}</div>
+                        <div className="text-sm text-muted-foreground flex items-center gap-2">
+                          <Calendar className="h-3 w-3" />
+                          {formatDate(f.scheduled_date)}
+                          {f.notes && <span>• {f.notes}</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {f.client_phone && (
+                        <Button variant="ghost" size="sm" asChild>
+                          <a href={`tel:${f.client_phone}`}>
+                            <Phone className="h-4 w-4" />
+                          </a>
+                        </Button>
+                      )}
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => handleCompleteFollowup(f.id, "Contactado")}
+                      >
+                        <CheckCircle className="mr-1 h-3 w-3" />
+                        Completar
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Followup Dialog */}
+      <Dialog open={followupDialogOpen} onOpenChange={setFollowupDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <form onSubmit={handleCreateFollowup}>
+            <DialogHeader>
+              <DialogTitle>Programar Seguimiento</DialogTitle>
+              <DialogDescription>
+                {selectedClient?.name}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Fecha</Label>
+                  <Input
+                    type="date"
+                    value={followupForm.scheduled_date}
+                    onChange={(e) => setFollowupForm({ ...followupForm, scheduled_date: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Hora</Label>
+                  <Input
+                    type="time"
+                    value={followupForm.scheduled_time}
+                    onChange={(e) => setFollowupForm({ ...followupForm, scheduled_time: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Tipo de Seguimiento</Label>
+                <Select
+                  value={followupForm.followup_type}
+                  onValueChange={(value) => setFollowupForm({ ...followupForm, followup_type: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FOLLOWUP_TYPES.map((type) => (
+                      <SelectItem key={type.value} value={type.value}>
+                        {type.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Notas</Label>
+                <Textarea
+                  value={followupForm.notes}
+                  onChange={(e) => setFollowupForm({ ...followupForm, notes: e.target.value })}
+                  placeholder="Motivo del seguimiento..."
+                  rows={2}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setFollowupDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" className="btn-industrial">
+                Programar
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

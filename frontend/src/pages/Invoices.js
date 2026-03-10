@@ -886,6 +886,16 @@ export const Invoices = () => {
             </div>
           )}
           <DialogFooter>
+            {clientStatement && (
+              <Button 
+                variant="outline" 
+                onClick={() => handleDownloadStatementPDF(clientStatement.client.id)}
+                className="mr-auto"
+              >
+                <Download className="mr-2 h-4 w-4" />
+                Descargar PDF
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setStatementDialogOpen(false)}>Cerrar</Button>
           </DialogFooter>
         </DialogContent>
