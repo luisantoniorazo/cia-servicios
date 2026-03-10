@@ -2,8 +2,8 @@
 
 ## Información General
 - **Nombre**: CIA SERVICIOS - Control Estratégico de Servicios y Proyectos
-- **Versión**: 2.2.0
-- **Última Actualización**: Marzo 2026
+- **Versión**: 2.3.0
+- **Última Actualización**: Diciembre 2025
 - **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2
 
 ## Problem Statement Original
@@ -15,6 +15,7 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - Login simplificado (sin clave maestra)
 - Dashboard con estadísticas de empresas
 - URLs visibles de cada empresa
+- **Gestión de admins de empresa (editar datos, bloquear/desbloquear)** ✨
 
 ### Portal de Empresa (`/empresa/{slug}/login`)
 - Login por empresa
@@ -45,6 +46,8 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - [x] Gestión de clientes y prospectos
 - [x] Probabilidad de cierre
 - [x] **Estado de cuenta del cliente** ✨
+- [x] **Seguimientos programados (llamadas, emails, visitas, reuniones)** ✨
+- [x] **Panel de seguimientos pendientes** ✨
 
 ### 5. Cotizaciones
 - [x] Pipeline comercial (7 etapas + Facturada)
@@ -58,6 +61,7 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - [x] **Sistema de abonos con comprobante**
 - [x] **Subida de factura SAT (UUID/XML/PDF)**
 - [x] **Estado de cuenta por cliente**
+- [x] **Estado de cuenta descargable en PDF** ✨
 - [x] **Alertas de facturas vencidas**
 - [x] **Tabs: Todas, Pendientes, Parciales, Pagadas, Vencidas, Próx. Vencer**
 - [x] Generación de PDF
@@ -123,7 +127,20 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 
 ### Estado de Cuenta
 - `GET /api/clients/{id}/statement` - Estado de cuenta completo
+- `GET /api/clients/{id}/statement/pdf` - Estado de cuenta en PDF ✨
 - `GET /api/invoices/overdue` - Facturas vencidas y próximas
+
+### Seguimientos CRM ✨
+- `POST /api/clients/{id}/followups` - Crear seguimiento programado
+- `GET /api/clients/{id}/followups` - Listar seguimientos del cliente
+- `GET /api/followups/pending` - Seguimientos pendientes de la empresa
+- `PUT /api/followups/{id}` - Actualizar/completar seguimiento
+- `DELETE /api/followups/{id}` - Eliminar seguimiento
+
+### Gestión de Admins de Empresa ✨
+- `GET /api/super-admin/companies/{id}/admin` - Obtener datos del admin
+- `PUT /api/super-admin/companies/{id}/admin` - Actualizar datos del admin
+- `PATCH /api/super-admin/companies/{id}/admin/toggle-status` - Bloquear/desbloquear admin
 
 ### Tareas de Proyecto
 - `POST /api/projects/{id}/tasks` - Crear tarea
@@ -148,7 +165,7 @@ Company Admin (CIA Servicios Demo):
 ```
 
 ## Testing Status
-- **Backend**: 82% (18/22 tests - 4 fallas son expectativas del script)
+- **Backend**: 100% (13/13 tests iteration 5)
 - **Frontend**: 100% verificado
 - **Integraciones**: AI, PDF, archivos funcionando
 
@@ -161,11 +178,14 @@ Company Admin (CIA Servicios Demo):
 - [x] Sistema de abonos con comprobantes
 - [x] Facturas SAT
 - [x] Estado de cuenta del cliente
+- [x] Estado de cuenta en PDF descargable ✨
 - [x] Alertas de facturas vencidas
 - [x] Tareas de proyecto con tiempo/costo
 - [x] Permisos de módulos por usuario
 - [x] IA con GPT-5.2
 - [x] Generación de PDF
+- [x] Seguimientos programados CRM ✨
+- [x] Gestión de admins desde Super Admin (editar/bloquear) ✨
 
 ### P1 - Próxima Fase
 - [ ] Notificaciones por email (recordatorios de cobranza)
@@ -179,6 +199,14 @@ Company Admin (CIA Servicios Demo):
 - [ ] Calendario Gantt
 
 ## Changelog
+### v2.3.0 (Diciembre 2025)
+- ✨ Seguimientos programados en CRM (llamadas, emails, visitas, reuniones)
+- ✨ Panel de seguimientos pendientes con alertas
+- ✨ Estado de cuenta descargable en PDF
+- ✨ Super Admin puede editar datos del admin de empresa
+- ✨ Super Admin puede bloquear/desbloquear admin de empresa
+- 🔧 Dashboard Super Admin muestra estado de admin (activo/bloqueado)
+
 ### v2.2.0 (Marzo 2026)
 - ✨ Super Admin login sin clave maestra
 - ✨ Conversión de cotización a factura
