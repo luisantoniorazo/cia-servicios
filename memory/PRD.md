@@ -2,8 +2,8 @@
 
 ## Información General
 - **Nombre**: CIA SERVICIOS - Control Estratégico de Servicios y Proyectos
-- **Versión**: 2.6.0
-- **Última Actualización**: Diciembre 2025
+- **Versión**: 2.7.0
+- **Última Actualización**: Marzo 2026
 - **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2
 
 ## Problem Statement Original
@@ -16,11 +16,14 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - Dashboard con estadísticas de empresas
 - URLs visibles de cada empresa
 - **Gestión de admins de empresa (editar datos, bloquear/desbloquear)** ✨
+- **Monitor del Sistema (diagnósticos)** ✨
+- **Configuración de Servidor de Bases de Datos** ✨ NEW
 
 ### Portal de Empresa (`/empresa/{slug}/login`)
 - Login por empresa
 - Todos los módulos de gestión
 - Gestión de usuarios y permisos
+- **Sidebar filtrado por permisos de módulo** ✨ NEW
 
 ## Módulos Implementados ✅
 
@@ -68,6 +71,7 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 ### 6. Control de Facturación ✨ MEJORADO
 - [x] CRUD de facturas
 - [x] **Fecha de vencimiento**
+- [x] **Fecha de factura (emisión)** ✨ NEW
 - [x] **Sistema de abonos con comprobante**
 - [x] **Subida de factura SAT (UUID/XML/PDF)**
 - [x] **Estado de cuenta por cliente**
@@ -98,10 +102,13 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - [x] Tasa de conversión
 - [x] Eficiencia de cobranza
 
-### 12. Configuración
+### 12. Configuración ✨ MEJORADO
 - [x] Información de empresa
 - [x] Gestión de usuarios
 - [x] **Permisos de módulos por usuario** ✨
+- [x] **Ver detalle de usuario (ID, rol, info completa)** ✨ NEW
+- [x] **Inhabilitar/Habilitar usuarios** ✨ NEW
+- [x] **Editar usuario (nombre, email, teléfono, contraseña)** ✨ NEW
 
 ### 13. Inteligencia IA
 - [x] Chat con GPT-5.2
@@ -161,6 +168,11 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 
 ### Permisos de Usuario
 - `PUT /api/admin/users/{id}/permissions` - Actualizar permisos
+- `PATCH /api/admin/users/{id}/toggle-status` - Habilitar/inhabilitar usuario ✨ NEW
+
+### Configuración de Servidor (Super Admin) ✨ NEW
+- `GET /api/super-admin/server-config` - Obtener configuración de servidor
+- `POST /api/super-admin/server-config` - Guardar configuración de servidor
 
 ## Credenciales Demo
 ```
@@ -177,7 +189,7 @@ Company Admin (CIA Servicios Demo):
 
 ## Testing Status
 - **Backend**: 100% verified via curl
-- **Frontend**: 100% (iteration 6)
+- **Frontend**: 100% (iteration 7)
 - **Integraciones**: AI, PDF, archivos funcionando
 
 ## Prioritized Backlog
@@ -207,13 +219,31 @@ Company Admin (CIA Servicios Demo):
 ### P1 - Próxima Fase
 - [ ] Notificaciones por email (recordatorios de cobranza)
 - [ ] Exportación a Excel
-- [ ] Restricción de acceso basada en permisos (frontend)
+- [x] Restricción de acceso basada en permisos (frontend) ✅ DONE
 
 ### P2 - Mejoras
 - [ ] Facturación electrónica CFDI
 - [ ] App móvil
+- [ ] Mejoras al Monitor del Sistema (auto-reparación)
+- [ ] Búsqueda AI en documentos
+- [ ] Exportación de reportes a PDF/CSV
 
 ## Changelog
+### v2.7.0 (Marzo 2026)
+- ✨ **Permisos de módulos funcionales en Sidebar**
+  - Usuarios solo ven módulos permitidos
+  - Configuración por usuario desde Settings
+- ✨ **Configuración de Servidor de BD en Super Admin**
+  - Selector de proveedor de nube (Atlas, AWS, Azure, GCP)
+  - Campo de URL de conexión
+  - Configuración de respaldos automáticos
+- ✨ **Gestión mejorada de usuarios**
+  - Ver información completa del usuario
+  - Editar nombre, email, teléfono, contraseña
+  - Inhabilitar/habilitar usuarios
+- ✨ **Columna de Fecha de Factura en tabla de facturación**
+- 🔧 Logo visible en login y sidebar de empresa
+
 ### v2.6.0 (Diciembre 2025)
 - ✨ **Calendario Gantt para Proyectos**
   - Toggle Lista/Gantt en página de proyectos
