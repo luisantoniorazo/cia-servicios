@@ -223,6 +223,7 @@ class ProjectBase(BaseModel):
     location: Optional[str] = None
     responsible_id: Optional[str] = None
     start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
     commitment_date: Optional[datetime] = None
     contract_amount: float = 0.0
     status: ProjectStatus = ProjectStatus.QUOTATION
@@ -1293,6 +1294,8 @@ async def create_project(project_data: ProjectCreate, current_user: dict = Depen
     project_dict["updated_at"] = project_dict["updated_at"].isoformat()
     if project_dict.get("start_date"):
         project_dict["start_date"] = project_dict["start_date"].isoformat()
+    if project_dict.get("end_date"):
+        project_dict["end_date"] = project_dict["end_date"].isoformat()
     if project_dict.get("commitment_date"):
         project_dict["commitment_date"] = project_dict["commitment_date"].isoformat()
     await db.projects.insert_one(project_dict)
@@ -1314,6 +1317,8 @@ async def list_projects(company_id: str, status: Optional[ProjectStatus] = None,
             p["updated_at"] = datetime.fromisoformat(p["updated_at"])
         if isinstance(p.get("start_date"), str):
             p["start_date"] = datetime.fromisoformat(p["start_date"])
+        if isinstance(p.get("end_date"), str):
+            p["end_date"] = datetime.fromisoformat(p["end_date"])
         if isinstance(p.get("commitment_date"), str):
             p["commitment_date"] = datetime.fromisoformat(p["commitment_date"])
     return projects
@@ -1333,6 +1338,8 @@ async def get_project(project_id: str, current_user: dict = Depends(get_current_
         project["updated_at"] = datetime.fromisoformat(project["updated_at"])
     if isinstance(project.get("start_date"), str):
         project["start_date"] = datetime.fromisoformat(project["start_date"])
+    if isinstance(project.get("end_date"), str):
+        project["end_date"] = datetime.fromisoformat(project["end_date"])
     if isinstance(project.get("commitment_date"), str):
         project["commitment_date"] = datetime.fromisoformat(project["commitment_date"])
     return Project(**project)
@@ -1350,6 +1357,8 @@ async def update_project(project_id: str, project_data: ProjectCreate, current_u
     update_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
     if update_dict.get("start_date"):
         update_dict["start_date"] = update_dict["start_date"].isoformat()
+    if update_dict.get("end_date"):
+        update_dict["end_date"] = update_dict["end_date"].isoformat()
     if update_dict.get("commitment_date"):
         update_dict["commitment_date"] = update_dict["commitment_date"].isoformat()
     await db.projects.update_one({"id": project_id}, {"$set": update_dict})

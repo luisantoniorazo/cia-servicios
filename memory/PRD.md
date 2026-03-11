@@ -2,7 +2,7 @@
 
 ## Información General
 - **Nombre**: CIA SERVICIOS - Control Estratégico de Servicios y Proyectos
-- **Versión**: 2.5.0
+- **Versión**: 2.6.0
 - **Última Actualización**: Diciembre 2025
 - **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2
 
@@ -38,11 +38,18 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - [x] **Dashboard configurable** - Usuarios pueden mostrar/ocultar widgets
 - [x] **Widgets de alertas** - Facturas vencidas, seguimientos pendientes
 
-### 3. Gestión de Proyectos
+### 3. Gestión de Proyectos ✨ MEJORADO
 - [x] CRUD completo
 - [x] 4 fases con control de avance
 - [x] **Tareas con tiempo y costo estimado** ✨
 - [x] Asignación de responsables
+- [x] **Calendario Gantt interactivo** ✨
+  - Vista por Semana/Mes/Trimestre
+  - Barras de progreso por proyecto
+  - Línea de HOY
+  - Marcadores de fecha compromiso
+  - Click para ver detalles del proyecto
+  - Expandir tareas por proyecto
 
 ### 4. CRM Comercial ✨ MEJORADO
 - [x] Gestión de clientes y prospectos
@@ -205,9 +212,20 @@ Company Admin (CIA Servicios Demo):
 ### P2 - Mejoras
 - [ ] Facturación electrónica CFDI
 - [ ] App móvil
-- [ ] Calendario Gantt
 
 ## Changelog
+### v2.6.0 (Diciembre 2025)
+- ✨ **Calendario Gantt para Proyectos**
+  - Toggle Lista/Gantt en página de proyectos
+  - Vista por Semana, Mes o Trimestre
+  - Barras de progreso coloreadas por estado
+  - Línea roja indicando fecha actual (HOY)
+  - Marcadores amarillos para fecha compromiso
+  - Click en proyecto para ver detalles
+  - Expandir proyectos para ver tareas
+  - Leyenda de colores por estado
+- 🔧 Agregado campo "Fecha de Fin" a proyectos
+
 ### v2.5.0 (Diciembre 2025)
 - ✨ **Filtros activos en todas las tablas principales:**
   - CRM: Buscar por nombre, email, teléfono, RFC

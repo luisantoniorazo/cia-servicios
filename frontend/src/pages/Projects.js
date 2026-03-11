@@ -65,8 +65,11 @@ import {
   ListTodo,
   Search,
   X,
+  GanttChartSquare,
+  LayoutList,
 } from "lucide-react";
 import { cn } from "../lib/utils";
+import { GanttChart } from "../components/GanttChart";
 
 const PROJECT_STATUSES = [
   { value: "quotation", label: "En Cotización" },
@@ -90,12 +93,14 @@ export const Projects = () => {
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [viewMode, setViewMode] = useState("list"); // list, gantt
   const [formData, setFormData] = useState({
     client_id: "",
     name: "",
     description: "",
     location: "",
     start_date: null,
+    end_date: null,
     commitment_date: null,
     contract_amount: "",
     status: "quotation",
@@ -268,6 +273,7 @@ export const Projects = () => {
       description: "",
       location: "",
       start_date: null,
+      end_date: null,
       commitment_date: null,
       contract_amount: "",
       status: "quotation",
@@ -335,13 +341,37 @@ export const Projects = () => {
           <h1 className="text-3xl font-bold font-[Chivo] text-slate-900">Gestión de Proyectos</h1>
           <p className="text-muted-foreground">Control de proyectos EPC y servicios</p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="btn-industrial" data-testid="add-project-btn">
-              <Plus className="mr-2 h-4 w-4" />
-              Nuevo Proyecto
+        <div className="flex items-center gap-3">
+          {/* View Toggle */}
+          <div className="flex border rounded-md">
+            <Button
+              variant={viewMode === "list" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("list")}
+              className="rounded-r-none"
+              data-testid="view-list-btn"
+            >
+              <LayoutList className="h-4 w-4 mr-2" />
+              Lista
             </Button>
-          </DialogTrigger>
+            <Button
+              variant={viewMode === "gantt" ? "secondary" : "ghost"}
+              size="sm"
+              onClick={() => setViewMode("gantt")}
+              className="rounded-l-none"
+              data-testid="view-gantt-btn"
+            >
+              <GanttChartSquare className="h-4 w-4 mr-2" />
+              Gantt
+            </Button>
+          </div>
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="btn-industrial" data-testid="add-project-btn">
+                <Plus className="mr-2 h-4 w-4" />
+                Nuevo Proyecto
+              </Button>
+            </DialogTrigger>
           <DialogContent className="sm:max-w-[600px]">
             <form onSubmit={handleCreateProject}>
               <DialogHeader>
@@ -432,7 +462,7 @@ export const Projects = () => {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div className="grid gap-2">
                     <Label>Fecha de Inicio</Label>
                     <Popover>
@@ -455,6 +485,33 @@ export const Projects = () => {
                           mode="single"
                           selected={formData.start_date}
                           onSelect={(date) => setFormData({ ...formData, start_date: date })}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Fecha de Fin</Label>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "justify-start text-left font-normal",
+                            !formData.end_date && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {formData.end_date
+                            ? format(formData.end_date, "PPP", { locale: es })
+                            : "Seleccionar fecha"}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar
+                          mode="single"
+                          selected={formData.end_date}
+                          onSelect={(date) => setFormData({ ...formData, end_date: date })}
                           initialFocus
                         />
                       </PopoverContent>
@@ -500,6 +557,7 @@ export const Projects = () => {
             </form>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Stats */}
@@ -524,7 +582,18 @@ export const Projects = () => {
         })}
       </div>
 
-      {/* Projects Table */}
+      {/* Gantt Chart View */}
+      {viewMode === "gantt" && (
+        <GanttChart
+          projects={filteredProjects}
+          tasks={tasks}
+          clients={clients}
+          onProjectClick={(project) => openDetailDialog(project)}
+        />
+      )}
+
+      {/* Projects Table View */}
+      {viewMode === "list" && (
       <Card data-testid="projects-table-card">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -673,6 +742,7 @@ export const Projects = () => {
           </div>
         </CardContent>
       </Card>
+      )}
 
       {/* Project Detail Dialog */}
       <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
