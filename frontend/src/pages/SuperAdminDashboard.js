@@ -64,6 +64,7 @@ import {
   Edit,
   Lock,
   Unlock,
+  Bot,
 } from "lucide-react";
 
 const LICENSE_TYPES = [
@@ -321,10 +322,21 @@ export const SuperAdminDashboard = () => {
               <p className="text-sm text-slate-400">Gestión de Licencias y Empresas</p>
             </div>
           </div>
-          <Button variant="outline" className="border-slate-600 text-slate-300" onClick={handleLogout}>
-            <LogOut className="mr-2 h-4 w-4" />
-            Cerrar Sesión
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button 
+              variant="outline" 
+              className="border-amber-500 text-amber-400 hover:bg-amber-500/20" 
+              onClick={() => navigate("/admin-portal/system-monitor")}
+              data-testid="system-monitor-btn"
+            >
+              <Bot className="mr-2 h-4 w-4" />
+              Monitor del Sistema
+            </Button>
+            <Button variant="outline" className="border-slate-600 text-slate-300" onClick={handleLogout}>
+              <LogOut className="mr-2 h-4 w-4" />
+              Cerrar Sesión
+            </Button>
+          </div>
         </div>
       </div>
 

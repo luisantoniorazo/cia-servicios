@@ -937,6 +937,439 @@ async def toggle_company_admin_status(
     action = "desbloqueado" if new_status else "bloqueado"
     return {"message": f"Admin {action} exitosamente", "is_active": new_status}
 
+# ============== SYSTEM MONITORING BOT ==============
+class SystemTestResult(BaseModel):
+    test_name: str
+    category: str  # backend, frontend, database, integration
+    status: str  # passed, failed, warning
+    message: str
+    duration_ms: int = 0
+    timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    auto_fixed: bool = False
+    fix_details: Optional[str] = None
+
+class SystemReport(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    total_tests: int = 0
+    passed: int = 0
+    failed: int = 0
+    warnings: int = 0
+    auto_fixed: int = 0
+    tests: list = []
+    overall_status: str = "healthy"  # healthy, warning, critical
+
+@api_router.get("/super-admin/system/health")
+async def get_system_health(current_user: dict = Depends(require_super_admin)):
+    """Get overall system health status"""
+    try:
+        # Check database
+        db_status = "healthy"
+        try:
+            await db.command("ping")
+        except:
+            db_status = "critical"
+        
+        # Count entities
+        companies_count = await db.companies.count_documents({})
+        users_count = await db.users.count_documents({})
+        projects_count = await db.projects.count_documents({})
+        invoices_count = await db.invoices.count_documents({})
+        
+        # Get recent reports
+        recent_reports = await db.system_reports.find(
+            {}, {"_id": 0}
+        ).sort("created_at", -1).limit(5).to_list(5)
+        
+        return {
+            "status": db_status,
+            "database": db_status,
+            "entities": {
+                "companies": companies_count,
+                "users": users_count,
+                "projects": projects_count,
+                "invoices": invoices_count,
+            },
+            "recent_reports": recent_reports,
+            "last_check": datetime.now(timezone.utc).isoformat()
+        }
+    except Exception as e:
+        return {
+            "status": "critical",
+            "error": str(e)
+        }
+
+@api_router.post("/super-admin/system/run-tests")
+async def run_system_tests(current_user: dict = Depends(require_super_admin)):
+    """Run comprehensive system tests"""
+    tests = []
+    start_time = datetime.now(timezone.utc)
+    
+    # Test 1: Database Connection
+    test_start = datetime.now(timezone.utc)
+    try:
+        await db.command("ping")
+        tests.append(SystemTestResult(
+            test_name="Conexión a Base de Datos",
+            category="database",
+            status="passed",
+            message="MongoDB responde correctamente",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Conexión a Base de Datos",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # Test 2: Companies Collection
+    test_start = datetime.now(timezone.utc)
+    try:
+        companies = await db.companies.find({}, {"_id": 0}).to_list(100)
+        invalid_companies = [c for c in companies if not c.get("business_name") or not c.get("slug")]
+        if invalid_companies:
+            tests.append(SystemTestResult(
+                test_name="Integridad de Empresas",
+                category="database",
+                status="warning",
+                message=f"{len(invalid_companies)} empresa(s) con datos incompletos",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Integridad de Empresas",
+                category="database",
+                status="passed",
+                message=f"{len(companies)} empresas verificadas",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Integridad de Empresas",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # Test 3: Users with valid companies
+    test_start = datetime.now(timezone.utc)
+    try:
+        users = await db.users.find({"role": {"$ne": "super_admin"}}, {"_id": 0}).to_list(1000)
+        companies = await db.companies.find({}, {"_id": 0, "id": 1}).to_list(1000)
+        company_ids = {c["id"] for c in companies}
+        orphan_users = [u for u in users if u.get("company_id") and u["company_id"] not in company_ids]
+        
+        if orphan_users:
+            tests.append(SystemTestResult(
+                test_name="Usuarios Huérfanos",
+                category="database",
+                status="warning",
+                message=f"{len(orphan_users)} usuario(s) sin empresa válida",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Usuarios Huérfanos",
+                category="database",
+                status="passed",
+                message=f"{len(users)} usuarios verificados",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Usuarios Huérfanos",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # Test 4: Invoices with valid clients
+    test_start = datetime.now(timezone.utc)
+    try:
+        invoices = await db.invoices.find({}, {"_id": 0}).to_list(5000)
+        clients = await db.clients.find({}, {"_id": 0, "id": 1}).to_list(5000)
+        client_ids = {c["id"] for c in clients}
+        orphan_invoices = [i for i in invoices if i.get("client_id") and i["client_id"] not in client_ids]
+        
+        if orphan_invoices:
+            tests.append(SystemTestResult(
+                test_name="Facturas Huérfanas",
+                category="database",
+                status="warning",
+                message=f"{len(orphan_invoices)} factura(s) sin cliente válido",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Facturas Huérfanas",
+                category="database",
+                status="passed",
+                message=f"{len(invoices)} facturas verificadas",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Facturas Huérfanas",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # Test 5: Projects integrity
+    test_start = datetime.now(timezone.utc)
+    try:
+        projects = await db.projects.find({}, {"_id": 0}).to_list(1000)
+        invalid_projects = [p for p in projects if p.get("total_progress", 0) > 100 or p.get("total_progress", 0) < 0]
+        
+        if invalid_projects:
+            # Auto-fix: Clamp progress to 0-100
+            for p in invalid_projects:
+                new_progress = max(0, min(100, p.get("total_progress", 0)))
+                await db.projects.update_one(
+                    {"id": p["id"]},
+                    {"$set": {"total_progress": new_progress}}
+                )
+            tests.append(SystemTestResult(
+                test_name="Progreso de Proyectos",
+                category="database",
+                status="passed",
+                message=f"{len(invalid_projects)} proyecto(s) corregidos automáticamente",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details=f"Progreso ajustado a rango 0-100"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Progreso de Proyectos",
+                category="database",
+                status="passed",
+                message=f"{len(projects)} proyectos verificados",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Progreso de Proyectos",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # Test 6: Invoice calculations
+    test_start = datetime.now(timezone.utc)
+    try:
+        invoices = await db.invoices.find({}, {"_id": 0}).to_list(5000)
+        fixed_count = 0
+        for inv in invoices:
+            subtotal = inv.get("subtotal", 0)
+            tax = inv.get("tax", 0)
+            total = inv.get("total", 0)
+            expected_total = subtotal + tax
+            
+            if abs(total - expected_total) > 0.01:
+                await db.invoices.update_one(
+                    {"id": inv["id"]},
+                    {"$set": {"total": expected_total}}
+                )
+                fixed_count += 1
+        
+        if fixed_count > 0:
+            tests.append(SystemTestResult(
+                test_name="Cálculos de Facturas",
+                category="database",
+                status="passed",
+                message=f"{fixed_count} factura(s) corregidas automáticamente",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Total recalculado como subtotal + IVA"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Cálculos de Facturas",
+                category="database",
+                status="passed",
+                message=f"{len(invoices)} facturas verificadas",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Cálculos de Facturas",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # Test 7: Company admins exist
+    test_start = datetime.now(timezone.utc)
+    try:
+        companies = await db.companies.find({}, {"_id": 0}).to_list(100)
+        companies_without_admin = []
+        for comp in companies:
+            admin = await db.users.find_one({"company_id": comp["id"], "role": UserRole.ADMIN})
+            if not admin:
+                companies_without_admin.append(comp["business_name"])
+        
+        if companies_without_admin:
+            tests.append(SystemTestResult(
+                test_name="Admins de Empresas",
+                category="database",
+                status="warning",
+                message=f"{len(companies_without_admin)} empresa(s) sin admin: {', '.join(companies_without_admin[:3])}...",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Admins de Empresas",
+                category="database",
+                status="passed",
+                message=f"Todas las empresas tienen admin asignado",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Admins de Empresas",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # Test 8: Overdue invoices status
+    test_start = datetime.now(timezone.utc)
+    try:
+        now = datetime.now(timezone.utc)
+        invoices = await db.invoices.find({"status": "pending"}, {"_id": 0}).to_list(5000)
+        fixed_count = 0
+        for inv in invoices:
+            if inv.get("due_date"):
+                due_date = datetime.fromisoformat(inv["due_date"].replace("Z", "+00:00")) if isinstance(inv["due_date"], str) else inv["due_date"]
+                if due_date < now:
+                    await db.invoices.update_one(
+                        {"id": inv["id"]},
+                        {"$set": {"status": "overdue"}}
+                    )
+                    fixed_count += 1
+        
+        if fixed_count > 0:
+            tests.append(SystemTestResult(
+                test_name="Estado de Facturas Vencidas",
+                category="integration",
+                status="passed",
+                message=f"{fixed_count} factura(s) marcadas como vencidas",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Facturas pendientes pasadas a vencidas automáticamente"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Estado de Facturas Vencidas",
+                category="integration",
+                status="passed",
+                message="Estados de facturas correctos",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Estado de Facturas Vencidas",
+            category="integration",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # Calculate totals
+    passed = len([t for t in tests if t["status"] == "passed"])
+    failed = len([t for t in tests if t["status"] == "failed"])
+    warnings = len([t for t in tests if t["status"] == "warning"])
+    auto_fixed = len([t for t in tests if t.get("auto_fixed", False)])
+    
+    overall_status = "healthy" if failed == 0 and warnings == 0 else ("warning" if failed == 0 else "critical")
+    
+    # Save report
+    report = SystemReport(
+        total_tests=len(tests),
+        passed=passed,
+        failed=failed,
+        warnings=warnings,
+        auto_fixed=auto_fixed,
+        tests=tests,
+        overall_status=overall_status
+    )
+    
+    await db.system_reports.insert_one(report.model_dump())
+    
+    return report.model_dump()
+
+@api_router.get("/super-admin/system/reports")
+async def get_system_reports(
+    limit: int = 20,
+    current_user: dict = Depends(require_super_admin)
+):
+    """Get system test reports history"""
+    reports = await db.system_reports.find(
+        {}, {"_id": 0}
+    ).sort("created_at", -1).limit(limit).to_list(limit)
+    return reports
+
+@api_router.post("/super-admin/system/report-issue")
+async def report_system_issue(
+    issue_data: dict,
+    current_user: dict = Depends(require_super_admin)
+):
+    """Report a system issue manually"""
+    issue = {
+        "id": str(uuid.uuid4()),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "reported_by": current_user.get("email"),
+        "category": issue_data.get("category", "general"),
+        "description": issue_data.get("description", ""),
+        "severity": issue_data.get("severity", "medium"),
+        "status": "open",
+        "resolution": None
+    }
+    
+    await db.system_issues.insert_one(issue)
+    
+    return {"message": "Problema reportado", "issue_id": issue["id"]}
+
+@api_router.get("/super-admin/system/issues")
+async def get_system_issues(
+    status: Optional[str] = None,
+    current_user: dict = Depends(require_super_admin)
+):
+    """Get reported system issues"""
+    query = {}
+    if status:
+        query["status"] = status
+    
+    issues = await db.system_issues.find(
+        query, {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    
+    return issues
+
+@api_router.put("/super-admin/system/issues/{issue_id}")
+async def update_system_issue(
+    issue_id: str,
+    update_data: dict,
+    current_user: dict = Depends(require_super_admin)
+):
+    """Update a system issue"""
+    allowed_fields = ["status", "resolution", "severity"]
+    filtered = {k: v for k, v in update_data.items() if k in allowed_fields}
+    filtered["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    await db.system_issues.update_one({"id": issue_id}, {"$set": filtered})
+    
+    return {"message": "Problema actualizado"}
+
 # ============== COMPANY ADMIN - USER MANAGEMENT ==============
 @api_router.get("/admin/users")
 async def list_company_users(current_user: dict = Depends(require_admin)):

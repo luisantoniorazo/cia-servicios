@@ -7,6 +7,7 @@ import "./App.css";
 // Auth Pages
 import SuperAdminLogin from "./pages/SuperAdminLogin";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
+import SystemMonitor from "./pages/SystemMonitor";
 import CompanyLogin from "./pages/CompanyLogin";
 
 // Company Pages
@@ -160,6 +161,14 @@ function AppRoutes() {
         element={
           <SuperAdminRoute>
             <SuperAdminDashboard />
+          </SuperAdminRoute>
+        }
+      />
+      <Route
+        path="/admin-portal/system-monitor"
+        element={
+          <SuperAdminRoute>
+            <SystemMonitor />
           </SuperAdminRoute>
         }
       />

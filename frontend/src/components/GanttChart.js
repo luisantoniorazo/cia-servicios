@@ -1,11 +1,11 @@
-import React, { useMemo, useRef, useEffect, useState } from "react";
+import React, { useMemo, useRef, useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "./ui/card";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
-import { Progress } from "./ui/progress";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
-import { ChevronLeft, ChevronRight, Calendar, ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Calendar, GripHorizontal, Move } from "lucide-react";
 import { formatCurrency } from "../lib/utils";
+import { toast } from "sonner";
 
 const STATUS_COLORS = {
   quotation: "#64748b",
@@ -23,25 +23,13 @@ const STATUS_LABELS = {
   cancelled: "Cancelado",
 };
 
-const PHASE_COLORS = {
-  negotiation: "#8b5cf6",
-  purchases: "#f59e0b",
-  process: "#3b82f6",
-  delivery: "#10b981",
-};
-
-const PHASE_LABELS = {
-  negotiation: "Negociación",
-  purchases: "Compras",
-  process: "Proceso",
-  delivery: "Entrega",
-};
-
-export const GanttChart = ({ projects, tasks, clients, onProjectClick }) => {
+export const GanttChart = ({ projects, tasks, clients, onProjectClick, onProjectUpdate }) => {
   const containerRef = useRef(null);
-  const [viewMode, setViewMode] = useState("month"); // week, month, quarter
-  const [scrollOffset, setScrollOffset] = useState(0);
+  const timelineRef = useRef(null);
+  const [viewMode, setViewMode] = useState("month");
   const [expandedProjects, setExpandedProjects] = useState({});
+  const [dragging, setDragging] = useState(null);
+  const [dragType, setDragType] = useState(null); // 'move' or 'resize'
 
   // Calculate time range
   const timeRange = useMemo(() => {
@@ -67,7 +55,7 @@ export const GanttChart = ({ projects, tasks, clients, onProjectClick }) => {
     return { minDate, maxDate };
   }, [projects]);
 
-  // Generate time columns based on view mode
+  // Generate time columns
   const timeColumns = useMemo(() => {
     const columns = [];
     const { minDate, maxDate } = timeRange;
@@ -110,12 +98,16 @@ export const GanttChart = ({ projects, tasks, clients, onProjectClick }) => {
     return columns;
   }, [timeRange, viewMode]);
 
+  const totalDays = useMemo(() => {
+    const { minDate, maxDate } = timeRange;
+    return (maxDate - minDate) / (1000 * 60 * 60 * 24);
+  }, [timeRange]);
+
   // Calculate bar position and width
-  const calculateBarStyle = (startDate, endDate) => {
+  const calculateBarStyle = useCallback((startDate, endDate) => {
     if (!startDate) return null;
 
-    const { minDate, maxDate } = timeRange;
-    const totalDays = (maxDate - minDate) / (1000 * 60 * 60 * 24);
+    const { minDate } = timeRange;
     const start = new Date(startDate);
     const end = endDate ? new Date(endDate) : new Date(start.getTime() + 30 * 24 * 60 * 60 * 1000);
 
@@ -126,7 +118,15 @@ export const GanttChart = ({ projects, tasks, clients, onProjectClick }) => {
     const width = (duration / totalDays) * 100;
 
     return { left: `${left}%`, width: `${Math.min(width, 100 - left)}%` };
-  };
+  }, [timeRange, totalDays]);
+
+  // Convert pixel position to date
+  const pixelToDate = useCallback((pixelX, containerWidth) => {
+    const { minDate } = timeRange;
+    const daysFromStart = (pixelX / containerWidth) * totalDays;
+    const newDate = new Date(minDate.getTime() + daysFromStart * 24 * 60 * 60 * 1000);
+    return newDate;
+  }, [timeRange, totalDays]);
 
   const getClientName = (clientId) => {
     const client = clients?.find((c) => c.id === clientId);
@@ -144,15 +144,163 @@ export const GanttChart = ({ projects, tasks, clients, onProjectClick }) => {
     return tasks?.filter((t) => t.project_id === projectId) || [];
   };
 
+  // Drag handlers
+  const handleDragStart = (e, project, type) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const timeline = timelineRef.current;
+    if (!timeline) return;
+
+    const rect = timeline.getBoundingClientRect();
+    const startX = e.clientX - rect.left;
+
+    setDragging({
+      project,
+      startX,
+      originalStart: project.start_date ? new Date(project.start_date) : new Date(),
+      originalEnd: project.end_date ? new Date(project.end_date) : null,
+      containerWidth: rect.width,
+    });
+    setDragType(type);
+  };
+
+  const handleDragMove = useCallback((e) => {
+    if (!dragging || !timelineRef.current) return;
+
+    const rect = timelineRef.current.getBoundingClientRect();
+    const currentX = e.clientX - rect.left;
+    const deltaX = currentX - dragging.startX;
+    const deltaDays = (deltaX / dragging.containerWidth) * totalDays;
+
+    const project = dragging.project;
+    let newStart = dragging.originalStart;
+    let newEnd = dragging.originalEnd;
+
+    if (dragType === 'move') {
+      // Move entire bar
+      newStart = new Date(dragging.originalStart.getTime() + deltaDays * 24 * 60 * 60 * 1000);
+      if (dragging.originalEnd) {
+        newEnd = new Date(dragging.originalEnd.getTime() + deltaDays * 24 * 60 * 60 * 1000);
+      }
+    } else if (dragType === 'resize-end') {
+      // Resize end only
+      if (dragging.originalEnd) {
+        newEnd = new Date(dragging.originalEnd.getTime() + deltaDays * 24 * 60 * 60 * 1000);
+        // Ensure end is after start
+        if (newEnd <= newStart) {
+          newEnd = new Date(newStart.getTime() + 24 * 60 * 60 * 1000);
+        }
+      }
+    }
+
+    // Update visual feedback (preview)
+    const barEl = document.querySelector(`[data-project-bar="${project.id}"]`);
+    if (barEl) {
+      const newStyle = calculateBarStyle(newStart, newEnd);
+      if (newStyle) {
+        barEl.style.left = newStyle.left;
+        barEl.style.width = newStyle.width;
+        barEl.style.opacity = '0.7';
+      }
+    }
+  }, [dragging, dragType, totalDays, calculateBarStyle]);
+
+  const handleDragEnd = useCallback(async (e) => {
+    if (!dragging || !timelineRef.current || !onProjectUpdate) {
+      setDragging(null);
+      setDragType(null);
+      return;
+    }
+
+    const rect = timelineRef.current.getBoundingClientRect();
+    const currentX = e.clientX - rect.left;
+    const deltaX = currentX - dragging.startX;
+    const deltaDays = (deltaX / dragging.containerWidth) * totalDays;
+
+    // Only update if there was meaningful movement
+    if (Math.abs(deltaDays) < 1) {
+      // Reset visual
+      const barEl = document.querySelector(`[data-project-bar="${dragging.project.id}"]`);
+      if (barEl) {
+        barEl.style.opacity = '1';
+      }
+      setDragging(null);
+      setDragType(null);
+      return;
+    }
+
+    let newStart = dragging.originalStart;
+    let newEnd = dragging.originalEnd;
+
+    if (dragType === 'move') {
+      newStart = new Date(dragging.originalStart.getTime() + deltaDays * 24 * 60 * 60 * 1000);
+      if (dragging.originalEnd) {
+        newEnd = new Date(dragging.originalEnd.getTime() + deltaDays * 24 * 60 * 60 * 1000);
+      }
+    } else if (dragType === 'resize-end') {
+      if (dragging.originalEnd) {
+        newEnd = new Date(dragging.originalEnd.getTime() + deltaDays * 24 * 60 * 60 * 1000);
+        if (newEnd <= newStart) {
+          newEnd = new Date(newStart.getTime() + 24 * 60 * 60 * 1000);
+        }
+      }
+    }
+
+    // Call update function
+    try {
+      await onProjectUpdate(dragging.project.id, {
+        start_date: newStart.toISOString(),
+        end_date: newEnd ? newEnd.toISOString() : null,
+      });
+      toast.success("Fechas actualizadas");
+    } catch (error) {
+      toast.error("Error al actualizar fechas");
+      // Reset visual on error
+      const barEl = document.querySelector(`[data-project-bar="${dragging.project.id}"]`);
+      if (barEl) {
+        const originalStyle = calculateBarStyle(dragging.originalStart, dragging.originalEnd);
+        if (originalStyle) {
+          barEl.style.left = originalStyle.left;
+          barEl.style.width = originalStyle.width;
+        }
+      }
+    }
+
+    // Reset visual
+    const barEl = document.querySelector(`[data-project-bar="${dragging.project.id}"]`);
+    if (barEl) {
+      barEl.style.opacity = '1';
+    }
+
+    setDragging(null);
+    setDragType(null);
+  }, [dragging, dragType, totalDays, calculateBarStyle, onProjectUpdate]);
+
+  // Add/remove global mouse listeners
+  React.useEffect(() => {
+    if (dragging) {
+      window.addEventListener('mousemove', handleDragMove);
+      window.addEventListener('mouseup', handleDragEnd);
+      document.body.style.cursor = dragType === 'move' ? 'grabbing' : 'ew-resize';
+      document.body.style.userSelect = 'none';
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleDragMove);
+      window.removeEventListener('mouseup', handleDragEnd);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+  }, [dragging, handleDragMove, handleDragEnd, dragType]);
+
   // Today marker position
   const todayPosition = useMemo(() => {
     const { minDate, maxDate } = timeRange;
     const today = new Date();
     if (today < minDate || today > maxDate) return null;
-    const totalDays = (maxDate - minDate) / (1000 * 60 * 60 * 24);
     const offset = (today - minDate) / (1000 * 60 * 60 * 24);
     return `${(offset / totalDays) * 100}%`;
-  }, [timeRange]);
+  }, [timeRange, totalDays]);
 
   const columnWidth = viewMode === "week" ? 60 : viewMode === "month" ? 80 : 100;
 
@@ -165,7 +313,13 @@ export const GanttChart = ({ projects, tasks, clients, onProjectClick }) => {
               <Calendar className="h-5 w-5 text-primary" />
               Calendario Gantt
             </CardTitle>
-            <CardDescription>Visualización de timeline de proyectos</CardDescription>
+            <CardDescription className="flex items-center gap-2">
+              Visualización de timeline de proyectos
+              <Badge variant="outline" className="text-xs">
+                <Move className="h-3 w-3 mr-1" />
+                Arrastra para mover
+              </Badge>
+            </CardDescription>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex border rounded-md">
@@ -205,7 +359,7 @@ export const GanttChart = ({ projects, tasks, clients, onProjectClick }) => {
               <div className="w-[280px] min-w-[280px] p-3 border-r font-medium text-sm bg-slate-100">
                 Proyecto
               </div>
-              <div className="flex-1 flex">
+              <div className="flex-1 flex" ref={timelineRef}>
                 {timeColumns.map((col) => (
                   <div
                     key={col.key}
@@ -229,11 +383,12 @@ export const GanttChart = ({ projects, tasks, clients, onProjectClick }) => {
                 const barStyle = calculateBarStyle(project.start_date, project.end_date || project.commitment_date);
                 const projectTasks = getProjectTasks(project.id);
                 const isExpanded = expandedProjects[project.id];
+                const isDragging = dragging?.project.id === project.id;
 
                 return (
                   <div key={project.id}>
                     {/* Project Row */}
-                    <div className="flex border-b hover:bg-slate-50 transition-colors group">
+                    <div className={`flex border-b hover:bg-slate-50 transition-colors group ${isDragging ? 'bg-blue-50' : ''}`}>
                       <div className="w-[280px] min-w-[280px] p-3 border-r">
                         <div className="flex items-start gap-2">
                           {projectTasks.length > 0 && (
@@ -280,7 +435,7 @@ export const GanttChart = ({ projects, tasks, clients, onProjectClick }) => {
                         style={{ minWidth: timeColumns.length * columnWidth }}
                       >
                         {/* Grid lines */}
-                        <div className="absolute inset-0 flex">
+                        <div className="absolute inset-0 flex pointer-events-none">
                           {timeColumns.map((col) => (
                             <div
                               key={col.key}
@@ -293,28 +448,50 @@ export const GanttChart = ({ projects, tasks, clients, onProjectClick }) => {
                         {/* Today marker */}
                         {todayPosition && (
                           <div
-                            className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-10"
+                            className="absolute top-0 bottom-0 w-0.5 bg-red-500 z-20 pointer-events-none"
                             style={{ left: todayPosition }}
                           />
                         )}
 
-                        {/* Project bar */}
+                        {/* Project bar with drag support */}
                         {barStyle && (
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <div
-                                  className="absolute top-3 h-8 rounded-md cursor-pointer shadow-sm transition-all hover:shadow-md"
+                                  data-project-bar={project.id}
+                                  className={`absolute top-3 h-8 rounded-md shadow-sm transition-shadow hover:shadow-md group/bar ${
+                                    isDragging ? 'z-30' : 'z-10'
+                                  }`}
                                   style={{
                                     ...barStyle,
                                     backgroundColor: STATUS_COLORS[project.status],
+                                    cursor: 'grab',
                                   }}
+                                  onMouseDown={(e) => handleDragStart(e, project, 'move')}
                                 >
-                                  <div className="h-full flex items-center px-2">
+                                  {/* Progress indicator */}
+                                  <div className="h-full flex items-center px-1 overflow-hidden">
                                     <div
-                                      className="h-full bg-white/30 rounded-sm transition-all"
+                                      className="h-full bg-white/30 rounded-sm"
                                       style={{ width: `${project.total_progress}%` }}
                                     />
+                                  </div>
+                                  
+                                  {/* Move handle (center) */}
+                                  <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/bar:opacity-100 transition-opacity pointer-events-none">
+                                    <GripHorizontal className="h-4 w-4 text-white drop-shadow" />
+                                  </div>
+
+                                  {/* Resize handle (right edge) */}
+                                  <div
+                                    className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize flex items-center justify-end pr-0.5 opacity-0 group-hover/bar:opacity-100 transition-opacity"
+                                    onMouseDown={(e) => {
+                                      e.stopPropagation();
+                                      handleDragStart(e, project, 'resize-end');
+                                    }}
+                                  >
+                                    <div className="w-1 h-4 bg-white/50 rounded" />
                                   </div>
                                 </div>
                               </TooltipTrigger>
@@ -330,8 +507,8 @@ export const GanttChart = ({ projects, tasks, clients, onProjectClick }) => {
                                       `Fin: ${new Date(project.end_date || project.commitment_date).toLocaleDateString("es-MX")}`}
                                   </div>
                                   <div className="text-xs">Progreso: {project.total_progress}%</div>
-                                  <div className="text-xs">
-                                    Monto: {formatCurrency(project.contract_amount)}
+                                  <div className="text-xs text-muted-foreground mt-1">
+                                    Arrastra para mover • Borde derecho para redimensionar
                                   </div>
                                 </div>
                               </TooltipContent>
@@ -342,12 +519,9 @@ export const GanttChart = ({ projects, tasks, clients, onProjectClick }) => {
                         {/* Commitment date marker */}
                         {project.commitment_date && (
                           <div
-                            className="absolute top-3 h-8 flex items-center"
+                            className="absolute top-3 h-8 flex items-center pointer-events-none z-15"
                             style={{
-                              left: calculateBarStyle(
-                                project.commitment_date,
-                                project.commitment_date
-                              )?.left,
+                              left: calculateBarStyle(project.commitment_date, project.commitment_date)?.left,
                             }}
                           >
                             <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-b-[10px] border-b-amber-500" />
@@ -360,71 +534,42 @@ export const GanttChart = ({ projects, tasks, clients, onProjectClick }) => {
                     {isExpanded &&
                       projectTasks.map((task) => {
                         const taskBarStyle = task.due_date
-                          ? calculateBarStyle(
-                              task.created_at || project.start_date,
-                              task.due_date
-                            )
+                          ? calculateBarStyle(task.created_at || project.start_date, task.due_date)
                           : null;
 
                         return (
-                          <div
-                            key={task.id}
-                            className="flex border-b bg-slate-50/50 text-sm"
-                          >
+                          <div key={task.id} className="flex border-b bg-slate-50/50 text-sm">
                             <div className="w-[280px] min-w-[280px] p-2 pl-10 border-r">
                               <div className="truncate text-muted-foreground">
                                 {task.name || task.description}
                               </div>
                               <div className="flex items-center gap-2 mt-1">
                                 <Badge variant="outline" className="text-xs">
-                                  {task.status === "completed"
-                                    ? "Completada"
-                                    : task.status === "in_progress"
-                                    ? "En Progreso"
-                                    : "Pendiente"}
+                                  {task.status === "completed" ? "Completada" : task.status === "in_progress" ? "En Progreso" : "Pendiente"}
                                 </Badge>
                                 {task.estimated_hours && (
-                                  <span className="text-xs text-muted-foreground">
-                                    {task.estimated_hours}h
-                                  </span>
+                                  <span className="text-xs text-muted-foreground">{task.estimated_hours}h</span>
                                 )}
                               </div>
                             </div>
-                            <div
-                              className="flex-1 relative"
-                              style={{ minWidth: timeColumns.length * columnWidth }}
-                            >
+                            <div className="flex-1 relative" style={{ minWidth: timeColumns.length * columnWidth }}>
                               {/* Grid lines */}
-                              <div className="absolute inset-0 flex">
+                              <div className="absolute inset-0 flex pointer-events-none">
                                 {timeColumns.map((col) => (
-                                  <div
-                                    key={col.key}
-                                    className="border-r h-full opacity-50"
-                                    style={{ minWidth: columnWidth, width: columnWidth }}
-                                  />
+                                  <div key={col.key} className="border-r h-full opacity-50" style={{ minWidth: columnWidth, width: columnWidth }} />
                                 ))}
                               </div>
-
                               {/* Today marker */}
                               {todayPosition && (
-                                <div
-                                  className="absolute top-0 bottom-0 w-0.5 bg-red-500/50 z-10"
-                                  style={{ left: todayPosition }}
-                                />
+                                <div className="absolute top-0 bottom-0 w-0.5 bg-red-500/50 z-10 pointer-events-none" style={{ left: todayPosition }} />
                               )}
-
                               {/* Task bar */}
                               {taskBarStyle && (
                                 <div
                                   className="absolute top-2 h-5 rounded cursor-pointer"
                                   style={{
                                     ...taskBarStyle,
-                                    backgroundColor:
-                                      task.status === "completed"
-                                        ? "#10b981"
-                                        : task.status === "in_progress"
-                                        ? "#3b82f6"
-                                        : "#94a3b8",
+                                    backgroundColor: task.status === "completed" ? "#10b981" : task.status === "in_progress" ? "#3b82f6" : "#94a3b8",
                                   }}
                                 />
                               )}
@@ -448,16 +593,17 @@ export const GanttChart = ({ projects, tasks, clients, onProjectClick }) => {
           </div>
           {Object.entries(STATUS_LABELS).map(([key, label]) => (
             <div key={key} className="flex items-center gap-1">
-              <div
-                className="w-3 h-3 rounded"
-                style={{ backgroundColor: STATUS_COLORS[key] }}
-              />
+              <div className="w-3 h-3 rounded" style={{ backgroundColor: STATUS_COLORS[key] }} />
               <span>{label}</span>
             </div>
           ))}
           <div className="flex items-center gap-1">
             <div className="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-b-[6px] border-b-amber-500" />
             <span>Fecha compromiso</span>
+          </div>
+          <div className="flex items-center gap-1 ml-4 text-muted-foreground">
+            <GripHorizontal className="h-3 w-3" />
+            <span>Arrastra barras para mover fechas</span>
           </div>
         </div>
       </CardContent>

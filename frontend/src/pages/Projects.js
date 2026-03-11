@@ -589,6 +589,14 @@ export const Projects = () => {
           tasks={tasks}
           clients={clients}
           onProjectClick={(project) => openDetailDialog(project)}
+          onProjectUpdate={async (projectId, updates) => {
+            try {
+              await api.put(`/projects/${projectId}`, updates);
+              fetchProjects();
+            } catch (error) {
+              throw error;
+            }
+          }}
         />
       )}
 
