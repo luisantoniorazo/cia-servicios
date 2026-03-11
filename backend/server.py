@@ -1291,6 +1291,9 @@ async def run_system_tests(current_user: dict = Depends(require_super_admin)):
         for inv in invoices:
             if inv.get("due_date"):
                 due_date = datetime.fromisoformat(inv["due_date"].replace("Z", "+00:00")) if isinstance(inv["due_date"], str) else inv["due_date"]
+                # Ensure timezone-aware comparison
+                if due_date.tzinfo is None:
+                    due_date = due_date.replace(tzinfo=timezone.utc)
                 if due_date < now:
                     await db.invoices.update_one(
                         {"id": inv["id"]},
@@ -2063,6 +2066,10 @@ async def get_overdue_invoices(company_id: str, current_user: dict = Depends(get
             if isinstance(due_date, str):
                 due_date = datetime.fromisoformat(due_date)
             
+            # Ensure due_date is timezone-aware for comparison
+            if due_date.tzinfo is None:
+                due_date = due_date.replace(tzinfo=timezone.utc)
+            
             # Get client info
             client = await db.clients.find_one({"id": inv.get("client_id")}, {"_id": 0, "name": 1, "email": 1, "phone": 1})
             inv["client_name"] = client.get("name") if client else "N/A"
@@ -2299,6 +2306,9 @@ async def get_client_statement(client_id: str, current_user: dict = Depends(get_
         if due_date:
             if isinstance(due_date, str):
                 due_date = datetime.fromisoformat(due_date)
+            # Ensure timezone-aware comparison
+            if due_date.tzinfo is None:
+                due_date = due_date.replace(tzinfo=timezone.utc)
             if due_date < now and inv.get("status") not in ["paid", "cancelled"]:
                 inv["days_overdue"] = (now - due_date).days
                 overdue_invoices.append(inv)
