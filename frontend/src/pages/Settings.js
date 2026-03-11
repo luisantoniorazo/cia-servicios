@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
-import { getStatusLabel, getApiErrorMessage } from "../lib/utils";
+import { getStatusLabel, getApiErrorMessage, formatDate } from "../lib/utils";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -43,6 +43,11 @@ import {
   Eye,
   Upload,
   Image,
+  EyeOff,
+  UserX,
+  UserCheck,
+  Edit,
+  Key,
 } from "lucide-react";
 import { Checkbox } from "../components/ui/checkbox";
 
@@ -73,8 +78,10 @@ export const Settings = () => {
   const [loading, setLoading] = useState(true);
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
+  const [userDetailDialogOpen, setUserDetailDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [selectedPermissions, setSelectedPermissions] = useState([]);
+  const [showPassword, setShowPassword] = useState(false);
   const [companyForm, setCompanyForm] = useState({
     business_name: "",
     rfc: "",
@@ -91,6 +98,12 @@ export const Settings = () => {
     phone: "",
     password: "",
     role: "user",
+  });
+  const [editUserForm, setEditUserForm] = useState({
+    full_name: "",
+    email: "",
+    phone: "",
+    new_password: "",
   });
 
   useEffect(() => {
@@ -237,6 +250,43 @@ export const Settings = () => {
         ? prev.filter(id => id !== moduleId)
         : [...prev, moduleId]
     );
+  };
+
+  const openUserDetailDialog = (userItem) => {
+    setSelectedUser(userItem);
+    setEditUserForm({
+      full_name: userItem.full_name || "",
+      email: userItem.email || "",
+      phone: userItem.phone || "",
+      new_password: "",
+    });
+    setShowPassword(false);
+    setUserDetailDialogOpen(true);
+  };
+
+  const handleUpdateUser = async (e) => {
+    e.preventDefault();
+    if (!selectedUser) return;
+    try {
+      await api.put(`/admin/users/${selectedUser.id}`, editUserForm);
+      toast.success("Usuario actualizado");
+      setUserDetailDialogOpen(false);
+      fetchUsers();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Error al actualizar usuario"));
+    }
+  };
+
+  const handleToggleUserStatus = async (userId, currentStatus) => {
+    const action = currentStatus ? "inhabilitar" : "habilitar";
+    if (!window.confirm(`¿Estás seguro de ${action} este usuario?`)) return;
+    try {
+      await api.patch(`/admin/users/${userId}/toggle-status`);
+      toast.success(`Usuario ${currentStatus ? "inhabilitado" : "habilitado"}`);
+      fetchUsers();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Error al cambiar estado"));
+    }
   };
 
   if (loading) {
@@ -420,20 +470,29 @@ export const Settings = () => {
                     </TableRow>
                   ) : (
                     users.map((u) => (
-                      <TableRow key={u.id}>
+                      <TableRow key={u.id} className={!u.is_active ? "bg-slate-50 opacity-60" : ""}>
                         <TableCell className="font-medium">{u.full_name}</TableCell>
                         <TableCell>{u.email}</TableCell>
                         <TableCell>
                           <Badge variant="outline">{getStatusLabel(u.role)}</Badge>
                         </TableCell>
                         <TableCell>
-                          <Badge className={u.is_active ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}>
-                            {u.is_active ? "Activo" : "Inactivo"}
+                          <Badge className={u.is_active !== false ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}>
+                            {u.is_active !== false ? "Activo" : "Inhabilitado"}
                           </Badge>
                         </TableCell>
                         <TableCell>
                           {u.id !== user?.id && (
                             <div className="flex items-center gap-1">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => openUserDetailDialog(u)}
+                                className="text-blue-600 hover:text-blue-700"
+                                title="Ver detalles / Editar"
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
                               <Button
                                 variant="ghost"
                                 size="icon"
@@ -446,8 +505,18 @@ export const Settings = () => {
                               <Button
                                 variant="ghost"
                                 size="icon"
+                                onClick={() => handleToggleUserStatus(u.id, u.is_active !== false)}
+                                className={u.is_active !== false ? "text-orange-600 hover:text-orange-700" : "text-emerald-600 hover:text-emerald-700"}
+                                title={u.is_active !== false ? "Inhabilitar usuario" : "Habilitar usuario"}
+                              >
+                                {u.is_active !== false ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
                                 onClick={() => handleDeleteUser(u.id)}
                                 className="text-red-600 hover:text-red-700"
+                                title="Eliminar usuario"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -619,6 +688,143 @@ export const Settings = () => {
               Guardar Permisos
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* User Detail/Edit Dialog */}
+      <Dialog open={userDetailDialogOpen} onOpenChange={setUserDetailDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <form onSubmit={handleUpdateUser}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Eye className="h-5 w-5" />
+                Información del Usuario
+              </DialogTitle>
+              <DialogDescription>
+                Ver y editar información del usuario
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              {/* Read-only info */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 bg-slate-50 rounded-sm">
+                  <div className="text-xs text-muted-foreground">ID de Usuario</div>
+                  <div className="font-mono text-sm truncate">{selectedUser?.id}</div>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-sm">
+                  <div className="text-xs text-muted-foreground">Rol</div>
+                  <Badge variant="outline">{getStatusLabel(selectedUser?.role)}</Badge>
+                </div>
+              </div>
+              <div className="p-3 bg-slate-50 rounded-sm">
+                <div className="text-xs text-muted-foreground mb-1">Contraseña Actual</div>
+                <div className="flex items-center gap-2">
+                  <div className="font-mono text-sm flex-1 bg-white border rounded px-2 py-1">
+                    {showPassword ? "••••••••" : "********"}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="h-8 w-8"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Por seguridad, las contraseñas están encriptadas y no se pueden visualizar
+                </p>
+              </div>
+              
+              <Separator />
+              
+              {/* Editable fields */}
+              <div className="grid gap-4">
+                <div className="grid gap-2">
+                  <Label>Nombre Completo</Label>
+                  <Input
+                    value={editUserForm.full_name}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, full_name: e.target.value })}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Email</Label>
+                    <Input
+                      type="email"
+                      value={editUserForm.email}
+                      onChange={(e) => setEditUserForm({ ...editUserForm, email: e.target.value })}
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Teléfono</Label>
+                    <Input
+                      value={editUserForm.phone}
+                      onChange={(e) => setEditUserForm({ ...editUserForm, phone: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label className="flex items-center gap-2">
+                    <Key className="h-4 w-4" />
+                    Nueva Contraseña
+                  </Label>
+                  <Input
+                    type="password"
+                    value={editUserForm.new_password}
+                    onChange={(e) => setEditUserForm({ ...editUserForm, new_password: e.target.value })}
+                    placeholder="Dejar vacío para mantener actual"
+                  />
+                </div>
+              </div>
+              
+              {/* Status */}
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-sm">
+                <div>
+                  <div className="text-sm font-medium">Estado del Usuario</div>
+                  <Badge className={selectedUser?.is_active !== false ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-800"}>
+                    {selectedUser?.is_active !== false ? "Activo" : "Inhabilitado"}
+                  </Badge>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    handleToggleUserStatus(selectedUser?.id, selectedUser?.is_active !== false);
+                    setUserDetailDialogOpen(false);
+                  }}
+                  className={selectedUser?.is_active !== false ? "text-orange-600 border-orange-300" : "text-emerald-600 border-emerald-300"}
+                >
+                  {selectedUser?.is_active !== false ? (
+                    <>
+                      <UserX className="mr-2 h-4 w-4" />
+                      Inhabilitar
+                    </>
+                  ) : (
+                    <>
+                      <UserCheck className="mr-2 h-4 w-4" />
+                      Habilitar
+                    </>
+                  )}
+                </Button>
+              </div>
+              
+              {/* Created info */}
+              <div className="text-xs text-muted-foreground">
+                Creado: {selectedUser?.created_at ? formatDate(selectedUser.created_at) : "N/A"}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setUserDetailDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" className="btn-industrial">
+                Guardar Cambios
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

@@ -65,6 +65,10 @@ import {
   Lock,
   Unlock,
   Bot,
+  Database,
+  Server,
+  Settings,
+  Save,
 } from "lucide-react";
 
 const LICENSE_TYPES = [
@@ -82,10 +86,19 @@ export const SuperAdminDashboard = () => {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [adminDialogOpen, setAdminDialogOpen] = useState(false);
+  const [serverConfigDialogOpen, setServerConfigDialogOpen] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [selectedAdmin, setSelectedAdmin] = useState(null);
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
+  const [serverConfig, setServerConfig] = useState({
+    database_url: "",
+    database_name: "",
+    backup_enabled: false,
+    backup_schedule: "daily",
+    cloud_provider: "mongodb_atlas",
+  });
+  const [savingServerConfig, setSavingServerConfig] = useState(false);
   const [adminForm, setAdminForm] = useState({
     full_name: "",
     email: "",
@@ -115,6 +128,7 @@ export const SuperAdminDashboard = () => {
 
   useEffect(() => {
     fetchDashboard();
+    fetchServerConfig();
   }, []);
 
   const fetchDashboard = async () => {
@@ -128,6 +142,32 @@ export const SuperAdminDashboard = () => {
       }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchServerConfig = async () => {
+    try {
+      const response = await api.get("/super-admin/server-config");
+      if (response.data) {
+        setServerConfig(response.data);
+      }
+    } catch (error) {
+      // Config might not exist yet, that's okay
+      console.log("No server config found");
+    }
+  };
+
+  const handleSaveServerConfig = async (e) => {
+    e.preventDefault();
+    setSavingServerConfig(true);
+    try {
+      await api.post("/super-admin/server-config", serverConfig);
+      toast.success("Configuración de servidor guardada");
+      setServerConfigDialogOpen(false);
+    } catch (error) {
+      toast.error("Error al guardar configuración");
+    } finally {
+      setSavingServerConfig(false);
     }
   };
 
@@ -323,6 +363,15 @@ export const SuperAdminDashboard = () => {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <Button 
+              variant="outline" 
+              className="border-blue-500 text-blue-400 hover:bg-blue-500/20" 
+              onClick={() => setServerConfigDialogOpen(true)}
+              data-testid="server-config-btn"
+            >
+              <Database className="mr-2 h-4 w-4" />
+              Config. Servidor
+            </Button>
             <Button 
               variant="outline" 
               className="border-amber-500 text-amber-400 hover:bg-amber-500/20" 
@@ -994,6 +1043,123 @@ export const SuperAdminDashboard = () => {
               </Button>
               <Button type="submit" className="bg-amber-500 hover:bg-amber-600 text-slate-900">
                 Guardar Cambios
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Server Configuration Dialog */}
+      <Dialog open={serverConfigDialogOpen} onOpenChange={setServerConfigDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <form onSubmit={handleSaveServerConfig}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Server className="h-5 w-5 text-blue-500" />
+                Configuración del Servidor de Bases de Datos
+              </DialogTitle>
+              <DialogDescription>
+                Configura la conexión al servidor/nube donde se almacenarán las bases de datos de todas las empresas
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="grid gap-2">
+                <Label>Proveedor de Nube</Label>
+                <Select 
+                  value={serverConfig.cloud_provider} 
+                  onValueChange={(value) => setServerConfig({ ...serverConfig, cloud_provider: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mongodb_atlas">MongoDB Atlas</SelectItem>
+                    <SelectItem value="aws_documentdb">AWS DocumentDB</SelectItem>
+                    <SelectItem value="azure_cosmosdb">Azure CosmosDB</SelectItem>
+                    <SelectItem value="google_cloud">Google Cloud</SelectItem>
+                    <SelectItem value="self_hosted">Servidor Propio</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>URL de Conexión a Base de Datos *</Label>
+                <Input
+                  value={serverConfig.database_url}
+                  onChange={(e) => setServerConfig({ ...serverConfig, database_url: e.target.value })}
+                  placeholder="mongodb+srv://usuario:password@cluster.mongodb.net/"
+                  type="password"
+                  className="font-mono"
+                  data-testid="db-url-input"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Ejemplo MongoDB Atlas: mongodb+srv://usuario:password@cluster.mongodb.net/
+                </p>
+              </div>
+              <div className="grid gap-2">
+                <Label>Nombre de Base de Datos Principal</Label>
+                <Input
+                  value={serverConfig.database_name}
+                  onChange={(e) => setServerConfig({ ...serverConfig, database_name: e.target.value })}
+                  placeholder="cia_servicios_production"
+                  data-testid="db-name-input"
+                />
+              </div>
+              <Separator />
+              <div className="space-y-3">
+                <h4 className="font-semibold text-sm">Configuración de Respaldos</h4>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label>Respaldos Automáticos</Label>
+                    <p className="text-xs text-muted-foreground">Habilitar respaldos automáticos de la base de datos</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={serverConfig.backup_enabled}
+                    onChange={(e) => setServerConfig({ ...serverConfig, backup_enabled: e.target.checked })}
+                    className="h-4 w-4"
+                  />
+                </div>
+                {serverConfig.backup_enabled && (
+                  <div className="grid gap-2">
+                    <Label>Frecuencia de Respaldo</Label>
+                    <Select 
+                      value={serverConfig.backup_schedule} 
+                      onValueChange={(value) => setServerConfig({ ...serverConfig, backup_schedule: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="hourly">Cada hora</SelectItem>
+                        <SelectItem value="daily">Diario</SelectItem>
+                        <SelectItem value="weekly">Semanal</SelectItem>
+                        <SelectItem value="monthly">Mensual</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+              <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="flex items-start gap-2">
+                  <Database className="h-4 w-4 text-blue-600 mt-0.5" />
+                  <div className="text-sm text-blue-800">
+                    <strong>Nota:</strong> Esta configuración define dónde se almacenarán los datos de todas las empresas que contraten el servicio. 
+                    Asegúrate de usar credenciales con los permisos adecuados.
+                  </div>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setServerConfigDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button 
+                type="submit" 
+                className="bg-blue-600 hover:bg-blue-700 text-white"
+                disabled={savingServerConfig}
+              >
+                <Save className="mr-2 h-4 w-4" />
+                {savingServerConfig ? "Guardando..." : "Guardar Configuración"}
               </Button>
             </DialogFooter>
           </form>

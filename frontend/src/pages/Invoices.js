@@ -93,6 +93,7 @@ export const Invoices = () => {
     subtotal: "",
     tax: "",
     total: "",
+    invoice_date: new Date().toISOString().split("T")[0],
     due_date: "",
   });
   
@@ -170,6 +171,7 @@ export const Invoices = () => {
         subtotal,
         tax,
         total,
+        invoice_date: formData.invoice_date || new Date().toISOString().split("T")[0],
         due_date: formData.due_date || null,
       });
       toast.success("Factura registrada");
@@ -337,6 +339,7 @@ export const Invoices = () => {
       subtotal: "",
       tax: "",
       total: "",
+      invoice_date: new Date().toISOString().split("T")[0],
       due_date: "",
     });
   };
@@ -564,6 +567,7 @@ export const Invoices = () => {
                       <TableHead>Folio</TableHead>
                       <TableHead>Cliente</TableHead>
                       <TableHead>Concepto</TableHead>
+                      <TableHead>Fecha Factura</TableHead>
                       <TableHead>Total</TableHead>
                       <TableHead>Pagado</TableHead>
                       <TableHead>Saldo</TableHead>
@@ -575,7 +579,7 @@ export const Invoices = () => {
                   <TableBody>
                     {filteredInvoices.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                        <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                           No hay facturas
                         </TableCell>
                       </TableRow>
@@ -598,6 +602,9 @@ export const Invoices = () => {
                             </Button>
                           </TableCell>
                           <TableCell className="max-w-[200px] truncate">{invoice.concept}</TableCell>
+                          <TableCell className="text-slate-600">
+                            {invoice.invoice_date ? formatDate(invoice.invoice_date) : formatDate(invoice.created_at)}
+                          </TableCell>
                           <TableCell className="font-medium">{formatCurrency(invoice.total)}</TableCell>
                           <TableCell className="text-emerald-600">{formatCurrency(invoice.paid_amount)}</TableCell>
                           <TableCell className="text-amber-600">
@@ -684,6 +691,15 @@ export const Invoices = () => {
                   <Input
                     value={formData.invoice_number}
                     onChange={(e) => setFormData({ ...formData, invoice_number: e.target.value })}
+                    required
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Fecha de Factura *</Label>
+                  <Input
+                    type="date"
+                    value={formData.invoice_date}
+                    onChange={(e) => setFormData({ ...formData, invoice_date: e.target.value })}
                     required
                   />
                 </div>

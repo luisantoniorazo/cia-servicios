@@ -137,6 +137,7 @@ class CompanyPublic(BaseModel):
     business_name: str
     slug: str
     logo_url: Optional[str] = None
+    logo_file: Optional[str] = None  # Base64 encoded logo
 
 # User Models
 class UserBase(BaseModel):
@@ -311,6 +312,7 @@ class InvoiceBase(BaseModel):
     total: float = 0.0
     paid_amount: float = 0.0
     status: InvoiceStatus = InvoiceStatus.PENDING
+    invoice_date: Optional[datetime] = None  # Fecha de emisión de la factura
     due_date: Optional[datetime] = None
     # SAT Invoice data
     sat_invoice_uuid: Optional[str] = None
@@ -555,7 +557,8 @@ async def get_company_by_slug(slug: str):
         id=company["id"],
         business_name=company["business_name"],
         slug=company["slug"],
-        logo_url=company.get("logo_url")
+        logo_url=company.get("logo_url"),
+        logo_file=company.get("logo_file")
     )
 
 @api_router.post("/empresa/{slug}/login", response_model=TokenResponse)
@@ -597,7 +600,8 @@ async def company_login(slug: str, credentials: UserLogin):
             id=company["id"],
             business_name=company["business_name"],
             slug=company["slug"],
-            logo_url=company.get("logo_url")
+            logo_url=company.get("logo_url"),
+            logo_file=company.get("logo_file")
         )
     )
 
@@ -701,6 +705,43 @@ async def list_all_companies(current_user: dict = Depends(require_super_admin)):
         result.append(c)
     
     return result
+
+# ============== SERVER CONFIG ROUTES ==============
+class ServerConfigModel(BaseModel):
+    database_url: Optional[str] = None
+    database_name: Optional[str] = None
+    backup_enabled: bool = False
+    backup_schedule: str = "daily"
+    cloud_provider: str = "mongodb_atlas"
+
+@api_router.get("/super-admin/server-config")
+async def get_server_config(current_user: dict = Depends(require_super_admin)):
+    """Get server configuration"""
+    config = await db.system_config.find_one({"type": "server_config"}, {"_id": 0})
+    if not config:
+        return {
+            "database_url": "",
+            "database_name": "",
+            "backup_enabled": False,
+            "backup_schedule": "daily",
+            "cloud_provider": "mongodb_atlas"
+        }
+    return config
+
+@api_router.post("/super-admin/server-config")
+async def save_server_config(config: ServerConfigModel, current_user: dict = Depends(require_super_admin)):
+    """Save server configuration"""
+    config_dict = config.model_dump()
+    config_dict["type"] = "server_config"
+    config_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
+    config_dict["updated_by"] = current_user.get("sub")
+    
+    await db.system_config.update_one(
+        {"type": "server_config"},
+        {"$set": config_dict},
+        upsert=True
+    )
+    return {"message": "Configuración guardada", "config": config_dict}
 
 @api_router.get("/super-admin/companies/{company_id}")
 async def get_company_details(company_id: str, current_user: dict = Depends(require_super_admin)):
@@ -1438,14 +1479,38 @@ async def update_company_user(user_id: str, update_data: dict, current_user: dic
     if not user:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     
-    allowed_fields = ["full_name", "phone", "role", "is_active"]
-    filtered_data = {k: v for k, v in update_data.items() if k in allowed_fields}
+    allowed_fields = ["full_name", "phone", "email", "role", "is_active"]
+    filtered_data = {k: v for k, v in update_data.items() if k in allowed_fields and v}
     
     if "role" in filtered_data and filtered_data["role"] == UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="No se puede asignar rol de Super Admin")
     
-    await db.users.update_one({"id": user_id}, {"$set": filtered_data})
+    # Handle password update
+    if update_data.get("new_password"):
+        filtered_data["password_hash"] = hash_password(update_data["new_password"])
+    
+    if filtered_data:
+        await db.users.update_one({"id": user_id}, {"$set": filtered_data})
     return {"message": "Usuario actualizado"}
+
+@api_router.patch("/admin/users/{user_id}/toggle-status")
+async def toggle_user_status(user_id: str, current_user: dict = Depends(require_admin)):
+    """Habilitar/Inhabilitar usuario de la empresa"""
+    company_id = current_user.get("company_id")
+    
+    if user_id == current_user["sub"]:
+        raise HTTPException(status_code=400, detail="No puedes inhabilitar tu propia cuenta")
+    
+    user = await db.users.find_one({"id": user_id, "company_id": company_id}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    # Toggle status
+    current_status = user.get("is_active", True)
+    new_status = not current_status
+    
+    await db.users.update_one({"id": user_id}, {"$set": {"is_active": new_status}})
+    return {"message": f"Usuario {'habilitado' if new_status else 'inhabilitado'}", "is_active": new_status}
 
 @api_router.delete("/admin/users/{user_id}")
 async def delete_company_user(user_id: str, current_user: dict = Depends(require_admin)):

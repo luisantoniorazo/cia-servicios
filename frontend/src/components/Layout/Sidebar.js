@@ -36,17 +36,18 @@ import {
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_cia-operacional/artifacts/0bkwa552_Logo%20CIA.jpg";
 
 const menuItems = [
-  { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { path: "/projects", label: "Proyectos", icon: FolderKanban },
-  { path: "/crm", label: "CRM", icon: Users },
-  { path: "/quotes", label: "Cotizaciones", icon: FileText },
-  { path: "/invoices", label: "Facturación", icon: Receipt },
-  { path: "/purchases", label: "Compras", icon: ShoppingCart },
-  { path: "/suppliers", label: "Proveedores", icon: Building2 },
-  { path: "/documents", label: "Documentos", icon: FileBox },
-  { path: "/field-reports", label: "Reportes de Campo", icon: ClipboardList },
-  { path: "/kpis", label: "Indicadores", icon: BarChart3 },
-  { path: "/intelligence", label: "Inteligencia IA", icon: Sparkles },
+  { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard, moduleId: "dashboard" },
+  { path: "/projects", label: "Proyectos", icon: FolderKanban, moduleId: "projects" },
+  { path: "/crm", label: "CRM", icon: Users, moduleId: "crm" },
+  { path: "/quotes", label: "Cotizaciones", icon: FileText, moduleId: "quotes" },
+  { path: "/invoices", label: "Facturación", icon: Receipt, moduleId: "invoices" },
+  { path: "/purchases", label: "Compras", icon: ShoppingCart, moduleId: "purchases" },
+  { path: "/suppliers", label: "Proveedores", icon: Building2, moduleId: "suppliers" },
+  { path: "/documents", label: "Documentos", icon: FileBox, moduleId: "documents" },
+  { path: "/field-reports", label: "Reportes de Campo", icon: ClipboardList, moduleId: "field-reports" },
+  { path: "/kpis", label: "Indicadores", icon: BarChart3, moduleId: "kpis" },
+  { path: "/intelligence", label: "Inteligencia IA", icon: Sparkles, moduleId: "intelligence" },
+  { path: "/settings", label: "Configuración", icon: Settings, moduleId: "settings" },
 ];
 
 export const Sidebar = ({ isOpen, onToggle }) => {
@@ -145,7 +146,14 @@ export const Sidebar = ({ isOpen, onToggle }) => {
                 </>
               )}
               
-              {menuItems.map((item) => (
+              {menuItems
+                .filter((item) => {
+                  // If user has module_permissions, filter by them
+                  // If null/undefined, show all modules (admin default)
+                  if (!user?.module_permissions) return true;
+                  return user.module_permissions.includes(item.moduleId);
+                })
+                .map((item) => (
                 <NavLink
                   key={item.path}
                   to={`${basePath}${item.path}`}
