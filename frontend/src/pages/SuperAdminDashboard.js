@@ -69,6 +69,7 @@ import {
   Server,
   Settings,
   Save,
+  TicketIcon,
 } from "lucide-react";
 
 const LICENSE_TYPES = [
@@ -371,6 +372,15 @@ export const SuperAdminDashboard = () => {
             >
               <Database className="mr-2 h-4 w-4" />
               Config. Servidor
+            </Button>
+            <Button 
+              variant="outline" 
+              className="border-purple-500 text-purple-400 hover:bg-purple-500/20" 
+              onClick={() => navigate("/admin-portal/tickets")}
+              data-testid="tickets-admin-btn"
+            >
+              <TicketIcon className="mr-2 h-4 w-4" />
+              Tickets
             </Button>
             <Button 
               variant="outline" 

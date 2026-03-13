@@ -1,0 +1,603 @@
+import React, { useState, useEffect, useCallback } from "react";
+import { useAuth } from "../context/AuthContext";
+import { formatDate, getApiErrorMessage } from "../lib/utils";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import { Textarea } from "../components/ui/textarea";
+import { Badge } from "../components/ui/badge";
+import { Separator } from "../components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
+import { toast } from "sonner";
+import {
+  TicketIcon,
+  Plus,
+  Camera,
+  Send,
+  Clock,
+  CheckCircle,
+  AlertTriangle,
+  XCircle,
+  MessageSquare,
+  Loader2,
+  Image as ImageIcon,
+  X,
+} from "lucide-react";
+
+const PRIORITIES = [
+  { value: "low", label: "Baja", color: "bg-slate-500" },
+  { value: "medium", label: "Media", color: "bg-amber-500" },
+  { value: "high", label: "Alta", color: "bg-orange-500" },
+  { value: "critical", label: "Crítica", color: "bg-red-500" },
+];
+
+const CATEGORIES = [
+  { value: "general", label: "General" },
+  { value: "bug", label: "Error/Bug" },
+  { value: "feature", label: "Solicitud de Función" },
+  { value: "billing", label: "Facturación" },
+];
+
+const STATUS_CONFIG = {
+  open: { label: "Abierto", color: "bg-blue-500", icon: Clock },
+  in_progress: { label: "En Progreso", color: "bg-amber-500", icon: Loader2 },
+  resolved: { label: "Resuelto", color: "bg-emerald-500", icon: CheckCircle },
+  closed: { label: "Cerrado", color: "bg-slate-500", icon: XCircle },
+};
+
+export const Tickets = () => {
+  const { api, company, user } = useAuth();
+  const [tickets, setTickets] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [detailDialogOpen, setDetailDialogOpen] = useState(false);
+  const [selectedTicket, setSelectedTicket] = useState(null);
+  const [newComment, setNewComment] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [screenshots, setScreenshots] = useState([]);
+  const [formData, setFormData] = useState({
+    title: "",
+    description: "",
+    priority: "medium",
+    category: "general",
+  });
+
+  const fetchTickets = useCallback(async () => {
+    try {
+      const response = await api.get(`/tickets?company_id=${company.id}`);
+      setTickets(response.data);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  }, [api, company?.id]);
+
+  useEffect(() => {
+    if (company?.id) {
+      fetchTickets();
+    }
+  }, [fetchTickets, company?.id]);
+
+  const handleScreenshotCapture = async () => {
+    try {
+      // Use clipboard API to paste screenshot
+      const clipboardItems = await navigator.clipboard.read();
+      for (const item of clipboardItems) {
+        if (item.types.includes("image/png")) {
+          const blob = await item.getType("image/png");
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            setScreenshots(prev => [...prev, reader.result]);
+            toast.success("Screenshot agregado");
+          };
+          reader.readAsDataURL(blob);
+          return;
+        }
+      }
+      toast.info("Copia un screenshot al portapapeles (Ctrl+V) y luego presiona este botón");
+    } catch (error) {
+      toast.info("Para agregar un screenshot: 1. Toma una captura (Win+Shift+S), 2. Presiona este botón");
+    }
+  };
+
+  const handleFileUpload = (e) => {
+    const files = e.target.files;
+    if (!files) return;
+    
+    Array.from(files).forEach(file => {
+      if (file.type.startsWith("image/")) {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setScreenshots(prev => [...prev, reader.result]);
+        };
+        reader.readAsDataURL(file);
+      }
+    });
+  };
+
+  const removeScreenshot = (index) => {
+    setScreenshots(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await api.post("/tickets", {
+        company_id: company.id,
+        ...formData,
+        screenshots: screenshots.map(s => s.split(",")[1] || s), // Remove data URL prefix
+      });
+      toast.success("Ticket creado exitosamente");
+      setDialogOpen(false);
+      resetForm();
+      fetchTickets();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Error al crear ticket"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleAddComment = async () => {
+    if (!newComment.trim() || !selectedTicket) return;
+    try {
+      await api.post(`/tickets/${selectedTicket.id}/comment`, { text: newComment });
+      toast.success("Comentario agregado");
+      setNewComment("");
+      // Refresh ticket details
+      const response = await api.get(`/tickets/${selectedTicket.id}`);
+      setSelectedTicket(response.data);
+      fetchTickets();
+    } catch (error) {
+      toast.error("Error al agregar comentario");
+    }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      title: "",
+      description: "",
+      priority: "medium",
+      category: "general",
+    });
+    setScreenshots([]);
+  };
+
+  const openTicketDetail = async (ticket) => {
+    try {
+      const response = await api.get(`/tickets/${ticket.id}`);
+      setSelectedTicket(response.data);
+      setDetailDialogOpen(true);
+    } catch (error) {
+      toast.error("Error al cargar ticket");
+    }
+  };
+
+  const getPriorityBadge = (priority) => {
+    const config = PRIORITIES.find(p => p.value === priority) || PRIORITIES[1];
+    return <Badge className={`${config.color} text-white`}>{config.label}</Badge>;
+  };
+
+  const getStatusBadge = (status) => {
+    const config = STATUS_CONFIG[status] || STATUS_CONFIG.open;
+    const Icon = config.icon;
+    return (
+      <Badge className={`${config.color} text-white`}>
+        <Icon className="h-3 w-3 mr-1" />
+        {config.label}
+      </Badge>
+    );
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6" data-testid="tickets-page">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">Soporte Técnico</h1>
+          <p className="text-muted-foreground">Reporta problemas y da seguimiento a tus tickets</p>
+        </div>
+        <Button onClick={() => setDialogOpen(true)} className="btn-industrial" data-testid="new-ticket-btn">
+          <Plus className="mr-2 h-4 w-4" />
+          Nuevo Ticket
+        </Button>
+      </div>
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-sm bg-blue-100">
+                <TicketIcon className="h-5 w-5 text-blue-600" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold">{tickets.length}</div>
+                <div className="text-sm text-muted-foreground">Total Tickets</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-sm bg-amber-100">
+                <Clock className="h-5 w-5 text-amber-600" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold">{tickets.filter(t => t.status === "open").length}</div>
+                <div className="text-sm text-muted-foreground">Abiertos</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-sm bg-orange-100">
+                <Loader2 className="h-5 w-5 text-orange-600" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold">{tickets.filter(t => t.status === "in_progress").length}</div>
+                <div className="text-sm text-muted-foreground">En Progreso</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-sm bg-emerald-100">
+                <CheckCircle className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold">{tickets.filter(t => ["resolved", "closed"].includes(t.status)).length}</div>
+                <div className="text-sm text-muted-foreground">Resueltos</div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Tickets Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Mis Tickets</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="rounded-sm border overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-slate-50">
+                  <TableHead>Ticket</TableHead>
+                  <TableHead>Título</TableHead>
+                  <TableHead>Categoría</TableHead>
+                  <TableHead>Prioridad</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead></TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {tickets.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                      No tienes tickets. Crea uno para reportar un problema.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  tickets.map((ticket) => (
+                    <TableRow key={ticket.id}>
+                      <TableCell className="font-mono text-sm">{ticket.ticket_number}</TableCell>
+                      <TableCell>
+                        <div className="font-medium">{ticket.title}</div>
+                        <div className="text-sm text-muted-foreground truncate max-w-[200px]">
+                          {ticket.description}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">
+                          {CATEGORIES.find(c => c.value === ticket.category)?.label || ticket.category}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{getPriorityBadge(ticket.priority)}</TableCell>
+                      <TableCell>{getStatusBadge(ticket.status)}</TableCell>
+                      <TableCell>{formatDate(ticket.created_at)}</TableCell>
+                      <TableCell>
+                        <Button variant="ghost" size="sm" onClick={() => openTicketDetail(ticket)}>
+                          <MessageSquare className="h-4 w-4 mr-1" />
+                          Ver
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* New Ticket Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <form onSubmit={handleSubmit}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <TicketIcon className="h-5 w-5" />
+                Reportar un Problema
+              </DialogTitle>
+              <DialogDescription>
+                Describe el problema que estás experimentando. Incluye capturas de pantalla si es posible.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid gap-2">
+                <Label>Título del Problema *</Label>
+                <Input
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  placeholder="Ej: Error al generar PDF de cotización"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Categoría</Label>
+                  <Select
+                    value={formData.category}
+                    onValueChange={(value) => setFormData({ ...formData, category: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CATEGORIES.map(cat => (
+                        <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Prioridad</Label>
+                  <Select
+                    value={formData.priority}
+                    onValueChange={(value) => setFormData({ ...formData, priority: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PRIORITIES.map(pri => (
+                        <SelectItem key={pri.value} value={pri.value}>{pri.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Descripción Detallada *</Label>
+                <Textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  placeholder="Describe el problema con el mayor detalle posible: qué estabas haciendo, qué error apareció, etc."
+                  rows={4}
+                  required
+                />
+              </div>
+              
+              {/* Screenshots Section */}
+              <div className="grid gap-2">
+                <Label className="flex items-center gap-2">
+                  <Camera className="h-4 w-4" />
+                  Capturas de Pantalla
+                </Label>
+                <div className="flex items-center gap-2">
+                  <Button type="button" variant="outline" onClick={handleScreenshotCapture}>
+                    <Camera className="mr-2 h-4 w-4" />
+                    Pegar Screenshot
+                  </Button>
+                  <span className="text-sm text-muted-foreground">o</span>
+                  <label className="cursor-pointer">
+                    <Input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={handleFileUpload}
+                    />
+                    <Button type="button" variant="outline" asChild>
+                      <span>
+                        <ImageIcon className="mr-2 h-4 w-4" />
+                        Subir Imagen
+                      </span>
+                    </Button>
+                  </label>
+                </div>
+                
+                {screenshots.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {screenshots.map((screenshot, index) => (
+                      <div key={index} className="relative">
+                        <img
+                          src={screenshot}
+                          alt={`Screenshot ${index + 1}`}
+                          className="h-20 w-auto rounded border"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeScreenshot(index)}
+                          className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => { setDialogOpen(false); resetForm(); }}>
+                Cancelar
+              </Button>
+              <Button type="submit" className="btn-industrial" disabled={submitting}>
+                {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+                Enviar Ticket
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Ticket Detail Dialog */}
+      <Dialog open={detailDialogOpen} onOpenChange={setDetailDialogOpen}>
+        <DialogContent className="sm:max-w-[700px] max-h-[80vh] overflow-y-auto">
+          {selectedTicket && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center justify-between">
+                  <span>{selectedTicket.ticket_number}</span>
+                  {getStatusBadge(selectedTicket.status)}
+                </DialogTitle>
+                <DialogDescription>{selectedTicket.title}</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                {/* Ticket Info */}
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <div className="text-muted-foreground">Categoría</div>
+                    <Badge variant="outline">{CATEGORIES.find(c => c.value === selectedTicket.category)?.label}</Badge>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Prioridad</div>
+                    {getPriorityBadge(selectedTicket.priority)}
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Creado</div>
+                    <div>{formatDate(selectedTicket.created_at)}</div>
+                  </div>
+                </div>
+                
+                <Separator />
+                
+                {/* Description */}
+                <div>
+                  <h4 className="font-semibold mb-2">Descripción</h4>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{selectedTicket.description}</p>
+                </div>
+                
+                {/* Screenshots */}
+                {selectedTicket.screenshots?.length > 0 && (
+                  <div>
+                    <h4 className="font-semibold mb-2">Capturas de Pantalla</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedTicket.screenshots.map((screenshot, index) => (
+                        <img
+                          key={index}
+                          src={`data:image/png;base64,${screenshot}`}
+                          alt={`Screenshot ${index + 1}`}
+                          className="h-32 w-auto rounded border cursor-pointer hover:opacity-80"
+                          onClick={() => window.open(`data:image/png;base64,${screenshot}`, "_blank")}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Resolution */}
+                {selectedTicket.resolution_notes && (
+                  <div className="p-3 bg-emerald-50 rounded-sm border border-emerald-200">
+                    <h4 className="font-semibold text-emerald-800 mb-1">Resolución</h4>
+                    <p className="text-sm text-emerald-700">{selectedTicket.resolution_notes}</p>
+                    <p className="text-xs text-emerald-600 mt-1">
+                      Resuelto por {selectedTicket.resolved_by_name} el {formatDate(selectedTicket.resolved_at)}
+                    </p>
+                  </div>
+                )}
+                
+                <Separator />
+                
+                {/* Comments */}
+                <div>
+                  <h4 className="font-semibold mb-2">Conversación</h4>
+                  <div className="space-y-3 max-h-[200px] overflow-y-auto">
+                    {selectedTicket.comments?.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No hay comentarios aún</p>
+                    ) : (
+                      selectedTicket.comments?.map((comment) => (
+                        <div
+                          key={comment.id}
+                          className={`p-3 rounded-sm ${comment.is_admin ? "bg-blue-50 border-l-4 border-l-blue-500" : "bg-slate-50"}`}
+                        >
+                          <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="font-medium">
+                              {comment.author_name}
+                              {comment.is_admin && <Badge className="ml-2 bg-blue-500 text-xs">Admin</Badge>}
+                            </span>
+                            <span className="text-muted-foreground">{formatDate(comment.created_at)}</span>
+                          </div>
+                          <p className="text-sm">{comment.text}</p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  
+                  {/* Add Comment */}
+                  {!["closed"].includes(selectedTicket.status) && (
+                    <div className="flex gap-2 mt-3">
+                      <Input
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        placeholder="Escribe un comentario..."
+                        onKeyPress={(e) => e.key === "Enter" && handleAddComment()}
+                      />
+                      <Button onClick={handleAddComment} disabled={!newComment.trim()}>
+                        <Send className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+export default Tickets;

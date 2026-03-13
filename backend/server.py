@@ -305,6 +305,44 @@ class QuoteUpdateData(BaseModel):
 class QuoteCreate(QuoteBase):
     pass
 
+# ============== TICKET SYSTEM MODELS ==============
+class TicketPriority(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+class TicketStatus(str, Enum):
+    OPEN = "open"
+    IN_PROGRESS = "in_progress"
+    RESOLVED = "resolved"
+    CLOSED = "closed"
+
+class TicketBase(BaseModel):
+    company_id: str
+    title: str
+    description: str
+    priority: TicketPriority = TicketPriority.MEDIUM
+    category: str = "general"  # general, bug, feature, billing
+    screenshots: List[str] = []  # Base64 encoded screenshots
+
+class TicketCreate(TicketBase):
+    pass
+
+class Ticket(TicketBase):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    ticket_number: str = ""
+    status: TicketStatus = TicketStatus.OPEN
+    created_by: str = ""
+    created_by_name: str = ""
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    resolved_at: Optional[datetime] = None
+    resolved_by: Optional[str] = None
+    resolved_by_name: Optional[str] = None
+    resolution_notes: Optional[str] = None
+    comments: List[dict] = []
+
 class Quote(QuoteBase):
     model_config = ConfigDict(extra="ignore")
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
@@ -1634,8 +1672,153 @@ async def get_scheduler_status(current_user: dict = Depends(require_super_admin)
         "running": scheduler.running,
         "jobs": next_runs
     }
+
+# ============== TICKET SYSTEM ROUTES ==============
+@api_router.post("/tickets")
+async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(get_current_user)):
+    """Create a new support ticket"""
+    # Generate ticket number
+    count = await db.tickets.count_documents({})
+    ticket_number = f"TKT-{datetime.now().year}-{count + 1:04d}"
     
-    return {"message": "Problema actualizado"}
+    ticket = Ticket(
+        **ticket_data.model_dump(),
+        ticket_number=ticket_number,
+        created_by=current_user.get("sub"),
+        created_by_name=current_user.get("full_name", "Usuario")
+    )
+    
+    ticket_dict = ticket.model_dump()
+    ticket_dict["created_at"] = ticket_dict["created_at"].isoformat()
+    ticket_dict["updated_at"] = ticket_dict["updated_at"].isoformat()
+    
+    await db.tickets.insert_one(ticket_dict)
+    
+    return ticket_dict
+
+@api_router.get("/tickets")
+async def list_tickets(
+    company_id: Optional[str] = None,
+    status: Optional[TicketStatus] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """List tickets - for company users, only their company's tickets"""
+    query = {}
+    
+    # If super admin, can see all or filter by company
+    if current_user.get("role") == UserRole.SUPER_ADMIN:
+        if company_id:
+            query["company_id"] = company_id
+    else:
+        # Regular users only see their company's tickets
+        query["company_id"] = current_user.get("company_id")
+    
+    if status:
+        query["status"] = status
+    
+    tickets = await db.tickets.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    
+    # Add company name to each ticket
+    for ticket in tickets:
+        company = await db.companies.find_one({"id": ticket.get("company_id")}, {"_id": 0, "business_name": 1})
+        ticket["company_name"] = company.get("business_name") if company else "N/A"
+    
+    return tickets
+
+@api_router.get("/tickets/{ticket_id}")
+async def get_ticket(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    """Get ticket details"""
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket no encontrado")
+    
+    # Check access
+    if current_user.get("role") != UserRole.SUPER_ADMIN:
+        if ticket.get("company_id") != current_user.get("company_id"):
+            raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    return ticket
+
+@api_router.post("/tickets/{ticket_id}/comment")
+async def add_ticket_comment(
+    ticket_id: str,
+    comment_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Add comment to ticket"""
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket no encontrado")
+    
+    comment = {
+        "id": str(uuid.uuid4()),
+        "text": comment_data.get("text", ""),
+        "author_id": current_user.get("sub"),
+        "author_name": current_user.get("full_name", "Usuario"),
+        "is_admin": current_user.get("role") == UserRole.SUPER_ADMIN,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.tickets.update_one(
+        {"id": ticket_id},
+        {
+            "$push": {"comments": comment},
+            "$set": {"updated_at": datetime.now(timezone.utc).isoformat()}
+        }
+    )
+    
+    return {"message": "Comentario agregado", "comment": comment}
+
+@api_router.patch("/tickets/{ticket_id}/status")
+async def update_ticket_status(
+    ticket_id: str,
+    status: TicketStatus,
+    resolution_notes: Optional[str] = None,
+    current_user: dict = Depends(require_super_admin)
+):
+    """Update ticket status (Super Admin only)"""
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket no encontrado")
+    
+    update_data = {
+        "status": status,
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    if status in [TicketStatus.RESOLVED, TicketStatus.CLOSED]:
+        update_data["resolved_at"] = datetime.now(timezone.utc).isoformat()
+        update_data["resolved_by"] = current_user.get("sub")
+        update_data["resolved_by_name"] = current_user.get("full_name", "Admin")
+        if resolution_notes:
+            update_data["resolution_notes"] = resolution_notes
+    
+    await db.tickets.update_one({"id": ticket_id}, {"$set": update_data})
+    
+    return {"message": f"Ticket actualizado a {status}"}
+
+@api_router.get("/super-admin/tickets/stats")
+async def get_tickets_stats(current_user: dict = Depends(require_super_admin)):
+    """Get ticket statistics"""
+    total = await db.tickets.count_documents({})
+    open_count = await db.tickets.count_documents({"status": "open"})
+    in_progress = await db.tickets.count_documents({"status": "in_progress"})
+    resolved = await db.tickets.count_documents({"status": "resolved"})
+    closed = await db.tickets.count_documents({"status": "closed"})
+    
+    # Count by priority
+    critical = await db.tickets.count_documents({"status": {"$nin": ["closed", "resolved"]}, "priority": "critical"})
+    high = await db.tickets.count_documents({"status": {"$nin": ["closed", "resolved"]}, "priority": "high"})
+    
+    return {
+        "total": total,
+        "open": open_count,
+        "in_progress": in_progress,
+        "resolved": resolved,
+        "closed": closed,
+        "critical_pending": critical,
+        "high_pending": high
+    }
 
 # ============== COMPANY ADMIN - USER MANAGEMENT ==============
 @api_router.get("/admin/users")

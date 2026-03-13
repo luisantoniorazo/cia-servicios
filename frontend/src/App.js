@@ -8,6 +8,7 @@ import "./App.css";
 import SuperAdminLogin from "./pages/SuperAdminLogin";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
 import SystemMonitor from "./pages/SystemMonitor";
+import TicketsAdmin from "./pages/TicketsAdmin";
 import CompanyLogin from "./pages/CompanyLogin";
 
 // Company Pages
@@ -23,6 +24,7 @@ import FieldReports from "./pages/FieldReports";
 import KPIs from "./pages/KPIs";
 import Intelligence from "./pages/Intelligence";
 import Settings from "./pages/Settings";
+import Tickets from "./pages/Tickets";
 
 // Layout
 import MainLayout from "./components/Layout/MainLayout";
@@ -172,6 +174,14 @@ function AppRoutes() {
           </SuperAdminRoute>
         }
       />
+      <Route
+        path="/admin-portal/tickets"
+        element={
+          <SuperAdminRoute>
+            <TicketsAdmin />
+          </SuperAdminRoute>
+        }
+      />
 
       {/* Company Login */}
       <Route
@@ -205,6 +215,7 @@ function AppRoutes() {
         <Route path="kpis" element={<KPIs />} />
         <Route path="intelligence" element={<Intelligence />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="tickets" element={<Tickets />} />
       </Route>
 
       {/* Catch all */}
