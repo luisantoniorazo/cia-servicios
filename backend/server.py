@@ -2337,6 +2337,22 @@ async def create_quote(quote_data: QuoteCreate, current_user: dict = Depends(get
     
     quote = Quote(**quote_data.model_dump())
     quote_dict = quote.model_dump()
+    
+    # Calculate totals from items
+    items = quote_dict.get("items", [])
+    for item in items:
+        item["total"] = item.get("quantity", 1) * item.get("unit_price", 0)
+    
+    subtotal = sum(item.get("total", 0) for item in items)
+    show_tax = quote_dict.get("show_tax", True)
+    tax = subtotal * 0.16 if show_tax else 0
+    total = subtotal + tax
+    
+    quote_dict["items"] = items
+    quote_dict["subtotal"] = subtotal
+    quote_dict["tax"] = tax
+    quote_dict["total"] = total
+    
     quote_dict["created_at"] = quote_dict["created_at"].isoformat()
     quote_dict["updated_at"] = quote_dict["updated_at"].isoformat()
     quote_dict["created_by"] = current_user.get("sub")
@@ -2346,6 +2362,12 @@ async def create_quote(quote_data: QuoteCreate, current_user: dict = Depends(get
     if quote_dict.get("valid_until"):
         quote_dict["valid_until"] = quote_dict["valid_until"].isoformat()
     await db.quotes.insert_one(quote_dict)
+    
+    # Return quote with calculated values
+    quote.subtotal = subtotal
+    quote.tax = tax
+    quote.total = total
+    quote.items = [QuoteItem(**item) for item in items]
     return quote
 
 @api_router.get("/quotes", response_model=List[Quote])
@@ -3072,11 +3094,31 @@ async def create_purchase_order(po_data: PurchaseOrderCreate, current_user: dict
     
     po = PurchaseOrder(**po_data.model_dump())
     po_dict = po.model_dump()
+    
+    # Calculate totals from items
+    items = po_dict.get("items", [])
+    for item in items:
+        item["total"] = item.get("quantity", 1) * item.get("unit_price", 0)
+    
+    subtotal = sum(item.get("total", 0) for item in items)
+    tax = subtotal * 0.16
+    total = subtotal + tax
+    
+    po_dict["items"] = items
+    po_dict["subtotal"] = subtotal
+    po_dict["tax"] = tax
+    po_dict["total"] = total
+    
     po_dict["created_at"] = po_dict["created_at"].isoformat()
     po_dict["updated_at"] = po_dict["updated_at"].isoformat()
     if po_dict.get("expected_delivery"):
         po_dict["expected_delivery"] = po_dict["expected_delivery"].isoformat()
     await db.purchase_orders.insert_one(po_dict)
+    
+    # Return with calculated values
+    po.subtotal = subtotal
+    po.tax = tax
+    po.total = total
     return po
 
 @api_router.get("/purchase-orders", response_model=List[PurchaseOrder])
@@ -3130,6 +3172,23 @@ async def update_purchase_order_status(po_id: str, status: PurchaseOrderStatus, 
         {"$set": {"status": status, "updated_at": datetime.now(timezone.utc).isoformat()}}
     )
     return {"message": "Estado actualizado"}
+
+@api_router.put("/purchase-orders/{po_id}")
+async def update_purchase_order(po_id: str, update_data: dict, current_user: dict = Depends(get_current_user)):
+    """Update purchase order data"""
+    po = await db.purchase_orders.find_one({"id": po_id}, {"_id": 0})
+    if not po:
+        raise HTTPException(status_code=404, detail="Orden de compra no encontrada")
+    
+    if current_user.get("company_id") != po.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    allowed_fields = ["description", "items", "subtotal", "tax", "total", "expected_delivery"]
+    filtered_update = {k: v for k, v in update_data.items() if k in allowed_fields and v is not None}
+    filtered_update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    await db.purchase_orders.update_one({"id": po_id}, {"$set": filtered_update})
+    return {"message": "Orden de compra actualizada"}
 
 @api_router.delete("/purchase-orders/{po_id}")
 async def delete_purchase_order(po_id: str, current_user: dict = Depends(get_current_user)):
@@ -3434,7 +3493,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, HRFlowable
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 
 EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
@@ -3573,149 +3632,359 @@ Responde en español con datos concretos y recomendaciones accionables."""
         raise HTTPException(status_code=500, detail=f"Error en análisis: {str(e)}")
 
 # ============== PDF GENERATION ==============
-def add_company_header_to_pdf(elements: list, company: dict, styles, title_style):
-    """Add company header with logo to PDF elements"""
-    from reportlab.platypus import Image as RLImage
+def add_professional_header(elements: list, company: dict, doc_type: str, doc_number: str, doc_date: str):
+    """Add professional executive header with logo and document info"""
+    from reportlab.platypus import Image as RLImage, HRFlowable
+    
+    # Color scheme for different document types
+    color_schemes = {
+        'quote': {'primary': '#1a365d', 'secondary': '#2b6cb0', 'accent': '#4299e1'},
+        'invoice': {'primary': '#1a365d', 'secondary': '#2b6cb0', 'accent': '#4299e1'},
+        'purchase_order': {'primary': '#1a472a', 'secondary': '#276749', 'accent': '#38a169'},
+    }
+    scheme = color_schemes.get(doc_type, color_schemes['quote'])
+    
+    # Title styles
+    company_name_style = ParagraphStyle(
+        'CompanyName', 
+        fontSize=20, 
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor(scheme['primary']),
+        spaceAfter=2
+    )
+    company_info_style = ParagraphStyle(
+        'CompanyInfo', 
+        fontSize=9, 
+        fontName='Helvetica',
+        textColor=colors.HexColor('#4a5568'),
+        leading=12
+    )
+    doc_title_style = ParagraphStyle(
+        'DocTitle', 
+        fontSize=14, 
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor(scheme['secondary']),
+        alignment=TA_RIGHT
+    )
+    doc_number_style = ParagraphStyle(
+        'DocNumber', 
+        fontSize=22, 
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor(scheme['primary']),
+        alignment=TA_RIGHT
+    )
+    doc_date_style = ParagraphStyle(
+        'DocDate', 
+        fontSize=10, 
+        fontName='Helvetica',
+        textColor=colors.HexColor('#718096'),
+        alignment=TA_RIGHT
+    )
+    
+    doc_titles = {
+        'quote': 'COTIZACIÓN',
+        'invoice': 'FACTURA',
+        'purchase_order': 'ORDEN DE COMPRA',
+    }
     
     logo_file = company.get('logo_file')
+    logo_element = None
     
     if logo_file:
         try:
-            # Decode base64 logo
             logo_bytes = base64.b64decode(logo_file)
             logo_buffer = BytesIO(logo_bytes)
-            
-            # Create image with max dimensions
             logo_img = RLImage(logo_buffer)
-            # Scale logo to fit (max 1.5 inch height, maintain aspect ratio)
-            logo_img.drawHeight = min(1.2*inch, logo_img.drawHeight)
-            logo_img.drawWidth = logo_img.drawWidth * (logo_img.drawHeight / logo_img.imageHeight) if hasattr(logo_img, 'imageHeight') else logo_img.drawWidth
-            
-            # Create header table with logo and company name side by side
-            header_data = [[logo_img, Paragraph(company.get('business_name', 'CIA SERVICIOS'), title_style)]]
-            header_table = Table(header_data, colWidths=[1.8*inch, 5*inch])
-            header_table.setStyle(TableStyle([
-                ('ALIGN', (0, 0), (0, 0), 'LEFT'),
-                ('ALIGN', (1, 0), (1, 0), 'LEFT'),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ]))
-            elements.append(header_table)
-        except Exception as e:
-            # Fallback to text only if logo fails
-            elements.append(Paragraph(company.get('business_name', 'CIA SERVICIOS'), title_style))
-    else:
-        elements.append(Paragraph(company.get('business_name', 'CIA SERVICIOS'), title_style))
+            # Scale logo proportionally (max 1 inch height)
+            aspect = logo_img.drawWidth / logo_img.drawHeight if logo_img.drawHeight > 0 else 1
+            logo_img.drawHeight = min(0.9*inch, logo_img.drawHeight)
+            logo_img.drawWidth = logo_img.drawHeight * aspect
+            logo_element = logo_img
+        except:
+            logo_element = None
     
-    header_style = ParagraphStyle('Header', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#666666'))
-    elements.append(Paragraph(f"RFC: {company.get('rfc', '')} | Tel: {company.get('phone', '')} | Email: {company.get('email', '')}", header_style))
-    elements.append(Spacer(1, 0.3*inch))
+    # Build company info column
+    company_info = []
+    if logo_element:
+        company_info.append(logo_element)
+    company_info.append(Paragraph(company.get('business_name', 'CIA SERVICIOS'), company_name_style))
+    
+    info_lines = []
+    if company.get('rfc'):
+        info_lines.append(f"RFC: {company.get('rfc')}")
+    if company.get('address'):
+        info_lines.append(company.get('address'))
+    if company.get('phone'):
+        info_lines.append(f"Tel: {company.get('phone')}")
+    if company.get('email'):
+        info_lines.append(company.get('email'))
+    
+    if info_lines:
+        company_info.append(Paragraph('<br/>'.join(info_lines), company_info_style))
+    
+    # Build document info column
+    doc_info = [
+        Paragraph(doc_titles.get(doc_type, 'DOCUMENTO'), doc_title_style),
+        Paragraph(doc_number, doc_number_style),
+        Spacer(1, 4),
+        Paragraph(f"Fecha: {doc_date}", doc_date_style),
+    ]
+    
+    # Create header table
+    left_cell = Table([[item] for item in company_info], colWidths=[4*inch])
+    left_cell.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+    ]))
+    
+    right_cell = Table([[item] for item in doc_info], colWidths=[2.8*inch])
+    right_cell.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+    ]))
+    
+    header_table = Table([[left_cell, right_cell]], colWidths=[4.2*inch, 3*inch])
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+    ]))
+    
+    elements.append(header_table)
+    
+    # Add separator line
+    elements.append(Spacer(1, 0.15*inch))
+    elements.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor(scheme['secondary']), spaceAfter=0.2*inch))
+
+def add_company_header_to_pdf(elements: list, company: dict, styles, title_style):
+    """Legacy wrapper - redirects to professional header"""
+    add_professional_header(elements, company, 'quote', '', '')
 
 def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
-    """Generate PDF for a quote"""
+    """Generate professional executive PDF for a quote with auto-adjusting cells"""
+    from reportlab.platypus import HRFlowable
+    
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    doc = SimpleDocTemplate(
+        buffer, 
+        pagesize=letter, 
+        topMargin=0.4*inch, 
+        bottomMargin=0.6*inch,
+        leftMargin=0.6*inch,
+        rightMargin=0.6*inch
+    )
+    
+    # Professional color scheme
+    PRIMARY = '#1a365d'
+    SECONDARY = '#2b6cb0'
+    ACCENT = '#4299e1'
+    LIGHT_BG = '#ebf8ff'
+    TEXT_DARK = '#2d3748'
+    TEXT_MUTED = '#718096'
+    
+    # Custom styles for professional look
     styles = getSampleStyleSheet()
     
-    # Custom styles
-    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#004e92'), alignment=TA_LEFT)
-    cell_style = ParagraphStyle('Cell', parent=styles['Normal'], fontSize=9, leading=11)
+    section_title_style = ParagraphStyle(
+        'SectionTitle',
+        fontSize=11,
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor(PRIMARY),
+        spaceBefore=6,
+        spaceAfter=4
+    )
+    
+    label_style = ParagraphStyle(
+        'Label',
+        fontSize=9,
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor(TEXT_MUTED),
+        leading=11
+    )
+    
+    value_style = ParagraphStyle(
+        'Value',
+        fontSize=10,
+        fontName='Helvetica',
+        textColor=colors.HexColor(TEXT_DARK),
+        leading=12
+    )
+    
+    # Cell style for table descriptions - KEY FOR AUTO-ADJUSTING
+    cell_desc_style = ParagraphStyle(
+        'CellDesc',
+        fontSize=9,
+        fontName='Helvetica',
+        textColor=colors.HexColor(TEXT_DARK),
+        leading=12,
+        wordWrap='CJK',
+        splitLongWords=True
+    )
+    
+    cell_number_style = ParagraphStyle(
+        'CellNumber',
+        fontSize=9,
+        fontName='Helvetica',
+        textColor=colors.HexColor(TEXT_DARK),
+        alignment=TA_RIGHT
+    )
     
     elements = []
     
-    # Header with company info and logo
-    add_company_header_to_pdf(elements, company, styles, title_style)
+    # Professional header
+    doc_date = quote.get('created_at', '')[:10] if quote.get('created_at') else datetime.now().strftime('%Y-%m-%d')
+    add_professional_header(elements, company, 'quote', quote.get('quote_number', ''), doc_date)
     
-    # Quote title
-    elements.append(Paragraph(f"COTIZACIÓN {quote.get('quote_number', '')}", styles['Heading2']))
-    elements.append(Spacer(1, 0.2*inch))
+    # Client information section
+    elements.append(Paragraph("INFORMACIÓN DEL CLIENTE", section_title_style))
     
-    # Client info table
     client_ref = f" ({client.get('reference')})" if client.get('reference') else ""
-    client_data = [
-        ['CLIENTE:', client.get('name', 'N/A') + client_ref],
-        ['RFC:', client.get('rfc', 'N/A')],
-        ['Contacto:', client.get('contact_name', 'N/A')],
-        ['Email:', client.get('email', 'N/A')],
-        ['Fecha:', quote.get('created_at', '')[:10] if quote.get('created_at') else ''],
-        ['Vigencia:', quote.get('valid_until', '')[:10] if quote.get('valid_until') else 'N/A'],
-        ['Elaboró:', quote.get('created_by_name', 'N/A')],
+    client_name = (client.get('name') or 'N/A') + client_ref
+    
+    client_info_data = [
+        [Paragraph("Cliente", label_style), Paragraph(client_name, value_style), 
+         Paragraph("RFC", label_style), Paragraph(client.get('rfc') or 'N/A', value_style)],
+        [Paragraph("Contacto", label_style), Paragraph(client.get('contact_name') or 'N/A', value_style),
+         Paragraph("Email", label_style), Paragraph(client.get('email') or 'N/A', value_style)],
+        [Paragraph("Vigencia", label_style), Paragraph(quote.get('valid_until', '')[:10] if quote.get('valid_until') else 'N/A', value_style),
+         Paragraph("Elaboró", label_style), Paragraph(quote.get('created_by_name') or 'N/A', value_style)],
     ]
-    client_table = Table(client_data, colWidths=[1.5*inch, 4*inch])
+    
+    client_table = Table(client_info_data, colWidths=[0.8*inch, 2.5*inch, 0.8*inch, 2.5*inch])
     client_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f7fafc')),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
     ]))
     elements.append(client_table)
-    elements.append(Spacer(1, 0.3*inch))
+    elements.append(Spacer(1, 0.15*inch))
     
-    # Quote title/description
-    if quote.get('title'):
-        elements.append(Paragraph(f"<b>Concepto:</b> {quote.get('title')}", styles['Normal']))
-    if quote.get('description'):
-        elements.append(Paragraph(f"<b>Descripción:</b> {quote.get('description')}", styles['Normal']))
-    elements.append(Spacer(1, 0.2*inch))
+    # Quote concept/description
+    if quote.get('title') or quote.get('description'):
+        elements.append(Paragraph("CONCEPTO", section_title_style))
+        if quote.get('title'):
+            elements.append(Paragraph(f"<b>{quote.get('title')}</b>", value_style))
+        if quote.get('description'):
+            desc_style = ParagraphStyle('Desc', fontSize=10, textColor=colors.HexColor(TEXT_DARK), leading=14)
+            elements.append(Paragraph(quote.get('description'), desc_style))
+        elements.append(Spacer(1, 0.15*inch))
     
     # Items table with auto-adjusting cells
     items = quote.get('items', [])
     show_tax = quote.get('show_tax', True)
     
     if items:
-        table_data = [['#', 'Descripción', 'Cant.', 'Unidad', 'P. Unit.', 'Total']]
+        elements.append(Paragraph("DETALLE DE PRODUCTOS/SERVICIOS", section_title_style))
+        
+        # Header row with styled paragraphs
+        header_style = ParagraphStyle('Header', fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, alignment=TA_CENTER)
+        header_right = ParagraphStyle('HeaderRight', fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, alignment=TA_RIGHT)
+        
+        table_data = [[
+            Paragraph('#', header_style),
+            Paragraph('Descripción', header_style),
+            Paragraph('Cant.', header_style),
+            Paragraph('Unidad', header_style),
+            Paragraph('P. Unitario', header_right),
+            Paragraph('Total', header_right)
+        ]]
+        
         for i, item in enumerate(items, 1):
-            # Use Paragraph for description to allow text wrapping
-            desc_paragraph = Paragraph(item.get('description', ''), cell_style)
+            # Use Paragraph for description - THIS IS THE KEY FOR AUTO-ADJUSTING
+            desc_text = item.get('description', '')
+            desc_paragraph = Paragraph(desc_text, cell_desc_style)
+            
             table_data.append([
-                str(i),
-                desc_paragraph,
-                str(item.get('quantity', 1)),
-                item.get('unit', 'pza'),
-                f"${item.get('unit_price', 0):,.2f}",
-                f"${item.get('total', 0):,.2f}"
+                Paragraph(str(i), ParagraphStyle('Num', fontSize=9, alignment=TA_CENTER)),
+                desc_paragraph,  # Auto-adjusting description cell
+                Paragraph(str(item.get('quantity', 1)), cell_number_style),
+                Paragraph(item.get('unit', 'pza'), ParagraphStyle('Unit', fontSize=9, alignment=TA_CENTER)),
+                Paragraph(f"${item.get('unit_price', 0):,.2f}", cell_number_style),
+                Paragraph(f"${item.get('total', 0):,.2f}", cell_number_style)
             ])
         
-        items_table = Table(table_data, colWidths=[0.4*inch, 3*inch, 0.6*inch, 0.6*inch, 1*inch, 1*inch])
+        # Adjusted column widths for better description space
+        items_table = Table(table_data, colWidths=[0.35*inch, 3.4*inch, 0.5*inch, 0.55*inch, 0.95*inch, 0.95*inch])
         items_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#004e92')),
+            # Header styling
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(SECONDARY)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
-            ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+            
+            # Alternating row colors
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f7fafc')]),
+            
+            # Borders
+            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor(SECONDARY)),
+            ('LINEBELOW', (0, 0), (-1, 0), 1, colors.HexColor(PRIMARY)),
+            ('LINEBELOW', (0, 1), (-1, -2), 0.5, colors.HexColor('#e2e8f0')),
+            
+            # Alignment
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            
+            # Padding - generous for readability
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('TOPPADDING', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
         ]))
         elements.append(items_table)
     
     elements.append(Spacer(1, 0.2*inch))
     
-    # Totals - conditionally show tax
+    # Totals section - professional right-aligned box
+    total_label_style = ParagraphStyle('TotalLabel', fontSize=10, fontName='Helvetica', textColor=colors.HexColor(TEXT_DARK), alignment=TA_RIGHT)
+    total_value_style = ParagraphStyle('TotalValue', fontSize=10, fontName='Helvetica', textColor=colors.HexColor(TEXT_DARK), alignment=TA_RIGHT)
+    total_final_label = ParagraphStyle('TotalFinalLabel', fontSize=12, fontName='Helvetica-Bold', textColor=colors.HexColor(PRIMARY), alignment=TA_RIGHT)
+    total_final_value = ParagraphStyle('TotalFinalValue', fontSize=14, fontName='Helvetica-Bold', textColor=colors.HexColor(PRIMARY), alignment=TA_RIGHT)
+    
     if show_tax:
         totals_data = [
-            ['', '', 'Subtotal:', f"${quote.get('subtotal', 0):,.2f}"],
-            ['', '', 'IVA (16%):', f"${quote.get('tax', 0):,.2f}"],
-            ['', '', 'TOTAL:', f"${quote.get('total', 0):,.2f}"],
+            [Paragraph('Subtotal:', total_label_style), Paragraph(f"${quote.get('subtotal', 0):,.2f}", total_value_style)],
+            [Paragraph('IVA (16%):', total_label_style), Paragraph(f"${quote.get('tax', 0):,.2f}", total_value_style)],
+            [Paragraph('TOTAL MXN:', total_final_label), Paragraph(f"${quote.get('total', 0):,.2f}", total_final_value)],
         ]
     else:
-        # Sin IVA - mostrar solo subtotal como total
         totals_data = [
-            ['', '', 'TOTAL:', f"${quote.get('subtotal', 0):,.2f}"],
+            [Paragraph('TOTAL MXN:', total_final_label), Paragraph(f"${quote.get('subtotal', 0):,.2f}", total_final_value)],
         ]
     
-    totals_table = Table(totals_data, colWidths=[2*inch, 2*inch, 1.2*inch, 1.4*inch])
-    totals_table.setStyle(TableStyle([
-        ('FONTNAME', (2, -1), (3, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
-        ('BACKGROUND', (2, -1), (-1, -1), colors.HexColor('#e6f0fa')),
+    # Right-aligned totals box
+    totals_inner = Table(totals_data, colWidths=[1.2*inch, 1.3*inch])
+    totals_inner.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor(LIGHT_BG)),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#e2e8f0')),
     ]))
-    elements.append(totals_table)
     
-    # Footer
-    elements.append(Spacer(1, 0.5*inch))
-    elements.append(Paragraph("Términos y condiciones aplican. Precios en MXN.", styles['Normal']))
+    # Wrap in outer table for right alignment
+    totals_wrapper = Table([[Spacer(1, 1), totals_inner]], colWidths=[4.2*inch, 2.5*inch])
+    elements.append(totals_wrapper)
+    
+    # Terms and conditions section
+    elements.append(Spacer(1, 0.3*inch))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#e2e8f0'), spaceAfter=0.15*inch))
+    
+    terms_title = ParagraphStyle('TermsTitle', fontSize=9, fontName='Helvetica-Bold', textColor=colors.HexColor(TEXT_MUTED))
+    terms_text = ParagraphStyle('TermsText', fontSize=8, fontName='Helvetica', textColor=colors.HexColor(TEXT_MUTED), leading=10)
+    
+    elements.append(Paragraph("TÉRMINOS Y CONDICIONES", terms_title))
+    terms_content = """
+    • Esta cotización tiene una vigencia según la fecha indicada. • Los precios están expresados en Moneda Nacional (MXN).
+    • Los tiempos de entrega se confirmarán al momento de la orden de compra. • Precios sujetos a cambio sin previo aviso después de la vigencia.
+    """
+    elements.append(Paragraph(terms_content, terms_text))
+    
+    # Footer with version info
+    elements.append(Spacer(1, 0.2*inch))
+    footer_style = ParagraphStyle('Footer', fontSize=8, textColor=colors.HexColor(TEXT_MUTED), alignment=TA_CENTER)
+    version_text = f"Versión {quote.get('version', 1)}" if quote.get('version', 1) > 1 else ""
+    elements.append(Paragraph(f"Documento generado el {datetime.now().strftime('%d/%m/%Y %H:%M')} {version_text}", footer_style))
     
     doc.build(elements)
     return buffer.getvalue()
@@ -3826,97 +4095,257 @@ async def download_invoice_pdf(invoice_id: str, current_user: dict = Depends(get
     }
 
 def generate_purchase_order_pdf(po: dict, company: dict, supplier: dict) -> bytes:
-    """Generate PDF for a purchase order"""
+    """Generate professional executive PDF for a purchase order with auto-adjusting cells"""
+    from reportlab.platypus import HRFlowable
+    
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    doc = SimpleDocTemplate(
+        buffer, 
+        pagesize=letter, 
+        topMargin=0.4*inch, 
+        bottomMargin=0.6*inch,
+        leftMargin=0.6*inch,
+        rightMargin=0.6*inch
+    )
+    
+    # Professional color scheme for purchase orders (green tones)
+    PRIMARY = '#1a472a'
+    SECONDARY = '#276749'
+    ACCENT = '#38a169'
+    LIGHT_BG = '#f0fff4'
+    TEXT_DARK = '#2d3748'
+    TEXT_MUTED = '#718096'
+    
     styles = getSampleStyleSheet()
     
-    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#004e92'), alignment=TA_LEFT)
+    section_title_style = ParagraphStyle(
+        'SectionTitle',
+        fontSize=11,
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor(PRIMARY),
+        spaceBefore=6,
+        spaceAfter=4
+    )
+    
+    label_style = ParagraphStyle(
+        'Label',
+        fontSize=9,
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor(TEXT_MUTED),
+        leading=11
+    )
+    
+    value_style = ParagraphStyle(
+        'Value',
+        fontSize=10,
+        fontName='Helvetica',
+        textColor=colors.HexColor(TEXT_DARK),
+        leading=12
+    )
+    
+    # Cell style for table descriptions - KEY FOR AUTO-ADJUSTING
+    cell_desc_style = ParagraphStyle(
+        'CellDesc',
+        fontSize=9,
+        fontName='Helvetica',
+        textColor=colors.HexColor(TEXT_DARK),
+        leading=12,
+        wordWrap='CJK',
+        splitLongWords=True
+    )
+    
+    cell_number_style = ParagraphStyle(
+        'CellNumber',
+        fontSize=9,
+        fontName='Helvetica',
+        textColor=colors.HexColor(TEXT_DARK),
+        alignment=TA_RIGHT
+    )
     
     elements = []
     
-    # Header with logo
-    add_company_header_to_pdf(elements, company, styles, title_style)
+    # Professional header
+    doc_date = po.get('created_at', '')[:10] if po.get('created_at') else datetime.now().strftime('%Y-%m-%d')
+    add_professional_header(elements, company, 'purchase_order', po.get('order_number', ''), doc_date)
     
-    # PO title
-    elements.append(Paragraph(f"ORDEN DE COMPRA {po.get('order_number', '')}", styles['Heading2']))
-    elements.append(Spacer(1, 0.2*inch))
+    # Supplier information section
+    elements.append(Paragraph("INFORMACIÓN DEL PROVEEDOR", section_title_style))
     
-    # Supplier info
-    supplier_data = [
-        ['PROVEEDOR:', supplier.get('name', 'N/A')],
-        ['RFC:', supplier.get('rfc', 'N/A')],
-        ['Contacto:', supplier.get('contact_name', 'N/A')],
-        ['Email:', supplier.get('email', 'N/A')],
-        ['Teléfono:', supplier.get('phone', 'N/A')],
-        ['Fecha:', po.get('created_at', '')[:10] if po.get('created_at') else ''],
-        ['Entrega esperada:', po.get('expected_delivery', '')[:10] if po.get('expected_delivery') else 'N/A'],
+    supplier_info_data = [
+        [Paragraph("Proveedor", label_style), Paragraph(supplier.get('name', 'N/A'), value_style), 
+         Paragraph("RFC", label_style), Paragraph(supplier.get('rfc', 'N/A'), value_style)],
+        [Paragraph("Contacto", label_style), Paragraph(supplier.get('contact_name', 'N/A'), value_style),
+         Paragraph("Email", label_style), Paragraph(supplier.get('email', 'N/A'), value_style)],
+        [Paragraph("Teléfono", label_style), Paragraph(supplier.get('phone', 'N/A'), value_style),
+         Paragraph("Entrega Est.", label_style), Paragraph(po.get('expected_delivery', '')[:10] if po.get('expected_delivery') else 'N/A', value_style)],
     ]
-    supplier_table = Table(supplier_data, colWidths=[1.5*inch, 4*inch])
+    
+    supplier_table = Table(supplier_info_data, colWidths=[0.85*inch, 2.45*inch, 0.85*inch, 2.45*inch])
     supplier_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f7fff7')),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#c6f6d5')),
     ]))
     elements.append(supplier_table)
-    elements.append(Spacer(1, 0.3*inch))
+    elements.append(Spacer(1, 0.15*inch))
     
     # Description
-    elements.append(Paragraph(f"<b>Descripción:</b> {po.get('description', '')}", styles['Normal']))
-    elements.append(Spacer(1, 0.2*inch))
+    if po.get('description'):
+        elements.append(Paragraph("DESCRIPCIÓN", section_title_style))
+        desc_style = ParagraphStyle('Desc', fontSize=10, textColor=colors.HexColor(TEXT_DARK), leading=14)
+        elements.append(Paragraph(po.get('description'), desc_style))
+        elements.append(Spacer(1, 0.15*inch))
     
-    # Items table
+    # Items table with auto-adjusting cells
     items = po.get('items', [])
+    
     if items:
-        table_data = [['#', 'Descripción', 'Cantidad', 'Unidad', 'P. Unit.', 'Total']]
+        elements.append(Paragraph("DETALLE DE ARTÍCULOS", section_title_style))
+        
+        # Header row with styled paragraphs
+        header_style = ParagraphStyle('Header', fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, alignment=TA_CENTER)
+        header_right = ParagraphStyle('HeaderRight', fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, alignment=TA_RIGHT)
+        
+        table_data = [[
+            Paragraph('#', header_style),
+            Paragraph('Descripción', header_style),
+            Paragraph('Cant.', header_style),
+            Paragraph('Unidad', header_style),
+            Paragraph('P. Unitario', header_right),
+            Paragraph('Total', header_right)
+        ]]
+        
         for i, item in enumerate(items, 1):
+            # Use Paragraph for description - THIS IS THE KEY FOR AUTO-ADJUSTING
+            desc_text = item.get('description', '')
+            desc_paragraph = Paragraph(desc_text, cell_desc_style)
+            
             table_data.append([
-                str(i),
-                item.get('description', ''),
-                str(item.get('quantity', 1)),
-                item.get('unit', 'pza'),
-                f"${item.get('unit_price', 0):,.2f}",
-                f"${item.get('total', 0):,.2f}"
+                Paragraph(str(i), ParagraphStyle('Num', fontSize=9, alignment=TA_CENTER)),
+                desc_paragraph,  # Auto-adjusting description cell
+                Paragraph(str(item.get('quantity', 1)), cell_number_style),
+                Paragraph(item.get('unit', 'pza'), ParagraphStyle('Unit', fontSize=9, alignment=TA_CENTER)),
+                Paragraph(f"${item.get('unit_price', 0):,.2f}", cell_number_style),
+                Paragraph(f"${item.get('total', 0):,.2f}", cell_number_style)
             ])
         
-        items_table = Table(table_data, colWidths=[0.4*inch, 3*inch, 0.6*inch, 0.6*inch, 1*inch, 1*inch])
+        # Adjusted column widths for better description space
+        items_table = Table(table_data, colWidths=[0.35*inch, 3.4*inch, 0.5*inch, 0.55*inch, 0.95*inch, 0.95*inch])
         items_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2e7d32')),
+            # Header styling
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(SECONDARY)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ('TOPPADDING', (0, 0), (-1, -1), 6),
+            
+            # Alternating row colors
+            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f7fff7')]),
+            
+            # Borders
+            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor(SECONDARY)),
+            ('LINEBELOW', (0, 0), (-1, 0), 1, colors.HexColor(PRIMARY)),
+            ('LINEBELOW', (0, 1), (-1, -2), 0.5, colors.HexColor('#c6f6d5')),
+            
+            # Alignment
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            
+            # Padding - generous for readability
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('TOPPADDING', (0, 0), (-1, 0), 10),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
+            ('TOPPADDING', (0, 1), (-1, -1), 8),
+            ('LEFTPADDING', (0, 0), (-1, -1), 6),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
         ]))
         elements.append(items_table)
     
     elements.append(Spacer(1, 0.2*inch))
     
-    # Totals
-    totals_data = [
-        ['', '', 'Subtotal:', f"${po.get('subtotal', 0):,.2f}"],
-        ['', '', 'IVA (16%):', f"${po.get('tax', 0):,.2f}"],
-        ['', '', 'TOTAL:', f"${po.get('total', 0):,.2f}"],
-    ]
-    totals_table = Table(totals_data, colWidths=[2*inch, 2*inch, 1.2*inch, 1.4*inch])
-    totals_table.setStyle(TableStyle([
-        ('FONTNAME', (2, -1), (3, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
-        ('BACKGROUND', (2, -1), (-1, -1), colors.HexColor('#e8f5e9')),
-    ]))
-    elements.append(totals_table)
+    # Totals section - professional right-aligned box
+    total_label_style = ParagraphStyle('TotalLabel', fontSize=10, fontName='Helvetica', textColor=colors.HexColor(TEXT_DARK), alignment=TA_RIGHT)
+    total_value_style = ParagraphStyle('TotalValue', fontSize=10, fontName='Helvetica', textColor=colors.HexColor(TEXT_DARK), alignment=TA_RIGHT)
+    total_final_label = ParagraphStyle('TotalFinalLabel', fontSize=12, fontName='Helvetica-Bold', textColor=colors.HexColor(PRIMARY), alignment=TA_RIGHT)
+    total_final_value = ParagraphStyle('TotalFinalValue', fontSize=14, fontName='Helvetica-Bold', textColor=colors.HexColor(PRIMARY), alignment=TA_RIGHT)
     
-    # Status
-    elements.append(Spacer(1, 0.3*inch))
-    status_text = po.get('status', 'requested').upper()
-    elements.append(Paragraph(f"<b>ESTADO:</b> {status_text}", styles['Normal']))
+    totals_data = [
+        [Paragraph('Subtotal:', total_label_style), Paragraph(f"${po.get('subtotal', 0):,.2f}", total_value_style)],
+        [Paragraph('IVA (16%):', total_label_style), Paragraph(f"${po.get('tax', 0):,.2f}", total_value_style)],
+        [Paragraph('TOTAL MXN:', total_final_label), Paragraph(f"${po.get('total', 0):,.2f}", total_final_value)],
+    ]
+    
+    # Right-aligned totals box
+    totals_inner = Table(totals_data, colWidths=[1.2*inch, 1.3*inch])
+    totals_inner.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor(LIGHT_BG)),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#c6f6d5')),
+    ]))
+    
+    # Wrap in outer table for right alignment
+    totals_wrapper = Table([[Spacer(1, 1), totals_inner]], colWidths=[4.2*inch, 2.5*inch])
+    elements.append(totals_wrapper)
+    
+    # Status badge
+    elements.append(Spacer(1, 0.25*inch))
+    status_map = {
+        'requested': ('SOLICITADA', '#f6e05e', '#744210'),
+        'approved': ('APROBADA', '#9ae6b4', '#276749'),
+        'ordered': ('ORDENADA', '#90cdf4', '#2b6cb0'),
+        'received': ('RECIBIDA', '#68d391', '#22543d'),
+        'cancelled': ('CANCELADA', '#fc8181', '#c53030'),
+    }
+    status_info = status_map.get(po.get('status', 'requested'), status_map['requested'])
+    
+    status_style = ParagraphStyle(
+        'Status', 
+        fontSize=11, 
+        fontName='Helvetica-Bold', 
+        textColor=colors.HexColor(status_info[2]),
+        alignment=TA_CENTER
+    )
+    
+    status_data = [[Paragraph(f"ESTADO: {status_info[0]}", status_style)]]
+    status_table = Table(status_data, colWidths=[2.5*inch])
+    status_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(status_info[1])),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor(status_info[2])),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+    ]))
+    
+    # Center the status badge
+    status_wrapper = Table([[Spacer(1, 1), status_table, Spacer(1, 1)]], colWidths=[2.4*inch, 2.5*inch, 2.4*inch])
+    elements.append(status_wrapper)
+    
+    # Approval/Authorization section
+    elements.append(Spacer(1, 0.4*inch))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#c6f6d5'), spaceAfter=0.15*inch))
+    
+    auth_title_style = ParagraphStyle('AuthTitle', fontSize=9, fontName='Helvetica-Bold', textColor=colors.HexColor(TEXT_MUTED), alignment=TA_CENTER)
+    auth_line_style = ParagraphStyle('AuthLine', fontSize=8, fontName='Helvetica', textColor=colors.HexColor(TEXT_MUTED), alignment=TA_CENTER)
+    
+    auth_data = [
+        [Paragraph("SOLICITADO POR", auth_title_style), Paragraph("", auth_title_style), Paragraph("AUTORIZADO POR", auth_title_style)],
+        [Spacer(1, 0.4*inch), Spacer(1, 0.4*inch), Spacer(1, 0.4*inch)],
+        [Paragraph("_______________________", auth_line_style), Paragraph("", auth_line_style), Paragraph("_______________________", auth_line_style)],
+        [Paragraph("Nombre y firma", auth_line_style), Paragraph("", auth_line_style), Paragraph("Nombre y firma", auth_line_style)],
+    ]
+    
+    auth_table = Table(auth_data, colWidths=[2.5*inch, 1.7*inch, 2.5*inch])
+    auth_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+    ]))
+    elements.append(auth_table)
     
     # Footer
-    elements.append(Spacer(1, 0.5*inch))
-    elements.append(Paragraph(f"Documento generado el {datetime.now().strftime('%d/%m/%Y %H:%M')}", styles['Normal']))
+    elements.append(Spacer(1, 0.2*inch))
+    footer_style = ParagraphStyle('Footer', fontSize=8, textColor=colors.HexColor(TEXT_MUTED), alignment=TA_CENTER)
+    elements.append(Paragraph(f"Documento generado el {datetime.now().strftime('%d/%m/%Y %H:%M')}", footer_style))
     
     doc.build(elements)
     return buffer.getvalue()
