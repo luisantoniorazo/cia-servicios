@@ -124,3 +124,8 @@ watchfiles==1.1.1
 websockets==16.0
 yarl==1.23.0
 zipp==3.23.0
+aiomysql==0.3.2
+asyncmy==0.2.11
+PyMySQL==1.1.2
+SQLAlchemy==2.0.48
+python-dateutil==2.9.0.post0

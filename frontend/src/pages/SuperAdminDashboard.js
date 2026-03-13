@@ -93,13 +93,28 @@ export const SuperAdminDashboard = () => {
   const [logoFile, setLogoFile] = useState(null);
   const [logoPreview, setLogoPreview] = useState(null);
   const [serverConfig, setServerConfig] = useState({
-    database_url: "",
-    database_name: "",
+    mysql_host: "",
+    mysql_port: 3306,
+    mysql_user: "",
+    mysql_password: "",
+    mysql_database: "",
     backup_enabled: false,
     backup_schedule: "daily",
-    cloud_provider: "mongodb_atlas",
+    cloud_provider: "mysql",
+    migration_status: "pending",
   });
   const [savingServerConfig, setSavingServerConfig] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [creatingSchema, setCreatingSchema] = useState(false);
+  const [migratingData, setMigratingData] = useState(false);
+  const [renewDialogOpen, setRenewDialogOpen] = useState(false);
+  const [renewingSubscription, setRenewingSubscription] = useState(false);
+  const [renewForm, setRenewForm] = useState({
+    months: 1,
+    payment_amount: 0,
+    payment_method: "transfer",
+    notes: ""
+  });
   const [adminForm, setAdminForm] = useState({
     full_name: "",
     email: "",
@@ -119,6 +134,7 @@ export const SuperAdminDashboard = () => {
     monthly_fee: "",
     license_type: "basic",
     max_users: 5,
+    subscription_months: 1,
     admin_full_name: "",
     admin_email: "",
     admin_phone: "",
@@ -164,11 +180,83 @@ export const SuperAdminDashboard = () => {
     try {
       await api.post("/super-admin/server-config", serverConfig);
       toast.success("Configuración de servidor guardada");
-      setServerConfigDialogOpen(false);
+      fetchServerConfig();
     } catch (error) {
       toast.error("Error al guardar configuración");
     } finally {
       setSavingServerConfig(false);
+    }
+  };
+
+  const handleTestMySQLConnection = async () => {
+    setTestingConnection(true);
+    try {
+      const response = await api.post("/super-admin/test-mysql-connection", serverConfig);
+      if (response.data.success) {
+        toast.success(
+          <div>
+            <p className="font-semibold">Conexión exitosa</p>
+            <p className="text-sm">MySQL versión: {response.data.version}</p>
+          </div>
+        );
+      } else {
+        toast.error(response.data.message);
+      }
+    } catch (error) {
+      toast.error("Error al probar conexión: " + (error.response?.data?.detail || error.message));
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
+  const handleCreateMySQLSchema = async () => {
+    setCreatingSchema(true);
+    try {
+      const response = await api.post("/super-admin/init-mysql-schema");
+      if (response.data.success) {
+        toast.success("Esquema MySQL creado exitosamente");
+        fetchServerConfig();
+      } else {
+        toast.error(response.data.message);
+      }
+    } catch (error) {
+      toast.error("Error al crear esquema: " + (error.response?.data?.detail || error.message));
+    } finally {
+      setCreatingSchema(false);
+    }
+  };
+
+  const handleMigrateToMySQL = async () => {
+    if (!window.confirm("¿Está seguro de migrar todos los datos a MySQL? Este proceso puede tomar varios minutos.")) {
+      return;
+    }
+    setMigratingData(true);
+    try {
+      const response = await api.post("/super-admin/migrate-to-mysql");
+      if (response.data.success) {
+        toast.success(
+          <div>
+            <p className="font-semibold">Migración completada</p>
+            <p className="text-sm">
+              Empresas: {response.data.stats.companies}, 
+              Usuarios: {response.data.stats.users},
+              Clientes: {response.data.stats.clients}
+            </p>
+            {response.data.errors?.length > 0 && (
+              <p className="text-xs text-yellow-600">
+                {response.data.errors.length} errores menores registrados
+              </p>
+            )}
+          </div>
+        );
+        fetchServerConfig();
+      } else {
+        toast.error(response.data.message);
+      }
+    } catch (error) {
+      toast.error("Error en migración: " + (error.response?.data?.detail || error.message));
+    } finally {
+      setMigratingData(false);
     }
   };
 
@@ -186,6 +274,7 @@ export const SuperAdminDashboard = () => {
         logo_file: logoBase64,
         monthly_fee: parseFloat(formData.monthly_fee) || 0,
         max_users: parseInt(formData.max_users) || 5,
+        subscription_months: parseInt(formData.subscription_months) || 1,
       });
       toast.success(
         <div>
@@ -219,6 +308,38 @@ export const SuperAdminDashboard = () => {
       setDetailDialogOpen(true);
     } catch (error) {
       toast.error("Error al cargar detalles");
+    }
+  };
+
+  const handleRenewSubscription = (company) => {
+    setSelectedCompany(company);
+    setRenewForm({
+      months: 1,
+      payment_amount: company.monthly_fee || 0,
+      payment_method: "transfer",
+      notes: ""
+    });
+    setRenewDialogOpen(true);
+  };
+
+  const handleSubmitRenewal = async (e) => {
+    e.preventDefault();
+    if (!selectedCompany) return;
+    setRenewingSubscription(true);
+    try {
+      const response = await api.post(`/super-admin/companies/${selectedCompany.id}/subscription/renew`, renewForm);
+      toast.success(
+        <div>
+          <p className="font-semibold">Suscripción renovada</p>
+          <p className="text-sm">Nueva fecha de vencimiento: {formatDate(response.data.new_end_date)}</p>
+        </div>
+      );
+      setRenewDialogOpen(false);
+      fetchDashboard();
+    } catch (error) {
+      toast.error("Error al renovar suscripción");
+    } finally {
+      setRenewingSubscription(false);
     }
   };
 
@@ -509,6 +630,7 @@ export const SuperAdminDashboard = () => {
                     <TableHead className="text-slate-300">Admin</TableHead>
                     <TableHead className="text-slate-300">Licencia</TableHead>
                     <TableHead className="text-slate-300">Mensualidad</TableHead>
+                    <TableHead className="text-slate-300">Vencimiento</TableHead>
                     <TableHead className="text-slate-300">Estado</TableHead>
                     <TableHead className="text-slate-300">URL</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
@@ -549,6 +671,22 @@ export const SuperAdminDashboard = () => {
                         </TableCell>
                         <TableCell className="text-white font-medium">
                           {formatCurrency(company.monthly_fee)}
+                        </TableCell>
+                        <TableCell>
+                          {company.subscription_end ? (
+                            <div className="flex flex-col">
+                              <span className="text-slate-300 text-sm">
+                                {formatDate(company.subscription_end)}
+                              </span>
+                              {company.days_until_expiry !== undefined && company.days_until_expiry <= 15 && (
+                                <Badge className={company.days_until_expiry <= 0 ? "bg-red-500/20 text-red-300" : "bg-yellow-500/20 text-yellow-300"} variant="outline">
+                                  {company.days_until_expiry <= 0 ? "Vencida" : `${company.days_until_expiry} días`}
+                                </Badge>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-slate-500">-</span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <Badge className={getStatusColor(company.status)}>
@@ -608,6 +746,14 @@ export const SuperAdminDashboard = () => {
                                     Bloquear Admin
                                   </>
                                 )}
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator className="bg-slate-700" />
+                              <DropdownMenuItem
+                                className="text-purple-400"
+                                onClick={() => handleRenewSubscription(company)}
+                              >
+                                <DollarSign className="mr-2 h-4 w-4" />
+                                Renovar Suscripción
                               </DropdownMenuItem>
                               <DropdownMenuSeparator className="bg-slate-700" />
                               <DropdownMenuItem
@@ -783,6 +929,23 @@ export const SuperAdminDashboard = () => {
                       required
                       data-testid="new-company-fee"
                     />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Meses de Suscripción Inicial</Label>
+                    <Select 
+                      value={String(formData.subscription_months)} 
+                      onValueChange={(value) => setFormData({ ...formData, subscription_months: parseInt(value) })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="1">1 mes</SelectItem>
+                        <SelectItem value="3">3 meses</SelectItem>
+                        <SelectItem value="6">6 meses</SelectItem>
+                        <SelectItem value="12">12 meses (1 año)</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
               </div>
@@ -1061,60 +1224,160 @@ export const SuperAdminDashboard = () => {
 
       {/* Server Configuration Dialog */}
       <Dialog open={serverConfigDialogOpen} onOpenChange={setServerConfigDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
           <form onSubmit={handleSaveServerConfig}>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Server className="h-5 w-5 text-blue-500" />
-                Configuración del Servidor de Bases de Datos
+                <Database className="h-5 w-5 text-blue-500" />
+                Configuración del Servidor MySQL
               </DialogTitle>
               <DialogDescription>
-                Configura la conexión al servidor/nube donde se almacenarán las bases de datos de todas las empresas
+                Configura la conexión al servidor MySQL donde se almacenarán los datos del sistema
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
-              <div className="grid gap-2">
-                <Label>Proveedor de Nube</Label>
-                <Select 
-                  value={serverConfig.cloud_provider} 
-                  onValueChange={(value) => setServerConfig({ ...serverConfig, cloud_provider: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="mongodb_atlas">MongoDB Atlas</SelectItem>
-                    <SelectItem value="aws_documentdb">AWS DocumentDB</SelectItem>
-                    <SelectItem value="azure_cosmosdb">Azure CosmosDB</SelectItem>
-                    <SelectItem value="google_cloud">Google Cloud</SelectItem>
-                    <SelectItem value="self_hosted">Servidor Propio</SelectItem>
-                  </SelectContent>
-                </Select>
+              {/* Connection Status Badge */}
+              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border">
+                <span className="font-medium text-sm">Estado de Migración:</span>
+                <Badge className={
+                  serverConfig.migration_status === "completed" ? "bg-green-500" :
+                  serverConfig.migration_status === "schema_created" ? "bg-blue-500" :
+                  serverConfig.migration_status === "in_progress" ? "bg-yellow-500" :
+                  serverConfig.migration_status === "failed" ? "bg-red-500" :
+                  "bg-slate-500"
+                }>
+                  {serverConfig.migration_status === "completed" ? "Completado" :
+                   serverConfig.migration_status === "schema_created" ? "Esquema Creado" :
+                   serverConfig.migration_status === "in_progress" ? "En Progreso" :
+                   serverConfig.migration_status === "failed" ? "Fallido" :
+                   "Pendiente"}
+                </Badge>
               </div>
+
+              {/* MySQL Connection Settings */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Host del Servidor *</Label>
+                  <Input
+                    value={serverConfig.mysql_host}
+                    onChange={(e) => setServerConfig({ ...serverConfig, mysql_host: e.target.value })}
+                    placeholder="localhost o IP del servidor"
+                    data-testid="mysql-host-input"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Puerto</Label>
+                  <Input
+                    type="number"
+                    value={serverConfig.mysql_port}
+                    onChange={(e) => setServerConfig({ ...serverConfig, mysql_port: parseInt(e.target.value) || 3306 })}
+                    placeholder="3306"
+                    data-testid="mysql-port-input"
+                  />
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Usuario *</Label>
+                  <Input
+                    value={serverConfig.mysql_user}
+                    onChange={(e) => setServerConfig({ ...serverConfig, mysql_user: e.target.value })}
+                    placeholder="root"
+                    data-testid="mysql-user-input"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Contraseña *</Label>
+                  <Input
+                    type="password"
+                    value={serverConfig.mysql_password}
+                    onChange={(e) => setServerConfig({ ...serverConfig, mysql_password: e.target.value })}
+                    placeholder="••••••••"
+                    data-testid="mysql-password-input"
+                  />
+                </div>
+              </div>
+
               <div className="grid gap-2">
-                <Label>URL de Conexión a Base de Datos *</Label>
+                <Label>Nombre de Base de Datos *</Label>
                 <Input
-                  value={serverConfig.database_url}
-                  onChange={(e) => setServerConfig({ ...serverConfig, database_url: e.target.value })}
-                  placeholder="mongodb+srv://usuario:password@cluster.mongodb.net/"
-                  type="password"
-                  className="font-mono"
-                  data-testid="db-url-input"
+                  value={serverConfig.mysql_database}
+                  onChange={(e) => setServerConfig({ ...serverConfig, mysql_database: e.target.value })}
+                  placeholder="cia_servicios"
+                  data-testid="mysql-database-input"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Ejemplo MongoDB Atlas: mongodb+srv://usuario:password@cluster.mongodb.net/
+                  La base de datos debe existir previamente en el servidor
                 </p>
               </div>
-              <div className="grid gap-2">
-                <Label>Nombre de Base de Datos Principal</Label>
-                <Input
-                  value={serverConfig.database_name}
-                  onChange={(e) => setServerConfig({ ...serverConfig, database_name: e.target.value })}
-                  placeholder="cia_servicios_production"
-                  data-testid="db-name-input"
-                />
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleTestMySQLConnection}
+                  disabled={testingConnection || !serverConfig.mysql_host || !serverConfig.mysql_user}
+                  className="text-blue-600 border-blue-300 hover:bg-blue-50"
+                >
+                  {testingConnection ? (
+                    <>
+                      <span className="animate-spin mr-2">⏳</span>
+                      Probando...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle className="mr-2 h-4 w-4" />
+                      Probar Conexión
+                    </>
+                  )}
+                </Button>
+                
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCreateMySQLSchema}
+                  disabled={creatingSchema || serverConfig.migration_status === "completed"}
+                  className="text-green-600 border-green-300 hover:bg-green-50"
+                >
+                  {creatingSchema ? (
+                    <>
+                      <span className="animate-spin mr-2">⏳</span>
+                      Creando...
+                    </>
+                  ) : (
+                    <>
+                      <Database className="mr-2 h-4 w-4" />
+                      Crear Esquema
+                    </>
+                  )}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleMigrateToMySQL}
+                  disabled={migratingData || serverConfig.migration_status !== "schema_created"}
+                  className="text-orange-600 border-orange-300 hover:bg-orange-50"
+                >
+                  {migratingData ? (
+                    <>
+                      <span className="animate-spin mr-2">⏳</span>
+                      Migrando...
+                    </>
+                  ) : (
+                    <>
+                      <Server className="mr-2 h-4 w-4" />
+                      Migrar Datos
+                    </>
+                  )}
+                </Button>
               </div>
+
               <Separator />
+              
+              {/* Backup Settings */}
               <div className="space-y-3">
                 <h4 className="font-semibold text-sm">Configuración de Respaldos</h4>
                 <div className="flex items-center justify-between">
@@ -1149,19 +1412,26 @@ export const SuperAdminDashboard = () => {
                   </div>
                 )}
               </div>
+
+              {/* Info Box */}
               <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
                 <div className="flex items-start gap-2">
                   <Database className="h-4 w-4 text-blue-600 mt-0.5" />
                   <div className="text-sm text-blue-800">
-                    <strong>Nota:</strong> Esta configuración define dónde se almacenarán los datos de todas las empresas que contraten el servicio. 
-                    Asegúrate de usar credenciales con los permisos adecuados.
+                    <strong>Pasos para migrar a MySQL:</strong>
+                    <ol className="list-decimal ml-4 mt-1 space-y-1">
+                      <li>Ingresa las credenciales de tu servidor MySQL</li>
+                      <li>Haz clic en "Probar Conexión" para verificar</li>
+                      <li>Haz clic en "Crear Esquema" para crear las tablas</li>
+                      <li>Haz clic en "Migrar Datos" para transferir la información</li>
+                    </ol>
                   </div>
                 </div>
               </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setServerConfigDialogOpen(false)}>
-                Cancelar
+                Cerrar
               </Button>
               <Button 
                 type="submit" 
@@ -1170,6 +1440,119 @@ export const SuperAdminDashboard = () => {
               >
                 <Save className="mr-2 h-4 w-4" />
                 {savingServerConfig ? "Guardando..." : "Guardar Configuración"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Subscription Renewal Dialog */}
+      <Dialog open={renewDialogOpen} onOpenChange={setRenewDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <form onSubmit={handleSubmitRenewal}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <DollarSign className="h-5 w-5 text-purple-500" />
+                Renovar Suscripción
+              </DialogTitle>
+              <DialogDescription>
+                {selectedCompany?.business_name} - Renovar o extender la suscripción
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              {selectedCompany?.subscription_end && (
+                <div className="p-3 bg-slate-100 rounded-lg">
+                  <p className="text-sm text-slate-600">
+                    <strong>Vencimiento actual:</strong> {formatDate(selectedCompany.subscription_end)}
+                  </p>
+                </div>
+              )}
+              
+              <div className="grid gap-2">
+                <Label>Meses a agregar *</Label>
+                <Select 
+                  value={String(renewForm.months)} 
+                  onValueChange={(value) => {
+                    const months = parseInt(value);
+                    setRenewForm({
+                      ...renewForm, 
+                      months,
+                      payment_amount: (selectedCompany?.monthly_fee || 0) * months
+                    });
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1 mes</SelectItem>
+                    <SelectItem value="3">3 meses</SelectItem>
+                    <SelectItem value="6">6 meses</SelectItem>
+                    <SelectItem value="12">12 meses (1 año)</SelectItem>
+                    <SelectItem value="24">24 meses (2 años)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Monto pagado</Label>
+                  <Input
+                    type="number"
+                    value={renewForm.payment_amount}
+                    onChange={(e) => setRenewForm({ ...renewForm, payment_amount: parseFloat(e.target.value) || 0 })}
+                    placeholder="0.00"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Método de pago</Label>
+                  <Select 
+                    value={renewForm.payment_method} 
+                    onValueChange={(value) => setRenewForm({ ...renewForm, payment_method: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="transfer">Transferencia</SelectItem>
+                      <SelectItem value="cash">Efectivo</SelectItem>
+                      <SelectItem value="card">Tarjeta</SelectItem>
+                      <SelectItem value="stripe">Stripe</SelectItem>
+                      <SelectItem value="other">Otro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid gap-2">
+                <Label>Notas</Label>
+                <Input
+                  value={renewForm.notes}
+                  onChange={(e) => setRenewForm({ ...renewForm, notes: e.target.value })}
+                  placeholder="Notas adicionales (opcional)"
+                />
+              </div>
+
+              <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                <p className="text-sm text-purple-800">
+                  <strong>Resumen:</strong> Se agregarán {renewForm.months} mes(es) a la suscripción.
+                  {selectedCompany?.monthly_fee && (
+                    <span> Monto sugerido: {formatCurrency(selectedCompany.monthly_fee * renewForm.months)}</span>
+                  )}
+                </p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setRenewDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button 
+                type="submit" 
+                className="bg-purple-600 hover:bg-purple-700 text-white"
+                disabled={renewingSubscription}
+              >
+                <DollarSign className="mr-2 h-4 w-4" />
+                {renewingSubscription ? "Procesando..." : "Renovar Suscripción"}
               </Button>
             </DialogFooter>
           </form>

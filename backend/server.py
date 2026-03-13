@@ -121,6 +121,8 @@ class CompanyCreate(BaseModel):
     monthly_fee: float = 0.0
     license_type: str = "basic"
     max_users: int = 5
+    # Subscription fields
+    subscription_months: int = 1  # Duration of subscription in months
     # Admin user data
     admin_full_name: str
     admin_email: EmailStr
@@ -135,6 +137,10 @@ class Company(CompanyBase):
     subscription_status: SubscriptionStatus = SubscriptionStatus.PENDING
     subscription_start: Optional[datetime] = None
     subscription_end: Optional[datetime] = None
+    subscription_months: int = 1
+    last_payment_date: Optional[datetime] = None
+    payment_reminder_sent: bool = False
+    days_until_expiry: Optional[int] = None  # Computed field
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -692,6 +698,8 @@ async def get_me(current_user: dict = Depends(get_current_user)):
 @api_router.post("/super-admin/companies")
 async def create_company_with_admin(company_data: CompanyCreate, current_user: dict = Depends(require_super_admin)):
     """Super Admin crea empresa con su administrador"""
+    from dateutil.relativedelta import relativedelta
+    
     # Generar slug
     base_slug = generate_slug(company_data.business_name)
     slug = base_slug
@@ -704,6 +712,11 @@ async def create_company_with_admin(company_data: CompanyCreate, current_user: d
     existing_user = await db.users.find_one({"email": company_data.admin_email}, {"_id": 0})
     if existing_user:
         raise HTTPException(status_code=400, detail="El email del administrador ya está registrado")
+    
+    # Calculate subscription dates
+    now = datetime.now(timezone.utc)
+    subscription_months = getattr(company_data, 'subscription_months', 1) or 1
+    subscription_end = now + relativedelta(months=subscription_months)
     
     # Crear empresa
     company = Company(
@@ -718,11 +731,19 @@ async def create_company_with_admin(company_data: CompanyCreate, current_user: d
         monthly_fee=company_data.monthly_fee,
         license_type=company_data.license_type,
         max_users=company_data.max_users,
-        subscription_status=SubscriptionStatus.PENDING
+        subscription_status=SubscriptionStatus.ACTIVE,
+        subscription_start=now,
+        subscription_end=subscription_end,
+        subscription_months=subscription_months,
+        last_payment_date=now,
+        payment_reminder_sent=False
     )
     company_dict = company.model_dump()
     company_dict["created_at"] = company_dict["created_at"].isoformat()
     company_dict["updated_at"] = company_dict["updated_at"].isoformat()
+    company_dict["subscription_start"] = company_dict["subscription_start"].isoformat() if company_dict["subscription_start"] else None
+    company_dict["subscription_end"] = company_dict["subscription_end"].isoformat() if company_dict["subscription_end"] else None
+    company_dict["last_payment_date"] = company_dict["last_payment_date"].isoformat() if company_dict["last_payment_date"] else None
     await db.companies.insert_one(company_dict)
     
     # Crear usuario admin de la empresa
@@ -741,13 +762,30 @@ async def create_company_with_admin(company_data: CompanyCreate, current_user: d
     admin_dict["created_by"] = current_user["sub"]
     await db.users.insert_one(admin_dict)
     
+    # Record initial subscription history
+    history_entry = {
+        "id": str(uuid.uuid4()),
+        "company_id": company.id,
+        "action": "initial_subscription",
+        "previous_end_date": None,
+        "new_end_date": subscription_end.isoformat(),
+        "months_added": subscription_months,
+        "amount": company_data.monthly_fee * subscription_months,
+        "payment_method": "initial",
+        "notes": "Suscripción inicial al crear empresa",
+        "created_by": current_user.get("sub"),
+        "created_at": now.isoformat()
+    }
+    await db.subscription_history.insert_one(history_entry)
+    
     return {
         "message": "Empresa y administrador creados exitosamente",
         "company": {
             "id": company.id,
             "business_name": company.business_name,
             "slug": slug,
-            "login_url": f"/empresa/{slug}/login"
+            "login_url": f"/empresa/{slug}/login",
+            "subscription_end": subscription_end.isoformat()
         },
         "admin": {
             "email": company_data.admin_email,
@@ -782,11 +820,20 @@ async def list_all_companies(current_user: dict = Depends(require_super_admin)):
 
 # ============== SERVER CONFIG ROUTES ==============
 class ServerConfigModel(BaseModel):
+    # MySQL Configuration
+    mysql_host: Optional[str] = None
+    mysql_port: int = 3306
+    mysql_user: Optional[str] = None
+    mysql_password: Optional[str] = None
+    mysql_database: Optional[str] = None
+    # Legacy MongoDB fields (for backwards compatibility during migration)
     database_url: Optional[str] = None
     database_name: Optional[str] = None
     backup_enabled: bool = False
     backup_schedule: str = "daily"
-    cloud_provider: str = "mongodb_atlas"
+    cloud_provider: str = "mysql"
+    # Migration status
+    migration_status: str = "pending"  # pending, in_progress, completed, failed
 
 @api_router.get("/super-admin/server-config")
 async def get_server_config(current_user: dict = Depends(require_super_admin)):
@@ -794,11 +841,17 @@ async def get_server_config(current_user: dict = Depends(require_super_admin)):
     config = await db.system_config.find_one({"type": "server_config"}, {"_id": 0})
     if not config:
         return {
+            "mysql_host": "",
+            "mysql_port": 3306,
+            "mysql_user": "",
+            "mysql_password": "",
+            "mysql_database": "",
             "database_url": "",
             "database_name": "",
             "backup_enabled": False,
             "backup_schedule": "daily",
-            "cloud_provider": "mongodb_atlas"
+            "cloud_provider": "mysql",
+            "migration_status": "pending"
         }
     return config
 
@@ -816,6 +869,706 @@ async def save_server_config(config: ServerConfigModel, current_user: dict = Dep
         upsert=True
     )
     return {"message": "Configuración guardada", "config": config_dict}
+
+@api_router.post("/super-admin/test-mysql-connection")
+async def test_mysql_connection(config: ServerConfigModel, current_user: dict = Depends(require_super_admin)):
+    """Test MySQL connection with provided credentials"""
+    import aiomysql
+    
+    try:
+        conn = await aiomysql.connect(
+            host=config.mysql_host,
+            port=config.mysql_port,
+            user=config.mysql_user,
+            password=config.mysql_password,
+            db=config.mysql_database if config.mysql_database else None,
+            connect_timeout=10
+        )
+        
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT VERSION()")
+            version = await cursor.fetchone()
+        
+        conn.close()
+        return {
+            "success": True, 
+            "message": f"Conexión exitosa a MySQL",
+            "version": version[0] if version else "Unknown"
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "message": f"Error de conexión: {str(e)}"
+        }
+
+@api_router.post("/super-admin/init-mysql-schema")
+async def init_mysql_schema(current_user: dict = Depends(require_super_admin)):
+    """Initialize MySQL database schema"""
+    import aiomysql
+    
+    config = await db.system_config.find_one({"type": "server_config"}, {"_id": 0})
+    if not config or not config.get("mysql_host"):
+        raise HTTPException(status_code=400, detail="Configuración MySQL no encontrada")
+    
+    try:
+        conn = await aiomysql.connect(
+            host=config["mysql_host"],
+            port=config.get("mysql_port", 3306),
+            user=config["mysql_user"],
+            password=config["mysql_password"],
+            db=config["mysql_database"],
+            autocommit=True
+        )
+        
+        # SQL Schema for all tables
+        schema_sql = """
+        -- Companies table
+        CREATE TABLE IF NOT EXISTS companies (
+            id VARCHAR(36) PRIMARY KEY,
+            business_name VARCHAR(255) NOT NULL,
+            slug VARCHAR(255) UNIQUE NOT NULL,
+            rfc VARCHAR(20),
+            address TEXT,
+            phone VARCHAR(50),
+            email VARCHAR(255),
+            logo_url TEXT,
+            logo_file LONGTEXT,
+            status VARCHAR(20) DEFAULT 'active',
+            monthly_fee DECIMAL(10,2) DEFAULT 0,
+            license_type VARCHAR(50) DEFAULT 'basic',
+            max_users INT DEFAULT 5,
+            subscription_start_date DATE,
+            subscription_end_date DATE,
+            subscription_status VARCHAR(20) DEFAULT 'active',
+            last_payment_date DATE,
+            payment_reminder_sent BOOLEAN DEFAULT FALSE,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_slug (slug),
+            INDEX idx_status (status),
+            INDEX idx_subscription_end (subscription_end_date)
+        );
+        
+        -- Users table
+        CREATE TABLE IF NOT EXISTS users (
+            id VARCHAR(36) PRIMARY KEY,
+            company_id VARCHAR(36),
+            full_name VARCHAR(255) NOT NULL,
+            email VARCHAR(255) NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
+            phone VARCHAR(50),
+            role VARCHAR(20) NOT NULL,
+            status VARCHAR(20) DEFAULT 'active',
+            recovery_email VARCHAR(255),
+            recovery_phone VARCHAR(50),
+            module_permissions JSON,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY unique_email_company (email, company_id),
+            INDEX idx_company (company_id),
+            INDEX idx_role (role),
+            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+        );
+        
+        -- Clients table
+        CREATE TABLE IF NOT EXISTS clients (
+            id VARCHAR(36) PRIMARY KEY,
+            company_id VARCHAR(36) NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            rfc VARCHAR(20),
+            email VARCHAR(255),
+            phone VARCHAR(50),
+            address TEXT,
+            contact_name VARCHAR(255),
+            reference VARCHAR(255),
+            credit_days INT DEFAULT 0,
+            credit_limit DECIMAL(15,2) DEFAULT 0,
+            notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_company (company_id),
+            INDEX idx_name (name),
+            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+        );
+        
+        -- Suppliers table
+        CREATE TABLE IF NOT EXISTS suppliers (
+            id VARCHAR(36) PRIMARY KEY,
+            company_id VARCHAR(36) NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            rfc VARCHAR(20),
+            email VARCHAR(255),
+            phone VARCHAR(50),
+            address TEXT,
+            contact_name VARCHAR(255),
+            payment_terms VARCHAR(100),
+            notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_company (company_id),
+            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+        );
+        
+        -- Projects table
+        CREATE TABLE IF NOT EXISTS projects (
+            id VARCHAR(36) PRIMARY KEY,
+            company_id VARCHAR(36) NOT NULL,
+            client_id VARCHAR(36),
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            status VARCHAR(20) DEFAULT 'planning',
+            priority VARCHAR(20) DEFAULT 'medium',
+            start_date DATE,
+            end_date DATE,
+            budget DECIMAL(15,2) DEFAULT 0,
+            total_progress INT DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_company (company_id),
+            INDEX idx_client (client_id),
+            INDEX idx_status (status),
+            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+            FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
+        );
+        
+        -- Project Phases table
+        CREATE TABLE IF NOT EXISTS project_phases (
+            id VARCHAR(36) PRIMARY KEY,
+            project_id VARCHAR(36) NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            order_index INT DEFAULT 0,
+            start_date DATE,
+            end_date DATE,
+            progress INT DEFAULT 0,
+            status VARCHAR(20) DEFAULT 'pending',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_project (project_id),
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+        );
+        
+        -- Project Tasks table
+        CREATE TABLE IF NOT EXISTS project_tasks (
+            id VARCHAR(36) PRIMARY KEY,
+            project_id VARCHAR(36) NOT NULL,
+            phase_id VARCHAR(36),
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            status VARCHAR(20) DEFAULT 'pending',
+            priority VARCHAR(20) DEFAULT 'medium',
+            assigned_to VARCHAR(36),
+            start_date DATE,
+            end_date DATE,
+            estimated_hours DECIMAL(8,2) DEFAULT 0,
+            actual_hours DECIMAL(8,2) DEFAULT 0,
+            progress INT DEFAULT 0,
+            dependencies JSON,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_project (project_id),
+            INDEX idx_phase (phase_id),
+            INDEX idx_assigned (assigned_to),
+            FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE,
+            FOREIGN KEY (phase_id) REFERENCES project_phases(id) ON DELETE SET NULL
+        );
+        
+        -- Quotes table
+        CREATE TABLE IF NOT EXISTS quotes (
+            id VARCHAR(36) PRIMARY KEY,
+            company_id VARCHAR(36) NOT NULL,
+            client_id VARCHAR(36),
+            quote_number VARCHAR(50) NOT NULL,
+            title VARCHAR(255),
+            description TEXT,
+            items JSON,
+            subtotal DECIMAL(15,2) DEFAULT 0,
+            tax DECIMAL(15,2) DEFAULT 0,
+            total DECIMAL(15,2) DEFAULT 0,
+            status VARCHAR(20) DEFAULT 'draft',
+            valid_until DATE,
+            show_tax BOOLEAN DEFAULT TRUE,
+            created_by VARCHAR(36),
+            created_by_name VARCHAR(255),
+            denial_reason TEXT,
+            version INT DEFAULT 1,
+            history JSON,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_company (company_id),
+            INDEX idx_client (client_id),
+            INDEX idx_status (status),
+            INDEX idx_quote_number (quote_number),
+            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+            FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
+        );
+        
+        -- Invoices table
+        CREATE TABLE IF NOT EXISTS invoices (
+            id VARCHAR(36) PRIMARY KEY,
+            company_id VARCHAR(36) NOT NULL,
+            client_id VARCHAR(36),
+            invoice_number VARCHAR(50) NOT NULL,
+            invoice_date DATE,
+            items JSON,
+            subtotal DECIMAL(15,2) DEFAULT 0,
+            tax DECIMAL(15,2) DEFAULT 0,
+            total DECIMAL(15,2) DEFAULT 0,
+            paid_amount DECIMAL(15,2) DEFAULT 0,
+            status VARCHAR(20) DEFAULT 'pending',
+            due_date DATE,
+            notes TEXT,
+            payments JSON,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_company (company_id),
+            INDEX idx_client (client_id),
+            INDEX idx_status (status),
+            INDEX idx_due_date (due_date),
+            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+            FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
+        );
+        
+        -- Purchase Orders table
+        CREATE TABLE IF NOT EXISTS purchase_orders (
+            id VARCHAR(36) PRIMARY KEY,
+            company_id VARCHAR(36) NOT NULL,
+            supplier_id VARCHAR(36),
+            order_number VARCHAR(50) NOT NULL,
+            description TEXT,
+            items JSON,
+            subtotal DECIMAL(15,2) DEFAULT 0,
+            tax DECIMAL(15,2) DEFAULT 0,
+            total DECIMAL(15,2) DEFAULT 0,
+            status VARCHAR(20) DEFAULT 'requested',
+            expected_delivery DATE,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_company (company_id),
+            INDEX idx_supplier (supplier_id),
+            INDEX idx_status (status),
+            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+            FOREIGN KEY (supplier_id) REFERENCES suppliers(id) ON DELETE SET NULL
+        );
+        
+        -- Documents table
+        CREATE TABLE IF NOT EXISTS documents (
+            id VARCHAR(36) PRIMARY KEY,
+            company_id VARCHAR(36) NOT NULL,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            file_type VARCHAR(50),
+            file_size INT,
+            file_data LONGTEXT,
+            category VARCHAR(100),
+            tags JSON,
+            uploaded_by VARCHAR(36),
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_company (company_id),
+            INDEX idx_category (category),
+            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+        );
+        
+        -- Tickets table
+        CREATE TABLE IF NOT EXISTS tickets (
+            id VARCHAR(36) PRIMARY KEY,
+            company_id VARCHAR(36) NOT NULL,
+            user_id VARCHAR(36) NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            description TEXT,
+            category VARCHAR(50),
+            priority VARCHAR(20) DEFAULT 'medium',
+            status VARCHAR(20) DEFAULT 'open',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_company (company_id),
+            INDEX idx_user (user_id),
+            INDEX idx_status (status),
+            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        
+        -- Ticket Messages table
+        CREATE TABLE IF NOT EXISTS ticket_messages (
+            id VARCHAR(36) PRIMARY KEY,
+            ticket_id VARCHAR(36) NOT NULL,
+            user_id VARCHAR(36) NOT NULL,
+            message TEXT,
+            attachments JSON,
+            is_admin_reply BOOLEAN DEFAULT FALSE,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_ticket (ticket_id),
+            FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        
+        -- System Config table
+        CREATE TABLE IF NOT EXISTS system_config (
+            id VARCHAR(36) PRIMARY KEY,
+            config_type VARCHAR(50) NOT NULL UNIQUE,
+            config_data JSON,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            updated_by VARCHAR(36)
+        );
+        
+        -- Diagnostic Results table  
+        CREATE TABLE IF NOT EXISTS diagnostic_results (
+            id VARCHAR(36) PRIMARY KEY,
+            run_type VARCHAR(20),
+            run_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            status VARCHAR(20),
+            results JSON,
+            INDEX idx_run_at (run_at)
+        );
+        
+        -- Subscription History table
+        CREATE TABLE IF NOT EXISTS subscription_history (
+            id VARCHAR(36) PRIMARY KEY,
+            company_id VARCHAR(36) NOT NULL,
+            action VARCHAR(50) NOT NULL,
+            previous_end_date DATE,
+            new_end_date DATE,
+            amount DECIMAL(10,2),
+            payment_method VARCHAR(50),
+            notes TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_company (company_id),
+            FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+        );
+        """
+        
+        async with conn.cursor() as cursor:
+            # Execute each statement separately
+            for statement in schema_sql.split(';'):
+                statement = statement.strip()
+                if statement:
+                    await cursor.execute(statement)
+        
+        conn.close()
+        
+        # Update migration status
+        await db.system_config.update_one(
+            {"type": "server_config"},
+            {"$set": {"migration_status": "schema_created", "schema_created_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        
+        return {"success": True, "message": "Esquema MySQL creado exitosamente"}
+    except Exception as e:
+        return {"success": False, "message": f"Error al crear esquema: {str(e)}"}
+
+@api_router.post("/super-admin/migrate-to-mysql")
+async def migrate_to_mysql(current_user: dict = Depends(require_super_admin)):
+    """Migrate all data from MongoDB to MySQL"""
+    import aiomysql
+    import json
+    
+    config = await db.system_config.find_one({"type": "server_config"}, {"_id": 0})
+    if not config or not config.get("mysql_host"):
+        raise HTTPException(status_code=400, detail="Configuración MySQL no encontrada")
+    
+    try:
+        conn = await aiomysql.connect(
+            host=config["mysql_host"],
+            port=config.get("mysql_port", 3306),
+            user=config["mysql_user"],
+            password=config["mysql_password"],
+            db=config["mysql_database"],
+            autocommit=False
+        )
+        
+        migration_log = []
+        
+        async with conn.cursor() as cursor:
+            # Migrate Companies
+            companies = await db.companies.find({}, {"_id": 0}).to_list(1000)
+            for company in companies:
+                try:
+                    await cursor.execute("""
+                        INSERT INTO companies (id, business_name, slug, rfc, address, phone, email, 
+                            logo_url, logo_file, status, monthly_fee, license_type, max_users,
+                            subscription_start_date, subscription_end_date, subscription_status,
+                            created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE business_name=VALUES(business_name)
+                    """, (
+                        company.get("id"), company.get("business_name"), company.get("slug"),
+                        company.get("rfc"), company.get("address"), company.get("phone"),
+                        company.get("email"), company.get("logo_url"), company.get("logo_file"),
+                        company.get("status", "active"), company.get("monthly_fee", 0),
+                        company.get("license_type", "basic"), company.get("max_users", 5),
+                        company.get("subscription_start_date"), company.get("subscription_end_date"),
+                        company.get("subscription_status", "active"),
+                        company.get("created_at"), company.get("updated_at")
+                    ))
+                except Exception as e:
+                    migration_log.append(f"Company {company.get('id')}: {str(e)}")
+            
+            # Migrate Users
+            users = await db.users.find({}, {"_id": 0}).to_list(10000)
+            for user in users:
+                try:
+                    await cursor.execute("""
+                        INSERT INTO users (id, company_id, full_name, email, password_hash, phone,
+                            role, status, recovery_email, recovery_phone, module_permissions, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE full_name=VALUES(full_name)
+                    """, (
+                        user.get("id"), user.get("company_id"), user.get("full_name"),
+                        user.get("email"), user.get("password_hash"), user.get("phone"),
+                        user.get("role"), user.get("status", "active"),
+                        user.get("recovery_email"), user.get("recovery_phone"),
+                        json.dumps(user.get("module_permissions")) if user.get("module_permissions") else None,
+                        user.get("created_at"), user.get("updated_at")
+                    ))
+                except Exception as e:
+                    migration_log.append(f"User {user.get('id')}: {str(e)}")
+            
+            # Migrate Clients
+            clients = await db.clients.find({}, {"_id": 0}).to_list(10000)
+            for client in clients:
+                try:
+                    await cursor.execute("""
+                        INSERT INTO clients (id, company_id, name, rfc, email, phone, address,
+                            contact_name, reference, credit_days, credit_limit, notes, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE name=VALUES(name)
+                    """, (
+                        client.get("id"), client.get("company_id"), client.get("name"),
+                        client.get("rfc"), client.get("email"), client.get("phone"),
+                        client.get("address"), client.get("contact_name"), client.get("reference"),
+                        client.get("credit_days", 0), client.get("credit_limit", 0),
+                        client.get("notes"), client.get("created_at"), client.get("updated_at")
+                    ))
+                except Exception as e:
+                    migration_log.append(f"Client {client.get('id')}: {str(e)}")
+            
+            # Migrate Suppliers
+            suppliers = await db.suppliers.find({}, {"_id": 0}).to_list(10000)
+            for supplier in suppliers:
+                try:
+                    await cursor.execute("""
+                        INSERT INTO suppliers (id, company_id, name, rfc, email, phone, address,
+                            contact_name, payment_terms, notes, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE name=VALUES(name)
+                    """, (
+                        supplier.get("id"), supplier.get("company_id"), supplier.get("name"),
+                        supplier.get("rfc"), supplier.get("email"), supplier.get("phone"),
+                        supplier.get("address"), supplier.get("contact_name"),
+                        supplier.get("payment_terms"), supplier.get("notes"),
+                        supplier.get("created_at"), supplier.get("updated_at")
+                    ))
+                except Exception as e:
+                    migration_log.append(f"Supplier {supplier.get('id')}: {str(e)}")
+            
+            # Migrate Projects
+            projects = await db.projects.find({}, {"_id": 0}).to_list(10000)
+            for project in projects:
+                try:
+                    await cursor.execute("""
+                        INSERT INTO projects (id, company_id, client_id, name, description, status,
+                            priority, start_date, end_date, budget, total_progress, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE name=VALUES(name)
+                    """, (
+                        project.get("id"), project.get("company_id"), project.get("client_id"),
+                        project.get("name"), project.get("description"), project.get("status", "planning"),
+                        project.get("priority", "medium"), project.get("start_date"), project.get("end_date"),
+                        project.get("budget", 0), project.get("total_progress", 0),
+                        project.get("created_at"), project.get("updated_at")
+                    ))
+                    
+                    # Migrate phases for this project
+                    for phase in project.get("phases", []):
+                        await cursor.execute("""
+                            INSERT INTO project_phases (id, project_id, name, description, order_index,
+                                start_date, end_date, progress, status, created_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON DUPLICATE KEY UPDATE name=VALUES(name)
+                        """, (
+                            phase.get("id"), project.get("id"), phase.get("name"),
+                            phase.get("description"), phase.get("order", 0),
+                            phase.get("start_date"), phase.get("end_date"),
+                            phase.get("progress", 0), phase.get("status", "pending"),
+                            project.get("created_at")
+                        ))
+                    
+                    # Migrate tasks for this project
+                    for task in project.get("tasks", []):
+                        await cursor.execute("""
+                            INSERT INTO project_tasks (id, project_id, phase_id, name, description, status,
+                                priority, assigned_to, start_date, end_date, estimated_hours, actual_hours,
+                                progress, dependencies, created_at, updated_at)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            ON DUPLICATE KEY UPDATE name=VALUES(name)
+                        """, (
+                            task.get("id"), project.get("id"), task.get("phase_id"),
+                            task.get("name"), task.get("description"), task.get("status", "pending"),
+                            task.get("priority", "medium"), task.get("assigned_to"),
+                            task.get("start_date"), task.get("end_date"),
+                            task.get("estimated_hours", 0), task.get("actual_hours", 0),
+                            task.get("progress", 0), json.dumps(task.get("dependencies", [])),
+                            project.get("created_at"), project.get("updated_at")
+                        ))
+                except Exception as e:
+                    migration_log.append(f"Project {project.get('id')}: {str(e)}")
+            
+            # Migrate Quotes
+            quotes = await db.quotes.find({}, {"_id": 0}).to_list(10000)
+            for quote in quotes:
+                try:
+                    await cursor.execute("""
+                        INSERT INTO quotes (id, company_id, client_id, quote_number, title, description,
+                            items, subtotal, tax, total, status, valid_until, show_tax, created_by,
+                            created_by_name, denial_reason, version, history, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE quote_number=VALUES(quote_number)
+                    """, (
+                        quote.get("id"), quote.get("company_id"), quote.get("client_id"),
+                        quote.get("quote_number"), quote.get("title"), quote.get("description"),
+                        json.dumps(quote.get("items", [])), quote.get("subtotal", 0),
+                        quote.get("tax", 0), quote.get("total", 0), quote.get("status", "draft"),
+                        quote.get("valid_until"), quote.get("show_tax", True),
+                        quote.get("created_by"), quote.get("created_by_name"),
+                        quote.get("denial_reason"), quote.get("version", 1),
+                        json.dumps(quote.get("history", [])),
+                        quote.get("created_at"), quote.get("updated_at")
+                    ))
+                except Exception as e:
+                    migration_log.append(f"Quote {quote.get('id')}: {str(e)}")
+            
+            # Migrate Invoices
+            invoices = await db.invoices.find({}, {"_id": 0}).to_list(10000)
+            for invoice in invoices:
+                try:
+                    await cursor.execute("""
+                        INSERT INTO invoices (id, company_id, client_id, invoice_number, invoice_date,
+                            items, subtotal, tax, total, paid_amount, status, due_date, notes, payments,
+                            created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE invoice_number=VALUES(invoice_number)
+                    """, (
+                        invoice.get("id"), invoice.get("company_id"), invoice.get("client_id"),
+                        invoice.get("invoice_number"), invoice.get("invoice_date"),
+                        json.dumps(invoice.get("items", [])), invoice.get("subtotal", 0),
+                        invoice.get("tax", 0), invoice.get("total", 0), invoice.get("paid_amount", 0),
+                        invoice.get("status", "pending"), invoice.get("due_date"),
+                        invoice.get("notes"), json.dumps(invoice.get("payments", [])),
+                        invoice.get("created_at"), invoice.get("updated_at")
+                    ))
+                except Exception as e:
+                    migration_log.append(f"Invoice {invoice.get('id')}: {str(e)}")
+            
+            # Migrate Purchase Orders
+            pos = await db.purchase_orders.find({}, {"_id": 0}).to_list(10000)
+            for po in pos:
+                try:
+                    await cursor.execute("""
+                        INSERT INTO purchase_orders (id, company_id, supplier_id, order_number, description,
+                            items, subtotal, tax, total, status, expected_delivery, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE order_number=VALUES(order_number)
+                    """, (
+                        po.get("id"), po.get("company_id"), po.get("supplier_id"),
+                        po.get("order_number"), po.get("description"),
+                        json.dumps(po.get("items", [])), po.get("subtotal", 0),
+                        po.get("tax", 0), po.get("total", 0), po.get("status", "requested"),
+                        po.get("expected_delivery"),
+                        po.get("created_at"), po.get("updated_at")
+                    ))
+                except Exception as e:
+                    migration_log.append(f"PO {po.get('id')}: {str(e)}")
+            
+            # Migrate Documents
+            documents = await db.documents.find({}, {"_id": 0}).to_list(10000)
+            for doc in documents:
+                try:
+                    await cursor.execute("""
+                        INSERT INTO documents (id, company_id, name, description, file_type, file_size,
+                            file_data, category, tags, uploaded_by, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE name=VALUES(name)
+                    """, (
+                        doc.get("id"), doc.get("company_id"), doc.get("name"),
+                        doc.get("description"), doc.get("file_type"), doc.get("file_size"),
+                        doc.get("file_data"), doc.get("category"),
+                        json.dumps(doc.get("tags", [])), doc.get("uploaded_by"),
+                        doc.get("created_at"), doc.get("updated_at")
+                    ))
+                except Exception as e:
+                    migration_log.append(f"Document {doc.get('id')}: {str(e)}")
+            
+            # Migrate Tickets
+            tickets = await db.tickets.find({}, {"_id": 0}).to_list(10000)
+            for ticket in tickets:
+                try:
+                    await cursor.execute("""
+                        INSERT INTO tickets (id, company_id, user_id, title, description, category,
+                            priority, status, created_at, updated_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE title=VALUES(title)
+                    """, (
+                        ticket.get("id"), ticket.get("company_id"), ticket.get("user_id"),
+                        ticket.get("title"), ticket.get("description"), ticket.get("category"),
+                        ticket.get("priority", "medium"), ticket.get("status", "open"),
+                        ticket.get("created_at"), ticket.get("updated_at")
+                    ))
+                except Exception as e:
+                    migration_log.append(f"Ticket {ticket.get('id')}: {str(e)}")
+            
+            # Migrate Ticket Messages
+            ticket_messages = await db.ticket_messages.find({}, {"_id": 0}).to_list(50000)
+            for msg in ticket_messages:
+                try:
+                    await cursor.execute("""
+                        INSERT INTO ticket_messages (id, ticket_id, user_id, message, attachments,
+                            is_admin_reply, created_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ON DUPLICATE KEY UPDATE message=VALUES(message)
+                    """, (
+                        msg.get("id"), msg.get("ticket_id"), msg.get("user_id"),
+                        msg.get("message"), json.dumps(msg.get("attachments", [])),
+                        msg.get("is_admin_reply", False), msg.get("created_at")
+                    ))
+                except Exception as e:
+                    migration_log.append(f"TicketMsg {msg.get('id')}: {str(e)}")
+        
+        await conn.commit()
+        conn.close()
+        
+        # Update migration status
+        await db.system_config.update_one(
+            {"type": "server_config"},
+            {"$set": {
+                "migration_status": "completed",
+                "migration_completed_at": datetime.now(timezone.utc).isoformat(),
+                "migration_log": migration_log
+            }}
+        )
+        
+        return {
+            "success": True,
+            "message": "Migración completada exitosamente",
+            "stats": {
+                "companies": len(companies),
+                "users": len(users),
+                "clients": len(clients),
+                "suppliers": len(suppliers),
+                "projects": len(projects),
+                "quotes": len(quotes),
+                "invoices": len(invoices),
+                "purchase_orders": len(pos),
+                "documents": len(documents),
+                "tickets": len(tickets)
+            },
+            "errors": migration_log
+        }
+    except Exception as e:
+        await db.system_config.update_one(
+            {"type": "server_config"},
+            {"$set": {"migration_status": "failed", "migration_error": str(e)}}
+        )
+        return {"success": False, "message": f"Error en migración: {str(e)}"}
 
 @api_router.get("/super-admin/companies/{company_id}")
 async def get_company_details(company_id: str, current_user: dict = Depends(require_super_admin)):
@@ -936,12 +1689,28 @@ async def super_admin_dashboard(current_user: dict = Depends(require_super_admin
 
 async def get_companies_with_admin_info(companies: list) -> list:
     """Helper to add admin info to each company"""
+    now = datetime.now(timezone.utc)
     result = []
     for c in companies:
         admin = await db.users.find_one(
             {"company_id": c["id"], "role": UserRole.ADMIN},
             {"_id": 0, "email": 1, "is_active": 1, "full_name": 1}
         )
+        
+        # Calculate days until expiry
+        days_until_expiry = None
+        subscription_end = c.get("subscription_end")
+        if subscription_end:
+            if isinstance(subscription_end, str):
+                try:
+                    subscription_end = datetime.fromisoformat(subscription_end.replace('Z', '+00:00'))
+                except:
+                    subscription_end = None
+            if subscription_end:
+                if subscription_end.tzinfo is None:
+                    subscription_end = subscription_end.replace(tzinfo=timezone.utc)
+                days_until_expiry = (subscription_end - now).days
+        
         result.append({
             "id": c["id"],
             "business_name": c["business_name"],
@@ -949,6 +1718,8 @@ async def get_companies_with_admin_info(companies: list) -> list:
             "status": c.get("subscription_status"),
             "monthly_fee": c.get("monthly_fee", 0),
             "license_type": c.get("license_type", "basic"),
+            "subscription_end": c.get("subscription_end"),
+            "days_until_expiry": days_until_expiry,
             "created_at": c.get("created_at"),
             "admin_email": admin.get("email") if admin else None,
             "admin_name": admin.get("full_name") if admin else None,
@@ -1051,6 +1822,215 @@ async def toggle_company_admin_status(
     
     action = "desbloqueado" if new_status else "bloqueado"
     return {"message": f"Admin {action} exitosamente", "is_active": new_status}
+
+# ============== SUBSCRIPTION MANAGEMENT ==============
+class SubscriptionUpdate(BaseModel):
+    months: int = 1  # Number of months to add
+    payment_amount: Optional[float] = None
+    payment_method: Optional[str] = None
+    notes: Optional[str] = None
+
+@api_router.get("/super-admin/companies/{company_id}/subscription")
+async def get_company_subscription(company_id: str, current_user: dict = Depends(require_super_admin)):
+    """Get subscription details for a company"""
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    # Calculate days until expiry
+    days_until_expiry = None
+    subscription_end = company.get("subscription_end")
+    if subscription_end:
+        if isinstance(subscription_end, str):
+            subscription_end = datetime.fromisoformat(subscription_end.replace('Z', '+00:00'))
+        now = datetime.now(timezone.utc)
+        if subscription_end.tzinfo is None:
+            subscription_end = subscription_end.replace(tzinfo=timezone.utc)
+        days_until_expiry = (subscription_end - now).days
+    
+    # Get subscription history
+    history = await db.subscription_history.find(
+        {"company_id": company_id}, 
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(20)
+    
+    return {
+        "company_id": company_id,
+        "business_name": company.get("business_name"),
+        "subscription_status": company.get("subscription_status", "pending"),
+        "subscription_start": company.get("subscription_start"),
+        "subscription_end": company.get("subscription_end"),
+        "subscription_months": company.get("subscription_months", 1),
+        "monthly_fee": company.get("monthly_fee", 0),
+        "last_payment_date": company.get("last_payment_date"),
+        "payment_reminder_sent": company.get("payment_reminder_sent", False),
+        "days_until_expiry": days_until_expiry,
+        "history": history
+    }
+
+@api_router.post("/super-admin/companies/{company_id}/subscription/renew")
+async def renew_company_subscription(
+    company_id: str,
+    renewal_data: SubscriptionUpdate,
+    current_user: dict = Depends(require_super_admin)
+):
+    """Renew or extend a company's subscription"""
+    from dateutil.relativedelta import relativedelta
+    
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    now = datetime.now(timezone.utc)
+    
+    # Get current end date
+    current_end = company.get("subscription_end")
+    if current_end:
+        if isinstance(current_end, str):
+            current_end = datetime.fromisoformat(current_end.replace('Z', '+00:00'))
+        if current_end.tzinfo is None:
+            current_end = current_end.replace(tzinfo=timezone.utc)
+        # If subscription hasn't expired, extend from current end
+        if current_end > now:
+            new_end = current_end + relativedelta(months=renewal_data.months)
+        else:
+            # If expired, start fresh from today
+            new_end = now + relativedelta(months=renewal_data.months)
+    else:
+        # First subscription
+        new_end = now + relativedelta(months=renewal_data.months)
+    
+    # Record history
+    history_entry = {
+        "id": str(uuid.uuid4()),
+        "company_id": company_id,
+        "action": "renewal",
+        "previous_end_date": company.get("subscription_end"),
+        "new_end_date": new_end.isoformat(),
+        "months_added": renewal_data.months,
+        "amount": renewal_data.payment_amount,
+        "payment_method": renewal_data.payment_method,
+        "notes": renewal_data.notes,
+        "created_by": current_user.get("sub"),
+        "created_at": now.isoformat()
+    }
+    await db.subscription_history.insert_one(history_entry)
+    
+    # Update company subscription
+    await db.companies.update_one(
+        {"id": company_id},
+        {"$set": {
+            "subscription_status": "active",
+            "subscription_end": new_end.isoformat(),
+            "subscription_start": company.get("subscription_start") or now.isoformat(),
+            "subscription_months": renewal_data.months,
+            "last_payment_date": now.isoformat(),
+            "payment_reminder_sent": False,
+            "updated_at": now.isoformat()
+        }}
+    )
+    
+    return {
+        "message": f"Suscripción renovada por {renewal_data.months} mes(es)",
+        "new_end_date": new_end.isoformat(),
+        "days_until_expiry": (new_end - now).days
+    }
+
+@api_router.get("/super-admin/subscriptions/expiring")
+async def get_expiring_subscriptions(
+    days: int = 15,
+    current_user: dict = Depends(require_super_admin)
+):
+    """Get companies with subscriptions expiring within X days"""
+    now = datetime.now(timezone.utc)
+    cutoff = now + timedelta(days=days)
+    
+    companies = await db.companies.find({}, {"_id": 0}).to_list(1000)
+    
+    expiring = []
+    for company in companies:
+        end_date = company.get("subscription_end")
+        if end_date:
+            if isinstance(end_date, str):
+                try:
+                    end_date = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+                except:
+                    continue
+            if end_date.tzinfo is None:
+                end_date = end_date.replace(tzinfo=timezone.utc)
+            
+            days_until = (end_date - now).days
+            if 0 <= days_until <= days:
+                company["days_until_expiry"] = days_until
+                company["expiry_date"] = end_date.isoformat()
+                expiring.append(company)
+    
+    # Sort by days until expiry
+    expiring.sort(key=lambda x: x.get("days_until_expiry", 999))
+    
+    return {
+        "count": len(expiring),
+        "companies": expiring
+    }
+
+@api_router.post("/super-admin/subscriptions/send-reminders")
+async def send_subscription_reminders(current_user: dict = Depends(require_super_admin)):
+    """Send payment reminders to companies with expiring subscriptions (15 days)"""
+    now = datetime.now(timezone.utc)
+    cutoff = now + timedelta(days=15)
+    
+    companies = await db.companies.find({}, {"_id": 0}).to_list(1000)
+    
+    reminders_sent = []
+    for company in companies:
+        end_date = company.get("subscription_end")
+        if not end_date:
+            continue
+            
+        if isinstance(end_date, str):
+            try:
+                end_date = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
+            except:
+                continue
+        if end_date.tzinfo is None:
+            end_date = end_date.replace(tzinfo=timezone.utc)
+        
+        days_until = (end_date - now).days
+        
+        # Send reminder if within 15 days and not already sent
+        if 0 <= days_until <= 15 and not company.get("payment_reminder_sent"):
+            # Mark reminder as sent
+            await db.companies.update_one(
+                {"id": company["id"]},
+                {"$set": {"payment_reminder_sent": True}}
+            )
+            
+            # Create notification for the company admin
+            admin = await db.users.find_one({"company_id": company["id"], "role": UserRole.ADMIN})
+            if admin:
+                notification = {
+                    "id": str(uuid.uuid4()),
+                    "company_id": company["id"],
+                    "user_id": admin["id"],
+                    "type": "subscription_reminder",
+                    "title": "Recordatorio de Pago de Suscripción",
+                    "message": f"Tu suscripción vence en {days_until} días ({end_date.strftime('%d/%m/%Y')}). Por favor realiza el pago para continuar usando el servicio.",
+                    "read": False,
+                    "created_at": now.isoformat()
+                }
+                await db.notifications.insert_one(notification)
+            
+            reminders_sent.append({
+                "company_id": company["id"],
+                "business_name": company.get("business_name"),
+                "days_until_expiry": days_until,
+                "admin_email": admin.get("email") if admin else None
+            })
+    
+    return {
+        "message": f"Se enviaron {len(reminders_sent)} recordatorios",
+        "reminders": reminders_sent
+    }
 
 # ============== SYSTEM MONITORING BOT ==============
 class SystemTestResult(BaseModel):
