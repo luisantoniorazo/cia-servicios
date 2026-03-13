@@ -84,6 +84,7 @@ export const CRM = () => {
   const [activeTab, setActiveTab] = useState("all");
   const [formData, setFormData] = useState({
     name: "",
+    reference: "",
     contact_name: "",
     email: "",
     phone: "",
@@ -161,6 +162,7 @@ export const CRM = () => {
     setEditingClient(client);
     setFormData({
       name: client.name,
+      reference: client.reference || "",
       contact_name: client.contact_name || "",
       email: client.email || "",
       phone: client.phone || "",
@@ -237,6 +239,7 @@ export const CRM = () => {
     setEditingClient(null);
     setFormData({
       name: "",
+      reference: "",
       contact_name: "",
       email: "",
       phone: "",
@@ -283,6 +286,7 @@ export const CRM = () => {
     const search = searchFilter.toLowerCase();
     return (
       client.name?.toLowerCase().includes(search) ||
+      client.reference?.toLowerCase().includes(search) ||
       client.contact_name?.toLowerCase().includes(search) ||
       client.email?.toLowerCase().includes(search) ||
       client.phone?.includes(search) ||
@@ -336,16 +340,28 @@ export const CRM = () => {
                 </DialogDescription>
               </DialogHeader>
               <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="name">Nombre de la Empresa *</Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="Empresa S.A. de C.V."
-                    required
-                    data-testid="client-name-input"
-                  />
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="col-span-2 grid gap-2">
+                    <Label htmlFor="name">Nombre de la Empresa *</Label>
+                    <Input
+                      id="name"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      placeholder="Empresa S.A. de C.V."
+                      required
+                      data-testid="client-name-input"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="reference">Referencia</Label>
+                    <Input
+                      id="reference"
+                      value={formData.reference}
+                      onChange={(e) => setFormData({ ...formData, reference: e.target.value })}
+                      placeholder="Sucursal Norte"
+                      title="Campo para diferenciar clientes con misma razón social"
+                    />
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
@@ -578,6 +594,9 @@ export const CRM = () => {
                     <TableRow key={client.id} data-testid={`client-row-${client.id}`}>
                       <TableCell>
                         <div className="font-medium">{client.name}</div>
+                        {client.reference && (
+                          <div className="text-sm text-blue-600">{client.reference}</div>
+                        )}
                         {client.rfc && (
                           <div className="text-sm text-muted-foreground font-mono">{client.rfc}</div>
                         )}

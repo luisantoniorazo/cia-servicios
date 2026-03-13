@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, UploadFile, File, Query
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, UploadFile, File, Query, Body
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -190,6 +190,7 @@ class TokenResponse(BaseModel):
 class ClientBase(BaseModel):
     company_id: str
     name: str
+    reference: Optional[str] = None  # Campo de referencia para diferenciar clientes
     contact_name: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
@@ -269,6 +270,31 @@ class QuoteBase(BaseModel):
     total: float = 0.0
     status: QuoteStatus = QuoteStatus.PROSPECT
     valid_until: Optional[datetime] = None
+    show_tax: bool = True  # Mostrar IVA en cotización
+    denial_reason: Optional[str] = None  # Motivo de negación
+    created_by_name: Optional[str] = None  # Nombre del usuario que creó
+
+class QuoteHistoryEntry(BaseModel):
+    """Entry for quote version history"""
+    version: int
+    modified_at: datetime
+    modified_by: str
+    modified_by_name: str
+    changes: dict  # What was changed
+    previous_values: dict  # Previous values before change
+
+class QuoteUpdateData(BaseModel):
+    """Modelo para actualización parcial de cotización"""
+    title: Optional[str] = None
+    description: Optional[str] = None
+    client_id: Optional[str] = None
+    items: Optional[List[QuoteItem]] = None
+    subtotal: Optional[float] = None
+    tax: Optional[float] = None
+    total: Optional[float] = None
+    show_tax: Optional[bool] = None
+    status: Optional[QuoteStatus] = None
+    valid_until: Optional[datetime] = None
 
 class QuoteCreate(QuoteBase):
     pass
@@ -278,6 +304,9 @@ class Quote(QuoteBase):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_by: Optional[str] = None  # ID del usuario que creó
+    version: int = 1  # Versión actual de la cotización
+    history: List[dict] = []  # Historial de cambios
 
 # Client Followup Models (Seguimientos)
 class FollowupBase(BaseModel):
@@ -1925,6 +1954,10 @@ async def create_quote(quote_data: QuoteCreate, current_user: dict = Depends(get
     quote_dict = quote.model_dump()
     quote_dict["created_at"] = quote_dict["created_at"].isoformat()
     quote_dict["updated_at"] = quote_dict["updated_at"].isoformat()
+    quote_dict["created_by"] = current_user.get("sub")
+    quote_dict["created_by_name"] = current_user.get("full_name", "Usuario")
+    quote_dict["version"] = 1
+    quote_dict["history"] = []
     if quote_dict.get("valid_until"):
         quote_dict["valid_until"] = quote_dict["valid_until"].isoformat()
     await db.quotes.insert_one(quote_dict)
@@ -1967,36 +2000,90 @@ async def get_quote(quote_id: str, current_user: dict = Depends(get_current_user
         quote["valid_until"] = datetime.fromisoformat(quote["valid_until"])
     return Quote(**quote)
 
-@api_router.put("/quotes/{quote_id}", response_model=Quote)
-async def update_quote(quote_id: str, quote_data: QuoteCreate, current_user: dict = Depends(get_current_user)):
-    quote = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
-    if not quote:
-        raise HTTPException(status_code=404, detail="Cotización no encontrada")
-    
-    if current_user.get("company_id") != quote.get("company_id"):
-        raise HTTPException(status_code=403, detail="Acceso denegado")
-    
-    update_dict = quote_data.model_dump()
-    update_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
-    if update_dict.get("valid_until"):
-        update_dict["valid_until"] = update_dict["valid_until"].isoformat()
-    await db.quotes.update_one({"id": quote_id}, {"$set": update_dict})
-    return await get_quote(quote_id, current_user)
-
 @api_router.patch("/quotes/{quote_id}/status")
-async def update_quote_status(quote_id: str, status: QuoteStatus, current_user: dict = Depends(get_current_user)):
+async def update_quote_status(quote_id: str, status: QuoteStatus, denial_reason: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     quote = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
     if not quote:
         raise HTTPException(status_code=404, detail="Cotización no encontrada")
     
     if current_user.get("company_id") != quote.get("company_id"):
         raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    update_data = {"status": status, "updated_at": datetime.now(timezone.utc).isoformat()}
+    
+    # Si se niega, guardar motivo
+    if status == QuoteStatus.DENIED and denial_reason:
+        update_data["denial_reason"] = denial_reason
     
     await db.quotes.update_one(
         {"id": quote_id},
-        {"$set": {"status": status, "updated_at": datetime.now(timezone.utc).isoformat()}}
+        {"$set": update_data}
     )
     return {"message": "Estado actualizado"}
+
+@api_router.put("/quotes/{quote_id}")
+async def update_quote(quote_id: str, update_data: QuoteUpdateData, current_user: dict = Depends(get_current_user)):
+    """Update quote and save history"""
+    quote = await db.quotes.find_one({"id": quote_id}, {"_id": 0})
+    if not quote:
+        raise HTTPException(status_code=404, detail="Cotización no encontrada")
+    
+    if current_user.get("company_id") != quote.get("company_id"):
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    # Create history entry
+    current_version = quote.get("version", 1)
+    history = quote.get("history", [])
+    
+    # Track what changed
+    changes = {}
+    previous_values = {}
+    trackable_fields = ["title", "description", "items", "subtotal", "tax", "total", "client_id", "show_tax", "valid_until"]
+    
+    update_dict = update_data.model_dump(exclude_unset=True)
+    
+    for field in trackable_fields:
+        if field in update_dict and update_dict[field] != quote.get(field):
+            changes[field] = update_dict[field]
+            previous_values[field] = quote.get(field)
+    
+    if changes:
+        history_entry = {
+            "version": current_version,
+            "modified_at": datetime.now(timezone.utc).isoformat(),
+            "modified_by": current_user.get("sub"),
+            "modified_by_name": current_user.get("full_name", "Usuario"),
+            "changes": changes,
+            "previous_values": previous_values
+        }
+        history.append(history_entry)
+    
+    # Prepare update
+    allowed_fields = ["title", "description", "items", "subtotal", "tax", "total", "client_id", "show_tax", "valid_until", "status"]
+    filtered_update = {k: v for k, v in update_dict.items() if k in allowed_fields and v is not None}
+    filtered_update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    filtered_update["version"] = current_version + 1
+    filtered_update["history"] = history
+    
+    # Handle items serialization
+    if "items" in filtered_update and filtered_update["items"]:
+        filtered_update["items"] = [item.model_dump() if hasattr(item, 'model_dump') else item for item in filtered_update["items"]]
+    
+    await db.quotes.update_one({"id": quote_id}, {"$set": filtered_update})
+    
+    return {"message": "Cotización actualizada", "version": current_version + 1}
+
+@api_router.get("/quotes/{quote_id}/history")
+async def get_quote_history(quote_id: str, current_user: dict = Depends(get_current_user)):
+    """Get quote version history"""
+    quote = await db.quotes.find_one({"id": quote_id}, {"_id": 0, "history": 1, "version": 1})
+    if not quote:
+        raise HTTPException(status_code=404, detail="Cotización no encontrada")
+    
+    return {
+        "current_version": quote.get("version", 1),
+        "history": quote.get("history", [])
+    }
 
 @api_router.delete("/quotes/{quote_id}")
 async def delete_quote(quote_id: str, current_user: dict = Depends(get_current_user)):
@@ -3146,6 +3233,7 @@ def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
     
     # Custom styles
     title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#004e92'), alignment=TA_LEFT)
+    cell_style = ParagraphStyle('Cell', parent=styles['Normal'], fontSize=9, leading=11)
     
     elements = []
     
@@ -3157,13 +3245,15 @@ def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
     elements.append(Spacer(1, 0.2*inch))
     
     # Client info table
+    client_ref = f" ({client.get('reference')})" if client.get('reference') else ""
     client_data = [
-        ['CLIENTE:', client.get('name', 'N/A')],
+        ['CLIENTE:', client.get('name', 'N/A') + client_ref],
         ['RFC:', client.get('rfc', 'N/A')],
         ['Contacto:', client.get('contact_name', 'N/A')],
         ['Email:', client.get('email', 'N/A')],
         ['Fecha:', quote.get('created_at', '')[:10] if quote.get('created_at') else ''],
         ['Vigencia:', quote.get('valid_until', '')[:10] if quote.get('valid_until') else 'N/A'],
+        ['Elaboró:', quote.get('created_by_name', 'N/A')],
     ]
     client_table = Table(client_data, colWidths=[1.5*inch, 4*inch])
     client_table.setStyle(TableStyle([
@@ -3181,14 +3271,18 @@ def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
         elements.append(Paragraph(f"<b>Descripción:</b> {quote.get('description')}", styles['Normal']))
     elements.append(Spacer(1, 0.2*inch))
     
-    # Items table
+    # Items table with auto-adjusting cells
     items = quote.get('items', [])
+    show_tax = quote.get('show_tax', True)
+    
     if items:
         table_data = [['#', 'Descripción', 'Cant.', 'Unidad', 'P. Unit.', 'Total']]
         for i, item in enumerate(items, 1):
+            # Use Paragraph for description to allow text wrapping
+            desc_paragraph = Paragraph(item.get('description', ''), cell_style)
             table_data.append([
                 str(i),
-                item.get('description', ''),
+                desc_paragraph,
                 str(item.get('quantity', 1)),
                 item.get('unit', 'pza'),
                 f"${item.get('unit_price', 0):,.2f}",
@@ -3202,6 +3296,8 @@ def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, -1), 9),
             ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
+            ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
             ('TOPPADDING', (0, 0), (-1, -1), 6),
@@ -3210,12 +3306,19 @@ def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
     
     elements.append(Spacer(1, 0.2*inch))
     
-    # Totals
-    totals_data = [
-        ['', '', 'Subtotal:', f"${quote.get('subtotal', 0):,.2f}"],
-        ['', '', 'IVA (16%):', f"${quote.get('tax', 0):,.2f}"],
-        ['', '', 'TOTAL:', f"${quote.get('total', 0):,.2f}"],
-    ]
+    # Totals - conditionally show tax
+    if show_tax:
+        totals_data = [
+            ['', '', 'Subtotal:', f"${quote.get('subtotal', 0):,.2f}"],
+            ['', '', 'IVA (16%):', f"${quote.get('tax', 0):,.2f}"],
+            ['', '', 'TOTAL:', f"${quote.get('total', 0):,.2f}"],
+        ]
+    else:
+        # Sin IVA - mostrar solo subtotal como total
+        totals_data = [
+            ['', '', 'TOTAL:', f"${quote.get('subtotal', 0):,.2f}"],
+        ]
+    
     totals_table = Table(totals_data, colWidths=[2*inch, 2*inch, 1.2*inch, 1.4*inch])
     totals_table.setStyle(TableStyle([
         ('FONTNAME', (2, -1), (3, -1), 'Helvetica-Bold'),

@@ -8,6 +8,8 @@ import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
 import { Skeleton } from "../components/ui/skeleton";
+import { Checkbox } from "../components/ui/checkbox";
+import { Separator } from "../components/ui/separator";
 import {
   Dialog,
   DialogContent,
@@ -58,6 +60,8 @@ import {
   Receipt,
   Search,
   X,
+  History,
+  Ban,
 } from "lucide-react";
 
 const QUOTE_STATUSES = [
@@ -71,11 +75,17 @@ const QUOTE_STATUSES = [
 ];
 
 export const Quotes = () => {
-  const { api, company } = useAuth();
+  const { api, company, user } = useAuth();
   const [quotes, setQuotes] = useState([]);
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editDialogOpen, setEditDialogOpen] = useState(false);
+  const [denialDialogOpen, setDenialDialogOpen] = useState(false);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [selectedQuote, setSelectedQuote] = useState(null);
+  const [denialReason, setDenialReason] = useState("");
+  const [quoteHistory, setQuoteHistory] = useState([]);
   const [searchFilter, setSearchFilter] = useState("");
   const [formData, setFormData] = useState({
     client_id: "",
@@ -83,6 +93,7 @@ export const Quotes = () => {
     title: "",
     description: "",
     status: "prospect",
+    show_tax: true,
     items: [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0 }],
   });
 
@@ -107,9 +118,9 @@ export const Quotes = () => {
     }
   };
 
-  const calculateTotals = (items) => {
+  const calculateTotals = (items, showTax = true) => {
     const subtotal = items.reduce((acc, item) => acc + (item.quantity * item.unit_price), 0);
-    const tax = subtotal * 0.16;
+    const tax = showTax ? subtotal * 0.16 : 0;
     const total = subtotal + tax;
     return { subtotal, tax, total };
   };
@@ -138,7 +149,7 @@ export const Quotes = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const { subtotal, tax, total } = calculateTotals(formData.items);
+    const { subtotal, tax, total } = calculateTotals(formData.items, formData.show_tax);
     try {
       await api.post("/quotes", {
         company_id: company.id,
@@ -157,12 +168,81 @@ export const Quotes = () => {
   };
 
   const handleStatusChange = async (quoteId, status) => {
+    // Si es negación, abrir diálogo para pedir motivo
+    if (status === "denied") {
+      const quote = quotes.find(q => q.id === quoteId);
+      setSelectedQuote(quote);
+      setDenialReason("");
+      setDenialDialogOpen(true);
+      return;
+    }
+    
     try {
       await api.patch(`/quotes/${quoteId}/status?status=${status}`);
       toast.success("Estado actualizado");
       fetchData();
     } catch (error) {
       toast.error("Error al actualizar estado");
+    }
+  };
+
+  const handleDenyQuote = async () => {
+    if (!selectedQuote) return;
+    try {
+      await api.patch(`/quotes/${selectedQuote.id}/status?status=denied&denial_reason=${encodeURIComponent(denialReason)}`);
+      toast.success("Cotización negada");
+      setDenialDialogOpen(false);
+      setSelectedQuote(null);
+      setDenialReason("");
+      fetchData();
+    } catch (error) {
+      toast.error("Error al negar cotización");
+    }
+  };
+
+  const handleEditQuote = (quote) => {
+    setSelectedQuote(quote);
+    setFormData({
+      client_id: quote.client_id,
+      quote_number: quote.quote_number,
+      title: quote.title,
+      description: quote.description || "",
+      status: quote.status,
+      show_tax: quote.show_tax !== false,
+      items: quote.items || [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0 }],
+    });
+    setEditDialogOpen(true);
+  };
+
+  const handleUpdateQuote = async (e) => {
+    e.preventDefault();
+    if (!selectedQuote) return;
+    const { subtotal, tax, total } = calculateTotals(formData.items, formData.show_tax);
+    try {
+      await api.put(`/quotes/${selectedQuote.id}`, {
+        ...formData,
+        subtotal,
+        tax,
+        total,
+      });
+      toast.success("Cotización actualizada");
+      setEditDialogOpen(false);
+      setSelectedQuote(null);
+      resetForm();
+      fetchData();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Error al actualizar cotización"));
+    }
+  };
+
+  const handleViewHistory = async (quote) => {
+    try {
+      const response = await api.get(`/quotes/${quote.id}/history`);
+      setQuoteHistory(response.data.history || []);
+      setSelectedQuote(quote);
+      setHistoryDialogOpen(true);
+    } catch (error) {
+      toast.error("Error al cargar historial");
     }
   };
 
@@ -226,6 +306,7 @@ export const Quotes = () => {
       title: "",
       description: "",
       status: "prospect",
+      show_tax: true,
       items: [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0 }],
     });
   };
@@ -235,16 +316,26 @@ export const Quotes = () => {
     return client?.name || "N/A";
   };
 
+  const getClientWithRef = (clientId) => {
+    const client = clients.find((c) => c.id === clientId);
+    if (!client) return "N/A";
+    return client.reference ? `${client.name} (${client.reference})` : client.name;
+  };
+
   // Filter quotes based on search
   const filteredQuotes = quotes.filter((quote) => {
     if (!searchFilter) return true;
     const search = searchFilter.toLowerCase();
-    const clientName = getClientName(quote.client_id)?.toLowerCase() || "";
+    const client = clients.find(c => c.id === quote.client_id);
+    const clientName = client?.name?.toLowerCase() || "";
+    const clientRef = client?.reference?.toLowerCase() || "";
     return (
       quote.quote_number?.toLowerCase().includes(search) ||
       quote.title?.toLowerCase().includes(search) ||
       quote.description?.toLowerCase().includes(search) ||
+      quote.created_by_name?.toLowerCase().includes(search) ||
       clientName.includes(search) ||
+      clientRef.includes(search) ||
       formatCurrency(quote.total).includes(search) ||
       getStatusLabel(quote.status)?.toLowerCase().includes(search)
     );
@@ -277,7 +368,7 @@ export const Quotes = () => {
     );
   }
 
-  const { subtotal, tax, total } = calculateTotals(formData.items);
+  const { subtotal, tax, total } = calculateTotals(formData.items, formData.show_tax);
 
   return (
     <div className="space-y-6 animate-fade-in" data-testid="quotes-page">
@@ -380,6 +471,7 @@ export const Quotes = () => {
                   <TableHead>Cliente</TableHead>
                   <TableHead>Monto</TableHead>
                   <TableHead>Estado</TableHead>
+                  <TableHead>Creado por</TableHead>
                   <TableHead>Fecha</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
                 </TableRow>
@@ -387,14 +479,19 @@ export const Quotes = () => {
               <TableBody>
                 {filteredQuotes.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                    <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                       {searchFilter ? "No se encontraron cotizaciones" : "No hay cotizaciones registradas"}
                     </TableCell>
                   </TableRow>
                 ) : (
                   filteredQuotes.map((quote) => (
-                    <TableRow key={quote.id} data-testid={`quote-row-${quote.id}`}>
-                      <TableCell className="font-mono text-sm">{quote.quote_number}</TableCell>
+                    <TableRow key={quote.id} data-testid={`quote-row-${quote.id}`} className={quote.status === "denied" ? "bg-red-50" : ""}>
+                      <TableCell className="font-mono text-sm">
+                        {quote.quote_number}
+                        {quote.version > 1 && (
+                          <Badge variant="outline" className="ml-1 text-xs">v{quote.version}</Badge>
+                        )}
+                      </TableCell>
                       <TableCell>
                         <div className="font-medium">{quote.title}</div>
                         {quote.description && (
@@ -402,13 +499,24 @@ export const Quotes = () => {
                             {quote.description}
                           </div>
                         )}
+                        {quote.denial_reason && (
+                          <div className="text-sm text-red-600 truncate max-w-[200px]">
+                            Motivo: {quote.denial_reason}
+                          </div>
+                        )}
                       </TableCell>
-                      <TableCell>{getClientName(quote.client_id)}</TableCell>
-                      <TableCell className="font-medium">{formatCurrency(quote.total)}</TableCell>
+                      <TableCell>{getClientWithRef(quote.client_id)}</TableCell>
+                      <TableCell className="font-medium">
+                        {formatCurrency(quote.total)}
+                        {!quote.show_tax && <span className="text-xs text-muted-foreground ml-1">(sin IVA)</span>}
+                      </TableCell>
                       <TableCell>
                         <Badge className={getStatusColor(quote.status)}>
                           {getStatusLabel(quote.status)}
                         </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {quote.created_by_name || "-"}
                       </TableCell>
                       <TableCell>{formatDate(quote.created_at)}</TableCell>
                       <TableCell>
@@ -419,6 +527,14 @@ export const Quotes = () => {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
+                            <DropdownMenuItem onClick={() => handleEditQuote(quote)}>
+                              <Edit className="mr-2 h-4 w-4 text-blue-500" />
+                              Editar
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onClick={() => handleViewHistory(quote)}>
+                              <History className="mr-2 h-4 w-4 text-slate-500" />
+                              Ver Historial
+                            </DropdownMenuItem>
                             <DropdownMenuItem onClick={() => handleDownloadPDF(quote.id)}>
                               <Download className="mr-2 h-4 w-4 text-blue-500" />
                               Descargar PDF
@@ -592,14 +708,29 @@ export const Quotes = () => {
 
               {/* Totals */}
               <div className="space-y-2 p-4 bg-slate-100 rounded-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="show_tax"
+                      checked={formData.show_tax}
+                      onCheckedChange={(checked) => setFormData({ ...formData, show_tax: checked })}
+                    />
+                    <Label htmlFor="show_tax" className="text-sm font-normal cursor-pointer">
+                      Incluir IVA en cotización
+                    </Label>
+                  </div>
+                </div>
+                <Separator />
                 <div className="flex justify-between">
                   <span>Subtotal:</span>
                   <span className="font-medium">{formatCurrency(subtotal)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span>IVA (16%):</span>
-                  <span className="font-medium">{formatCurrency(tax)}</span>
-                </div>
+                {formData.show_tax && (
+                  <div className="flex justify-between">
+                    <span>IVA (16%):</span>
+                    <span className="font-medium">{formatCurrency(tax)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-lg font-bold">
                   <span>Total:</span>
                   <span className="text-primary">{formatCurrency(total)}</span>
@@ -615,6 +746,280 @@ export const Quotes = () => {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Quote Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+          <form onSubmit={handleUpdateQuote}>
+            <DialogHeader>
+              <DialogTitle>Editar Cotización - {selectedQuote?.quote_number}</DialogTitle>
+              <DialogDescription>
+                Modifica la cotización. Los cambios se guardarán en el historial.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Cliente *</Label>
+                  <Select
+                    value={formData.client_id}
+                    onValueChange={(value) => setFormData({ ...formData, client_id: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar cliente" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {clients.map((client) => (
+                        <SelectItem key={client.id} value={client.id}>
+                          {client.name} {client.reference && `(${client.reference})`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Estado</Label>
+                  <Select
+                    value={formData.status}
+                    onValueChange={(value) => setFormData({ ...formData, status: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {QUOTE_STATUSES.map((s) => (
+                        <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label>Título *</Label>
+                <Input
+                  value={formData.title}
+                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Descripción</Label>
+                <Textarea
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                  rows={2}
+                />
+              </div>
+
+              {/* Items */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Conceptos</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={addItem}>
+                    <PlusCircle className="mr-1 h-4 w-4" />
+                    Agregar
+                  </Button>
+                </div>
+                {formData.items.map((item, index) => (
+                  <div key={index} className="grid grid-cols-12 gap-2 items-end p-3 bg-slate-50 rounded-sm">
+                    <div className="col-span-4">
+                      <Label className="text-xs">Descripción</Label>
+                      <Input
+                        value={item.description}
+                        onChange={(e) => handleItemChange(index, "description", e.target.value)}
+                        placeholder="Concepto"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Label className="text-xs">Cantidad</Label>
+                      <Input
+                        type="number"
+                        value={item.quantity}
+                        onChange={(e) => handleItemChange(index, "quantity", parseFloat(e.target.value) || 0)}
+                      />
+                    </div>
+                    <div className="col-span-1">
+                      <Label className="text-xs">Unidad</Label>
+                      <Input
+                        value={item.unit}
+                        onChange={(e) => handleItemChange(index, "unit", e.target.value)}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Label className="text-xs">P. Unitario</Label>
+                      <Input
+                        type="number"
+                        value={item.unit_price}
+                        onChange={(e) => handleItemChange(index, "unit_price", parseFloat(e.target.value) || 0)}
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <Label className="text-xs">Total</Label>
+                      <Input value={formatCurrency(item.quantity * item.unit_price)} disabled />
+                    </div>
+                    <div className="col-span-1">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => removeItem(index)}
+                        disabled={formData.items.length === 1}
+                      >
+                        <MinusCircle className="h-4 w-4 text-red-500" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Totals */}
+              <div className="space-y-2 p-4 bg-slate-100 rounded-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="edit_show_tax"
+                      checked={formData.show_tax}
+                      onCheckedChange={(checked) => setFormData({ ...formData, show_tax: checked })}
+                    />
+                    <Label htmlFor="edit_show_tax" className="text-sm font-normal cursor-pointer">
+                      Incluir IVA en cotización
+                    </Label>
+                  </div>
+                </div>
+                <Separator />
+                <div className="flex justify-between">
+                  <span>Subtotal:</span>
+                  <span className="font-medium">{formatCurrency(subtotal)}</span>
+                </div>
+                {formData.show_tax && (
+                  <div className="flex justify-between">
+                    <span>IVA (16%):</span>
+                    <span className="font-medium">{formatCurrency(tax)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-lg font-bold">
+                  <span>Total:</span>
+                  <span className="text-primary">{formatCurrency(total)}</span>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setEditDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" className="btn-industrial">
+                Guardar Cambios
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Denial Reason Dialog */}
+      <Dialog open={denialDialogOpen} onOpenChange={setDenialDialogOpen}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Ban className="h-5 w-5 text-red-500" />
+              Negar Cotización
+            </DialogTitle>
+            <DialogDescription>
+              Indica el motivo por el cual se niega esta cotización
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <Label>Motivo de negación *</Label>
+            <Textarea
+              value={denialReason}
+              onChange={(e) => setDenialReason(e.target.value)}
+              placeholder="Ej: Presupuesto excede capacidad del cliente, cambio de prioridades..."
+              rows={3}
+              className="mt-2"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDenialDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleDenyQuote} 
+              className="bg-red-600 hover:bg-red-700"
+              disabled={!denialReason.trim()}
+            >
+              Confirmar Negación
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* History Dialog */}
+      <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
+        <DialogContent className="sm:max-w-[600px] max-h-[70vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <History className="h-5 w-5" />
+              Historial de Cambios - {selectedQuote?.quote_number}
+            </DialogTitle>
+            <DialogDescription>
+              Versión actual: {selectedQuote?.version || 1}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            {quoteHistory.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No hay cambios registrados para esta cotización
+              </div>
+            ) : (
+              quoteHistory.slice().reverse().map((entry, idx) => (
+                <Card key={idx} className="border-l-4 border-l-primary">
+                  <CardContent className="pt-4">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <Badge variant="outline">Versión {entry.version}</Badge>
+                        <span className="ml-2 text-sm text-muted-foreground">
+                          por {entry.modified_by_name}
+                        </span>
+                      </div>
+                      <span className="text-xs text-muted-foreground">
+                        {formatDate(entry.modified_at)}
+                      </span>
+                    </div>
+                    <div className="text-sm space-y-1">
+                      {Object.keys(entry.changes).map((field) => (
+                        <div key={field} className="flex items-center gap-2">
+                          <span className="font-medium capitalize">{field.replace(/_/g, ' ')}:</span>
+                          {field === 'items' ? (
+                            <span className="text-muted-foreground">Conceptos modificados</span>
+                          ) : (
+                            <>
+                              <span className="text-red-500 line-through">
+                                {typeof entry.previous_values[field] === 'number' 
+                                  ? formatCurrency(entry.previous_values[field])
+                                  : String(entry.previous_values[field] || '-').substring(0, 30)}
+                              </span>
+                              <span>→</span>
+                              <span className="text-emerald-600">
+                                {typeof entry.changes[field] === 'number'
+                                  ? formatCurrency(entry.changes[field])
+                                  : String(entry.changes[field] || '-').substring(0, 30)}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setHistoryDialogOpen(false)}>
+              Cerrar
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
