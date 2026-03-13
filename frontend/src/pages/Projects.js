@@ -300,7 +300,8 @@ export const Projects = () => {
 
   const getClientName = (clientId) => {
     const client = clients.find((c) => c.id === clientId);
-    return client?.name || "N/A";
+    if (!client) return "N/A";
+    return client.reference ? `${client.name} (${client.reference})` : client.name;
   };
 
   const baseFilteredProjects = statusFilter === "all" 
@@ -394,7 +395,7 @@ export const Projects = () => {
                       <SelectContent>
                         {clients.map((client) => (
                           <SelectItem key={client.id} value={client.id}>
-                            {client.name}
+                            {client.name} {client.reference && `(${client.reference})`}
                           </SelectItem>
                         ))}
                       </SelectContent>

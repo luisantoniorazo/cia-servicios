@@ -616,7 +616,7 @@ export const Quotes = () => {
                     <SelectContent>
                       {clients.map((client) => (
                         <SelectItem key={client.id} value={client.id}>
-                          {client.name}
+                          {client.name} {client.reference && `(${client.reference})`}
                         </SelectItem>
                       ))}
                     </SelectContent>

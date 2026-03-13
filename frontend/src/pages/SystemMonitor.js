@@ -79,8 +79,11 @@ export const SystemMonitor = () => {
   const [health, setHealth] = useState(null);
   const [reports, setReports] = useState([]);
   const [issues, setIssues] = useState([]);
+  const [scheduledDiagnostics, setScheduledDiagnostics] = useState([]);
+  const [schedulerStatus, setSchedulerStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [runningTests, setRunningTests] = useState(false);
+  const [runningAutoRepair, setRunningAutoRepair] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null);
   const [issueDialogOpen, setIssueDialogOpen] = useState(false);
   const [issueForm, setIssueForm] = useState({
@@ -92,14 +95,18 @@ export const SystemMonitor = () => {
 
   const fetchData = useCallback(async () => {
     try {
-      const [healthRes, reportsRes, issuesRes] = await Promise.all([
+      const [healthRes, reportsRes, issuesRes, scheduledRes, schedulerRes] = await Promise.all([
         api.get("/super-admin/system/health"),
         api.get("/super-admin/system/reports?limit=10"),
         api.get("/super-admin/system/issues"),
+        api.get("/super-admin/system/scheduled-diagnostics?limit=10"),
+        api.get("/super-admin/system/scheduler-status"),
       ]);
       setHealth(healthRes.data);
       setReports(reportsRes.data);
       setIssues(issuesRes.data);
+      setScheduledDiagnostics(scheduledRes.data);
+      setSchedulerStatus(schedulerRes.data);
     } catch (error) {
       console.error(error);
     } finally {
@@ -140,6 +147,26 @@ export const SystemMonitor = () => {
       toast.error("Error al ejecutar pruebas");
     } finally {
       setRunningTests(false);
+    }
+  };
+
+  const runAutoRepair = async () => {
+    setRunningAutoRepair(true);
+    try {
+      toast.info("Ejecutando auto-reparación...");
+      const response = await api.post("/super-admin/system/run-autorepair");
+      
+      if (response.data.total_repairs > 0) {
+        toast.success(`Auto-reparación completada: ${response.data.total_repairs} reparación(es) realizadas`);
+      } else {
+        toast.info("No se encontraron problemas para reparar");
+      }
+      
+      fetchData();
+    } catch (error) {
+      toast.error("Error al ejecutar auto-reparación");
+    } finally {
+      setRunningAutoRepair(false);
     }
   };
 
@@ -201,6 +228,20 @@ export const SystemMonitor = () => {
             Auto-refresh {autoRefresh ? "ON" : "OFF"}
           </Button>
           <Button
+            onClick={runAutoRepair}
+            disabled={runningAutoRepair}
+            variant="outline"
+            className="border-blue-500 text-blue-400 hover:bg-blue-500/20"
+            data-testid="run-autorepair-btn"
+          >
+            {runningAutoRepair ? (
+              <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Wrench className="h-4 w-4 mr-2" />
+            )}
+            Auto-Reparar
+          </Button>
+          <Button
             onClick={runTests}
             disabled={runningTests}
             className="bg-amber-500 hover:bg-amber-600 text-slate-900"
@@ -215,6 +256,33 @@ export const SystemMonitor = () => {
           </Button>
         </div>
       </div>
+
+      {/* Scheduler Status */}
+      {schedulerStatus && (
+        <Card className="bg-slate-800/50 border-slate-700">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Clock className={`h-6 w-6 ${schedulerStatus.running ? 'text-emerald-400' : 'text-red-400'}`} />
+                <div>
+                  <div className="text-white font-medium">Diagnóstico Programado</div>
+                  <div className="text-sm text-slate-400">
+                    {schedulerStatus.running ? "Activo - Se ejecuta diariamente a las 2:00 AM" : "Inactivo"}
+                  </div>
+                </div>
+              </div>
+              {schedulerStatus.jobs?.length > 0 && (
+                <div className="text-right">
+                  <div className="text-xs text-slate-500">Próxima ejecución:</div>
+                  <div className="text-sm text-emerald-400">
+                    {new Date(schedulerStatus.jobs[0].next_run).toLocaleString('es-MX')}
+                  </div>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Health Status Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -286,6 +354,10 @@ export const SystemMonitor = () => {
             <CheckCircle className="h-4 w-4 mr-2" />
             Pruebas
           </TabsTrigger>
+          <TabsTrigger value="scheduled" className="data-[state=active]:bg-amber-500 data-[state=active]:text-slate-900">
+            <Clock className="h-4 w-4 mr-2" />
+            Programados
+          </TabsTrigger>
           <TabsTrigger value="issues" className="data-[state=active]:bg-amber-500 data-[state=active]:text-slate-900">
             <Bug className="h-4 w-4 mr-2" />
             Problemas
@@ -295,6 +367,73 @@ export const SystemMonitor = () => {
             Historial
           </TabsTrigger>
         </TabsList>
+
+        {/* Scheduled Diagnostics Tab */}
+        <TabsContent value="scheduled" className="space-y-4">
+          <Card className="bg-slate-800/50 border-slate-700">
+            <CardHeader>
+              <CardTitle className="text-white flex items-center gap-2">
+                <Clock className="h-5 w-5 text-blue-400" />
+                Diagnósticos Programados
+              </CardTitle>
+              <CardDescription className="text-slate-400">
+                El sistema ejecuta diagnósticos automáticos diariamente a las 2:00 AM con auto-reparación
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-sm border border-slate-700 overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-slate-800/50 border-slate-700">
+                      <TableHead className="text-slate-300">Fecha</TableHead>
+                      <TableHead className="text-slate-300">Estado</TableHead>
+                      <TableHead className="text-slate-300">Reparaciones</TableHead>
+                      <TableHead className="text-slate-300">Detalles</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {scheduledDiagnostics.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-8 text-slate-400">
+                          No hay diagnósticos programados registrados aún
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      scheduledDiagnostics.map((diag) => (
+                        <TableRow key={diag.id} className="border-slate-700">
+                          <TableCell className="text-slate-300">
+                            {new Date(diag.created_at).toLocaleString("es-MX")}
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={diag.status === "completed" ? "bg-emerald-500/20 text-emerald-400" : "bg-red-500/20 text-red-400"}>
+                              {diag.status === "completed" ? "Completado" : "Error"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-slate-300">
+                            {diag.total_repairs || 0} reparación(es)
+                          </TableCell>
+                          <TableCell>
+                            {diag.repairs_made?.length > 0 ? (
+                              <ul className="text-xs text-slate-400">
+                                {diag.repairs_made.map((repair, idx) => (
+                                  <li key={idx}>• {repair}</li>
+                                ))}
+                              </ul>
+                            ) : diag.error ? (
+                              <span className="text-xs text-red-400">{diag.error}</span>
+                            ) : (
+                              <span className="text-xs text-slate-500">Sin reparaciones necesarias</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* Tests Tab */}
         <TabsContent value="tests" className="space-y-4">

@@ -14,6 +14,9 @@ import jwt
 import bcrypt
 from enum import Enum
 import re
+import asyncio
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -27,6 +30,9 @@ db = client[os.environ['DB_NAME']]
 JWT_SECRET = os.environ.get('JWT_SECRET', 'cia-servicios-secret-key-2024')
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRATION_HOURS = 24
+
+# Scheduler for daily diagnostics
+scheduler = AsyncIOScheduler()
 
 # Create the main app
 app = FastAPI(title="CIA SERVICIOS API", version="2.0.0")
@@ -489,13 +495,14 @@ def hash_password(password: str) -> str:
 def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
-def create_token(user_id: str, email: str, role: str, company_id: Optional[str] = None, company_slug: Optional[str] = None) -> str:
+def create_token(user_id: str, email: str, role: str, company_id: Optional[str] = None, company_slug: Optional[str] = None, full_name: Optional[str] = None) -> str:
     payload = {
         "sub": user_id,
         "email": email,
         "role": role,
         "company_id": company_id,
         "company_slug": company_slug,
+        "full_name": full_name,
         "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -544,7 +551,7 @@ async def super_admin_login(credentials: SuperAdminLogin):
     if isinstance(user_doc.get("created_at"), str):
         user_doc["created_at"] = datetime.fromisoformat(user_doc["created_at"])
     
-    token = create_token(user_doc["id"], user_doc["email"], user_doc["role"], None, None)
+    token = create_token(user_doc["id"], user_doc["email"], user_doc["role"], None, None, user_doc.get("full_name"))
     return TokenResponse(
         access_token=token,
         user=UserResponse(**{k: v for k, v in user_doc.items() if k != "password_hash"})
@@ -620,7 +627,7 @@ async def company_login(slug: str, credentials: UserLogin):
     if isinstance(user_doc.get("created_at"), str):
         user_doc["created_at"] = datetime.fromisoformat(user_doc["created_at"])
     
-    token = create_token(user_doc["id"], user_doc["email"], user_doc["role"], company["id"], slug)
+    token = create_token(user_doc["id"], user_doc["email"], user_doc["role"], company["id"], slug, user_doc.get("full_name"))
     
     return TokenResponse(
         access_token=token,
@@ -1440,6 +1447,193 @@ async def update_system_issue(
     filtered["updated_at"] = datetime.now(timezone.utc).isoformat()
     
     await db.system_issues.update_one({"id": issue_id}, {"$set": filtered})
+
+# ============== AUTO-REPAIR FUNCTIONS ==============
+async def auto_repair_orphan_users():
+    """Delete users without valid company"""
+    companies = await db.companies.find({}, {"_id": 0, "id": 1}).to_list(1000)
+    company_ids = {c["id"] for c in companies}
+    result = await db.users.delete_many({
+        "role": {"$ne": "super_admin"},
+        "company_id": {"$nin": list(company_ids)}
+    })
+    return result.deleted_count
+
+async def auto_repair_orphan_invoices():
+    """Mark orphan invoices as cancelled"""
+    clients = await db.clients.find({}, {"_id": 0, "id": 1}).to_list(5000)
+    client_ids = {c["id"] for c in clients}
+    result = await db.invoices.update_many(
+        {"client_id": {"$nin": list(client_ids)}},
+        {"$set": {"status": "cancelled", "notes": "Auto-cancelada: cliente no existe"}}
+    )
+    return result.modified_count
+
+async def auto_repair_invoice_status():
+    """Fix overdue invoices status"""
+    now = datetime.now(timezone.utc)
+    result = await db.invoices.update_many(
+        {
+            "status": "pending",
+            "due_date": {"$lt": now.isoformat()}
+        },
+        {"$set": {"status": "overdue"}}
+    )
+    return result.modified_count
+
+async def auto_repair_project_progress():
+    """Fix invalid project progress values"""
+    result_over = await db.projects.update_many(
+        {"total_progress": {"$gt": 100}},
+        {"$set": {"total_progress": 100}}
+    )
+    result_under = await db.projects.update_many(
+        {"total_progress": {"$lt": 0}},
+        {"$set": {"total_progress": 0}}
+    )
+    return result_over.modified_count + result_under.modified_count
+
+async def auto_repair_companies_without_admin():
+    """Create default admin for companies without admin"""
+    companies = await db.companies.find({}, {"_id": 0}).to_list(100)
+    fixed = 0
+    for company in companies:
+        admin = await db.users.find_one({
+            "company_id": company["id"],
+            "role": "admin"
+        }, {"_id": 0})
+        if not admin:
+            # Create a default admin
+            new_admin = {
+                "id": str(uuid.uuid4()),
+                "company_id": company["id"],
+                "email": f"admin@{company['slug']}.local",
+                "full_name": f"Admin {company['business_name']}",
+                "password_hash": hash_password("TempAdmin2024!"),
+                "role": "admin",
+                "is_active": True,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            await db.users.insert_one(new_admin)
+            fixed += 1
+    return fixed
+
+async def run_scheduled_diagnostics():
+    """Run daily scheduled diagnostics with auto-repair"""
+    logger.info("🔄 Iniciando diagnóstico programado...")
+    start_time = datetime.now(timezone.utc)
+    repairs_made = []
+    
+    try:
+        # Auto-repair orphan users
+        deleted_users = await auto_repair_orphan_users()
+        if deleted_users > 0:
+            repairs_made.append(f"Eliminados {deleted_users} usuarios huérfanos")
+        
+        # Auto-repair orphan invoices
+        cancelled_invoices = await auto_repair_orphan_invoices()
+        if cancelled_invoices > 0:
+            repairs_made.append(f"Canceladas {cancelled_invoices} facturas huérfanas")
+        
+        # Auto-repair invoice status
+        fixed_status = await auto_repair_invoice_status()
+        if fixed_status > 0:
+            repairs_made.append(f"Corregido estado de {fixed_status} facturas vencidas")
+        
+        # Auto-repair project progress
+        fixed_progress = await auto_repair_project_progress()
+        if fixed_progress > 0:
+            repairs_made.append(f"Corregido progreso de {fixed_progress} proyectos")
+        
+        # Auto-repair companies without admin
+        fixed_admins = await auto_repair_companies_without_admin()
+        if fixed_admins > 0:
+            repairs_made.append(f"Creado admin para {fixed_admins} empresa(s)")
+        
+        # Save scheduled report
+        report = {
+            "id": str(uuid.uuid4()),
+            "type": "scheduled",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "duration_ms": int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000),
+            "repairs_made": repairs_made,
+            "total_repairs": len(repairs_made),
+            "status": "completed"
+        }
+        await db.scheduled_diagnostics.insert_one(report)
+        
+        logger.info(f"✅ Diagnóstico programado completado. Reparaciones: {len(repairs_made)}")
+        
+    except Exception as e:
+        logger.error(f"❌ Error en diagnóstico programado: {str(e)}")
+        error_report = {
+            "id": str(uuid.uuid4()),
+            "type": "scheduled",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "status": "failed",
+            "error": str(e)
+        }
+        await db.scheduled_diagnostics.insert_one(error_report)
+
+@api_router.get("/super-admin/system/scheduled-diagnostics")
+async def get_scheduled_diagnostics(
+    limit: int = 30,
+    current_user: dict = Depends(require_super_admin)
+):
+    """Get scheduled diagnostics history"""
+    diagnostics = await db.scheduled_diagnostics.find(
+        {}, {"_id": 0}
+    ).sort("created_at", -1).limit(limit).to_list(limit)
+    return diagnostics
+
+@api_router.post("/super-admin/system/run-autorepair")
+async def run_manual_autorepair(current_user: dict = Depends(require_super_admin)):
+    """Manually trigger auto-repair"""
+    repairs = []
+    
+    # Run all repairs
+    deleted_users = await auto_repair_orphan_users()
+    if deleted_users > 0:
+        repairs.append({"action": "Usuarios huérfanos eliminados", "count": deleted_users})
+    
+    cancelled_invoices = await auto_repair_orphan_invoices()
+    if cancelled_invoices > 0:
+        repairs.append({"action": "Facturas huérfanas canceladas", "count": cancelled_invoices})
+    
+    fixed_status = await auto_repair_invoice_status()
+    if fixed_status > 0:
+        repairs.append({"action": "Estados de facturas corregidos", "count": fixed_status})
+    
+    fixed_progress = await auto_repair_project_progress()
+    if fixed_progress > 0:
+        repairs.append({"action": "Progreso de proyectos corregido", "count": fixed_progress})
+    
+    fixed_admins = await auto_repair_companies_without_admin()
+    if fixed_admins > 0:
+        repairs.append({"action": "Admins creados para empresas sin admin", "count": fixed_admins})
+    
+    return {
+        "message": "Auto-reparación completada",
+        "repairs": repairs,
+        "total_repairs": sum(r["count"] for r in repairs) if repairs else 0
+    }
+
+@api_router.get("/super-admin/system/scheduler-status")
+async def get_scheduler_status(current_user: dict = Depends(require_super_admin)):
+    """Get scheduler status and next run time"""
+    jobs = scheduler.get_jobs()
+    next_runs = []
+    for job in jobs:
+        next_runs.append({
+            "job_id": job.id,
+            "name": job.name,
+            "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+            "trigger": str(job.trigger)
+        })
+    return {
+        "running": scheduler.running,
+        "jobs": next_runs
+    }
     
     return {"message": "Problema actualizado"}
 
@@ -1613,11 +1807,19 @@ async def update_company(company_id: str, update_data: dict, current_user: dict 
     updated_company = await db.companies.find_one({"id": company_id}, {"_id": 0})
     return updated_company
 
+class LogoUploadData(BaseModel):
+    logo_data: str
+
 @api_router.post("/companies/{company_id}/logo")
-async def upload_company_logo(company_id: str, logo_data: str, current_user: dict = Depends(require_admin)):
+async def upload_company_logo(company_id: str, data: LogoUploadData, current_user: dict = Depends(require_admin)):
     """Upload company logo as base64"""
     if current_user.get("company_id") != company_id and current_user.get("role") != UserRole.SUPER_ADMIN:
         raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    logo_data = data.logo_data
+    # Remove data URL prefix if present
+    if logo_data.startswith("data:"):
+        logo_data = logo_data.split(",", 1)[1] if "," in logo_data else logo_data
     
     # Validate base64 and size
     try:
@@ -1625,7 +1827,7 @@ async def upload_company_logo(company_id: str, logo_data: str, current_user: dic
         if len(content_bytes) > 2 * 1024 * 1024:  # Max 2MB
             raise HTTPException(status_code=400, detail="El logo excede 2MB")
     except Exception as e:
-        raise HTTPException(status_code=400, detail="Formato de imagen inválido")
+        raise HTTPException(status_code=400, detail=f"Formato de imagen inválido: {str(e)}")
     
     await db.companies.update_one(
         {"id": company_id},
@@ -3633,6 +3835,21 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup_event():
+    """Initialize scheduled tasks"""
+    # Schedule daily diagnostics at 2:00 AM
+    scheduler.add_job(
+        run_scheduled_diagnostics,
+        CronTrigger(hour=2, minute=0),
+        id="daily_diagnostics",
+        name="Diagnóstico Diario",
+        replace_existing=True
+    )
+    scheduler.start()
+    logger.info("✅ Scheduler iniciado - Diagnósticos diarios programados a las 2:00 AM")
+
 @app.on_event("shutdown")
 async def shutdown_db_client():
+    scheduler.shutdown()
     client.close()

@@ -164,9 +164,9 @@ export const Settings = () => {
     if (!logoFile) return null;
     try {
       const logoBase64 = await fileToBase64(logoFile);
-      const response = await api.post(`/companies/${company.id}/logo`, logoBase64, {
-        headers: { 'Content-Type': 'application/json' }
-      });
+      // Remove data URL prefix - send only the base64 content
+      const base64Content = logoBase64.includes(',') ? logoBase64.split(',')[1] : logoBase64;
+      const response = await api.post(`/companies/${company.id}/logo`, { logo_data: base64Content });
       toast.success("Logo actualizado");
       setLogoFile(null);
       return response.data; // Return updated company
