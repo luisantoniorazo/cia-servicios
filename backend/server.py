@@ -3633,7 +3633,7 @@ Responde en español con datos concretos y recomendaciones accionables."""
 
 # ============== PDF GENERATION ==============
 def add_professional_header(elements: list, company: dict, doc_type: str, doc_number: str, doc_date: str):
-    """Add professional executive header with logo and document info"""
+    """Add professional executive header with logo and document info - CLEAN LAYOUT"""
     from reportlab.platypus import Image as RLImage, HRFlowable
     
     # Color scheme for different document types
@@ -3644,49 +3644,52 @@ def add_professional_header(elements: list, company: dict, doc_type: str, doc_nu
     }
     scheme = color_schemes.get(doc_type, color_schemes['quote'])
     
-    # Title styles
-    company_name_style = ParagraphStyle(
-        'CompanyName', 
-        fontSize=20, 
-        fontName='Helvetica-Bold',
-        textColor=colors.HexColor(scheme['primary']),
-        spaceAfter=2
-    )
-    company_info_style = ParagraphStyle(
-        'CompanyInfo', 
-        fontSize=9, 
-        fontName='Helvetica',
-        textColor=colors.HexColor('#4a5568'),
-        leading=12
-    )
-    doc_title_style = ParagraphStyle(
-        'DocTitle', 
-        fontSize=14, 
-        fontName='Helvetica-Bold',
-        textColor=colors.HexColor(scheme['secondary']),
-        alignment=TA_RIGHT
-    )
-    doc_number_style = ParagraphStyle(
-        'DocNumber', 
-        fontSize=22, 
-        fontName='Helvetica-Bold',
-        textColor=colors.HexColor(scheme['primary']),
-        alignment=TA_RIGHT
-    )
-    doc_date_style = ParagraphStyle(
-        'DocDate', 
-        fontSize=10, 
-        fontName='Helvetica',
-        textColor=colors.HexColor('#718096'),
-        alignment=TA_RIGHT
-    )
-    
     doc_titles = {
         'quote': 'COTIZACIÓN',
         'invoice': 'FACTURA',
         'purchase_order': 'ORDEN DE COMPRA',
     }
     
+    # Styles
+    company_name_style = ParagraphStyle(
+        'CompanyName', 
+        fontSize=14, 
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor(scheme['primary']),
+        leading=18,
+        spaceAfter=4
+    )
+    company_info_line_style = ParagraphStyle(
+        'CompanyInfoLine', 
+        fontSize=8, 
+        fontName='Helvetica',
+        textColor=colors.HexColor('#4a5568'),
+        leading=11
+    )
+    doc_title_style = ParagraphStyle(
+        'DocTitle', 
+        fontSize=10, 
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor(scheme['secondary']),
+        alignment=TA_RIGHT
+    )
+    doc_number_style = ParagraphStyle(
+        'DocNumber', 
+        fontSize=16, 
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor(scheme['primary']),
+        alignment=TA_RIGHT,
+        spaceAfter=4
+    )
+    doc_date_style = ParagraphStyle(
+        'DocDate', 
+        fontSize=9, 
+        fontName='Helvetica',
+        textColor=colors.HexColor('#718096'),
+        alignment=TA_RIGHT
+    )
+    
+    # Process logo
     logo_file = company.get('logo_file')
     logo_element = None
     
@@ -3695,64 +3698,86 @@ def add_professional_header(elements: list, company: dict, doc_type: str, doc_nu
             logo_bytes = base64.b64decode(logo_file)
             logo_buffer = BytesIO(logo_bytes)
             logo_img = RLImage(logo_buffer)
-            # Scale logo proportionally (max 1 inch height)
             aspect = logo_img.drawWidth / logo_img.drawHeight if logo_img.drawHeight > 0 else 1
-            logo_img.drawHeight = min(0.9*inch, logo_img.drawHeight)
+            logo_img.drawHeight = min(0.6*inch, logo_img.drawHeight)
             logo_img.drawWidth = logo_img.drawHeight * aspect
             logo_element = logo_img
         except:
             logo_element = None
     
-    # Build company info column
-    company_info = []
+    # === BUILD LEFT SIDE: Logo + Company Info in ONE column ===
+    left_content = []
+    
+    # Add logo if exists
     if logo_element:
-        company_info.append(logo_element)
-    company_info.append(Paragraph(company.get('business_name', 'CIA SERVICIOS'), company_name_style))
+        left_content.append([logo_element])
+        left_content.append([Spacer(1, 4)])
     
-    info_lines = []
+    # Company name
+    left_content.append([Paragraph(company.get('business_name') or 'CIA SERVICIOS', company_name_style)])
+    
+    # Build compact info line (RFC • Address)
+    info_parts = []
     if company.get('rfc'):
-        info_lines.append(f"RFC: {company.get('rfc')}")
+        info_parts.append(f"RFC: {company.get('rfc')}")
     if company.get('address'):
-        info_lines.append(company.get('address'))
+        info_parts.append(company.get('address'))
+    
+    if info_parts:
+        left_content.append([Paragraph(" • ".join(info_parts), company_info_line_style)])
+    
+    # Build contact line (Phone • Email)
+    contact_parts = []
     if company.get('phone'):
-        info_lines.append(f"Tel: {company.get('phone')}")
+        contact_parts.append(f"Tel: {company.get('phone')}")
     if company.get('email'):
-        info_lines.append(company.get('email'))
+        contact_parts.append(company.get('email'))
     
-    if info_lines:
-        company_info.append(Paragraph('<br/>'.join(info_lines), company_info_style))
+    if contact_parts:
+        left_content.append([Paragraph(" • ".join(contact_parts), company_info_line_style)])
     
-    # Build document info column
-    doc_info = [
-        Paragraph(doc_titles.get(doc_type, 'DOCUMENTO'), doc_title_style),
-        Paragraph(doc_number, doc_number_style),
-        Spacer(1, 4),
-        Paragraph(f"Fecha: {doc_date}", doc_date_style),
-    ]
-    
-    # Create header table
-    left_cell = Table([[item] for item in company_info], colWidths=[4*inch])
-    left_cell.setStyle(TableStyle([
+    left_table = Table(left_content, colWidths=[4.5*inch])
+    left_table.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 1),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
     ]))
     
-    right_cell = Table([[item] for item in doc_info], colWidths=[2.8*inch])
-    right_cell.setStyle(TableStyle([
+    # === RIGHT SIDE: Document Info ===
+    right_content = [
+        [Paragraph(doc_titles.get(doc_type, 'DOCUMENTO'), doc_title_style)],
+        [Paragraph(doc_number, doc_number_style)],
+        [Paragraph(f"Fecha: {doc_date}", doc_date_style)],
+    ]
+    
+    right_table = Table(right_content, colWidths=[2.5*inch])
+    right_table.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
     ]))
     
-    header_table = Table([[left_cell, right_cell]], colWidths=[4.2*inch, 3*inch])
+    # === MAIN HEADER TABLE ===
+    header_table = Table(
+        [[left_table, right_table]], 
+        colWidths=[4.7*inch, 2.5*inch]
+    )
     header_table.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
     ]))
     
     elements.append(header_table)
     
     # Add separator line
-    elements.append(Spacer(1, 0.15*inch))
-    elements.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor(scheme['secondary']), spaceAfter=0.2*inch))
+    elements.append(Spacer(1, 0.12*inch))
+    elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor(scheme['secondary']), spaceAfter=0.15*inch))
 
 def add_company_header_to_pdf(elements: list, company: dict, styles, title_style):
     """Legacy wrapper - redirects to professional header"""
