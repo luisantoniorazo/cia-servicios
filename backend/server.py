@@ -797,6 +797,7 @@ async def create_company_with_admin(company_data: CompanyCreate, current_user: d
 async def list_all_companies(current_user: dict = Depends(require_super_admin)):
     """Listar todas las empresas (Super Admin)"""
     companies = await db.companies.find({}, {"_id": 0}).to_list(1000)
+    now = datetime.now(timezone.utc)
     
     result = []
     for c in companies:
@@ -813,6 +814,22 @@ async def list_all_companies(current_user: dict = Depends(require_super_admin)):
         admin = await db.users.find_one({"company_id": c["id"], "role": UserRole.ADMIN}, {"_id": 0, "password_hash": 0})
         c["admin_email"] = admin.get("email") if admin else None
         c["admin_name"] = admin.get("full_name") if admin else None
+        c["admin_blocked"] = not admin.get("is_active", True) if admin else False
+        
+        # Calculate days until expiry
+        days_until_expiry = None
+        subscription_end = c.get("subscription_end")
+        if subscription_end:
+            if isinstance(subscription_end, str):
+                try:
+                    subscription_end = datetime.fromisoformat(subscription_end.replace('Z', '+00:00'))
+                except:
+                    subscription_end = None
+            if subscription_end:
+                if subscription_end.tzinfo is None:
+                    subscription_end = subscription_end.replace(tzinfo=timezone.utc)
+                days_until_expiry = (subscription_end - now).days
+        c["days_until_expiry"] = days_until_expiry
         
         result.append(c)
     
