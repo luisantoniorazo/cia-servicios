@@ -3748,7 +3748,9 @@ def add_professional_header(elements: list, company: dict, doc_type: str, doc_nu
     # === RIGHT SIDE: Document Info ===
     right_content = [
         [Paragraph(doc_titles.get(doc_type, 'DOCUMENTO'), doc_title_style)],
+        [Spacer(1, 8)],
         [Paragraph(doc_number, doc_number_style)],
+        [Spacer(1, 10)],
         [Paragraph(f"Fecha: {doc_date}", doc_date_style)],
     ]
     
@@ -3758,8 +3760,8 @@ def add_professional_header(elements: list, company: dict, doc_type: str, doc_nu
         ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
         ('LEFTPADDING', (0, 0), (-1, -1), 0),
         ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-        ('TOPPADDING', (0, 0), (-1, -1), 2),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
     ]))
     
     # === MAIN HEADER TABLE ===
@@ -3901,18 +3903,8 @@ def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
     if items:
         elements.append(Paragraph("DETALLE DE PRODUCTOS/SERVICIOS", section_title_style))
         
-        # Header row with styled paragraphs
-        header_style = ParagraphStyle('Header', fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, alignment=TA_CENTER)
-        header_right = ParagraphStyle('HeaderRight', fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, alignment=TA_RIGHT)
-        
-        table_data = [[
-            Paragraph('#', header_style),
-            Paragraph('Descripción', header_style),
-            Paragraph('Cant.', header_style),
-            Paragraph('Unidad', header_style),
-            Paragraph('P. Unitario', header_right),
-            Paragraph('Total', header_right)
-        ]]
+        # Header row - use simple strings for headers to avoid wrapping issues
+        table_data = [['#', 'Descripción', 'Cant.', 'Unidad', 'P. Unitario', 'Total']]
         
         for i, item in enumerate(items, 1):
             # Use Paragraph for description - THIS IS THE KEY FOR AUTO-ADJUSTING
@@ -3920,34 +3912,47 @@ def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
             desc_paragraph = Paragraph(desc_text, cell_desc_style)
             
             table_data.append([
-                Paragraph(str(i), ParagraphStyle('Num', fontSize=9, alignment=TA_CENTER)),
+                str(i),
                 desc_paragraph,  # Auto-adjusting description cell
-                Paragraph(str(item.get('quantity', 1)), cell_number_style),
-                Paragraph(item.get('unit', 'pza'), ParagraphStyle('Unit', fontSize=9, alignment=TA_CENTER)),
-                Paragraph(f"${item.get('unit_price', 0):,.2f}", cell_number_style),
-                Paragraph(f"${item.get('total', 0):,.2f}", cell_number_style)
+                str(item.get('quantity', 1)),
+                item.get('unit', 'pza'),
+                f"${item.get('unit_price', 0):,.2f}",
+                f"${item.get('total', 0):,.2f}"
             ])
         
-        # Adjusted column widths for better description space
-        items_table = Table(table_data, colWidths=[0.35*inch, 3.4*inch, 0.5*inch, 0.55*inch, 0.95*inch, 0.95*inch])
+        # Adjusted column widths - wider columns for headers
+        items_table = Table(table_data, colWidths=[0.4*inch, 3.0*inch, 0.6*inch, 0.7*inch, 1.0*inch, 1.0*inch])
         items_table.setStyle(TableStyle([
             # Header styling
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(SECONDARY)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            
+            # Data rows alignment
+            ('ALIGN', (0, 1), (0, -1), 'CENTER'),  # # column
+            ('ALIGN', (2, 1), (2, -1), 'CENTER'),  # Cant column
+            ('ALIGN', (3, 1), (3, -1), 'CENTER'),  # Unidad column
+            ('ALIGN', (4, 1), (-1, -1), 'RIGHT'),  # Price columns
+            
+            # Font for data rows
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
             
             # Alternating row colors
-            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f7fafc')]),
             
             # Borders
             ('BOX', (0, 0), (-1, -1), 1, colors.HexColor(SECONDARY)),
-            ('LINEBELOW', (0, 0), (-1, 0), 1, colors.HexColor(PRIMARY)),
+            ('LINEBELOW', (0, 0), (-1, 0), 1.5, colors.HexColor(PRIMARY)),
             ('LINEBELOW', (0, 1), (-1, -2), 0.5, colors.HexColor('#e2e8f0')),
             
             # Alignment
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('VALIGN', (1, 1), (1, -1), 'TOP'),  # Description column top-aligned
             
-            # Padding - generous for readability
+            # Padding
             ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
             ('TOPPADDING', (0, 0), (-1, 0), 10),
             ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
@@ -4197,11 +4202,11 @@ def generate_purchase_order_pdf(po: dict, company: dict, supplier: dict) -> byte
     elements.append(Paragraph("INFORMACIÓN DEL PROVEEDOR", section_title_style))
     
     supplier_info_data = [
-        [Paragraph("Proveedor", label_style), Paragraph(supplier.get('name', 'N/A'), value_style), 
-         Paragraph("RFC", label_style), Paragraph(supplier.get('rfc', 'N/A'), value_style)],
-        [Paragraph("Contacto", label_style), Paragraph(supplier.get('contact_name', 'N/A'), value_style),
-         Paragraph("Email", label_style), Paragraph(supplier.get('email', 'N/A'), value_style)],
-        [Paragraph("Teléfono", label_style), Paragraph(supplier.get('phone', 'N/A'), value_style),
+        [Paragraph("Proveedor", label_style), Paragraph(supplier.get('name') or 'N/A', value_style), 
+         Paragraph("RFC", label_style), Paragraph(supplier.get('rfc') or 'N/A', value_style)],
+        [Paragraph("Contacto", label_style), Paragraph(supplier.get('contact_name') or 'N/A', value_style),
+         Paragraph("Email", label_style), Paragraph(supplier.get('email') or 'N/A', value_style)],
+        [Paragraph("Teléfono", label_style), Paragraph(supplier.get('phone') or 'N/A', value_style),
          Paragraph("Entrega Est.", label_style), Paragraph(po.get('expected_delivery', '')[:10] if po.get('expected_delivery') else 'N/A', value_style)],
     ]
     
@@ -4229,18 +4234,8 @@ def generate_purchase_order_pdf(po: dict, company: dict, supplier: dict) -> byte
     if items:
         elements.append(Paragraph("DETALLE DE ARTÍCULOS", section_title_style))
         
-        # Header row with styled paragraphs
-        header_style = ParagraphStyle('Header', fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, alignment=TA_CENTER)
-        header_right = ParagraphStyle('HeaderRight', fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, alignment=TA_RIGHT)
-        
-        table_data = [[
-            Paragraph('#', header_style),
-            Paragraph('Descripción', header_style),
-            Paragraph('Cant.', header_style),
-            Paragraph('Unidad', header_style),
-            Paragraph('P. Unitario', header_right),
-            Paragraph('Total', header_right)
-        ]]
+        # Header row - use simple strings for headers to avoid wrapping issues
+        table_data = [['#', 'Descripción', 'Cant.', 'Unidad', 'P. Unitario', 'Total']]
         
         for i, item in enumerate(items, 1):
             # Use Paragraph for description - THIS IS THE KEY FOR AUTO-ADJUSTING
@@ -4248,34 +4243,47 @@ def generate_purchase_order_pdf(po: dict, company: dict, supplier: dict) -> byte
             desc_paragraph = Paragraph(desc_text, cell_desc_style)
             
             table_data.append([
-                Paragraph(str(i), ParagraphStyle('Num', fontSize=9, alignment=TA_CENTER)),
+                str(i),
                 desc_paragraph,  # Auto-adjusting description cell
-                Paragraph(str(item.get('quantity', 1)), cell_number_style),
-                Paragraph(item.get('unit', 'pza'), ParagraphStyle('Unit', fontSize=9, alignment=TA_CENTER)),
-                Paragraph(f"${item.get('unit_price', 0):,.2f}", cell_number_style),
-                Paragraph(f"${item.get('total', 0):,.2f}", cell_number_style)
+                str(item.get('quantity', 1)),
+                item.get('unit', 'pza'),
+                f"${item.get('unit_price', 0):,.2f}",
+                f"${item.get('total', 0):,.2f}"
             ])
         
-        # Adjusted column widths for better description space
-        items_table = Table(table_data, colWidths=[0.35*inch, 3.4*inch, 0.5*inch, 0.55*inch, 0.95*inch, 0.95*inch])
+        # Adjusted column widths - wider columns for headers
+        items_table = Table(table_data, colWidths=[0.4*inch, 3.0*inch, 0.6*inch, 0.7*inch, 1.0*inch, 1.0*inch])
         items_table.setStyle(TableStyle([
             # Header styling
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(SECONDARY)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 9),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            
+            # Data rows alignment
+            ('ALIGN', (0, 1), (0, -1), 'CENTER'),  # # column
+            ('ALIGN', (2, 1), (2, -1), 'CENTER'),  # Cant column
+            ('ALIGN', (3, 1), (3, -1), 'CENTER'),  # Unidad column
+            ('ALIGN', (4, 1), (-1, -1), 'RIGHT'),  # Price columns
+            
+            # Font for data rows
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
             
             # Alternating row colors
-            ('BACKGROUND', (0, 1), (-1, -1), colors.white),
             ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f7fff7')]),
             
             # Borders
             ('BOX', (0, 0), (-1, -1), 1, colors.HexColor(SECONDARY)),
-            ('LINEBELOW', (0, 0), (-1, 0), 1, colors.HexColor(PRIMARY)),
+            ('LINEBELOW', (0, 0), (-1, 0), 1.5, colors.HexColor(PRIMARY)),
             ('LINEBELOW', (0, 1), (-1, -2), 0.5, colors.HexColor('#c6f6d5')),
             
             # Alignment
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('VALIGN', (1, 1), (1, -1), 'TOP'),  # Description column top-aligned
             
-            # Padding - generous for readability
+            # Padding
             ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
             ('TOPPADDING', (0, 0), (-1, 0), 10),
             ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
