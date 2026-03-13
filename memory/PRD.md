@@ -160,6 +160,18 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - `PUT /api/super-admin/companies/{id}/admin` - Actualizar datos del admin
 - `PATCH /api/super-admin/companies/{id}/admin/toggle-status` - Bloquear/desbloquear admin
 
+### Suscripciones (Super Admin) ✨ NEW
+- `GET /api/super-admin/companies/{id}/subscription` - Ver estado de suscripción
+- `POST /api/super-admin/companies/{id}/subscription/renew` - Renovar suscripción
+- `GET /api/super-admin/check-expirations` - Ver empresas próximas a vencer
+
+### Migración MySQL (Super Admin) ✨ NEW
+- `POST /api/super-admin/test-mysql-connection` - Probar conexión MySQL
+- `POST /api/super-admin/init-mysql-schema` - Crear esquema de tablas
+- `POST /api/super-admin/migrate-to-mysql` - Migrar datos de MongoDB
+- `GET /api/super-admin/server-config` - Obtener configuración de servidor
+- `POST /api/super-admin/server-config` - Guardar configuración de servidor
+
 ### Tareas de Proyecto
 - `POST /api/projects/{id}/tasks` - Crear tarea
 - `GET /api/projects/{id}/tasks` - Listar tareas
@@ -188,9 +200,9 @@ Company Admin (CIA Servicios Demo):
 ```
 
 ## Testing Status
-- **Backend**: 100% verified via curl
-- **Frontend**: 100% (iteration 7)
-- **Integraciones**: AI, PDF, archivos funcionando
+- **Backend**: 100% verified via testing agent (iteration 8)
+- **Frontend**: 100% (iteration 8)
+- **Integraciones**: AI, PDF, MySQL migration, archivos funcionando
 
 ## Prioritized Backlog
 
@@ -213,15 +225,16 @@ Company Admin (CIA Servicios Demo):
 - [x] **Logo de empresa en documentos PDF** ✨
 - [x] **PDF de orden de compra** ✨
 - [x] **Dashboard configurable con widgets** ✨
-- [x] Seguimientos programados CRM ✨
-- [x] Gestión de admins desde Super Admin (editar/bloquear) ✨
+- [x] **Gestión de suscripciones (vencimiento, renovación)** ✨ NEW
+- [x] **Migración a MySQL implementada (UI + Backend)** ✨ NEW
 
 ### P1 - Próxima Fase
-- [ ] Notificaciones por email (recordatorios de cobranza)
+- [ ] Notificaciones por email (recordatorios de renovación 15 días antes)
 - [ ] Exportación a Excel
 - [x] Restricción de acceso basada en permisos (frontend) ✅ DONE
 
 ### P2 - Mejoras
+- [ ] Integración de pagos (Stripe) para renovaciones
 - [ ] Facturación electrónica CFDI
 - [ ] App móvil
 - [ ] Mejoras al Monitor del Sistema (auto-reparación)
@@ -229,6 +242,21 @@ Company Admin (CIA Servicios Demo):
 - [ ] Exportación de reportes a PDF/CSV
 
 ## Changelog
+### v2.8.0 (Marzo 2026)
+- ✨ **Gestión de Suscripciones de Empresas**
+  - Columna "Vencimiento" en tabla de empresas
+  - Campo `days_until_expiry` calculado automáticamente
+  - Modal de renovación con selección de meses (1-24)
+  - Registro de historial de suscripciones
+  - Badges de alerta para empresas próximas a vencer
+- ✨ **Migración a MySQL Completa**
+  - UI de configuración de servidor MySQL en Super Admin
+  - Endpoint para probar conexión MySQL
+  - Endpoint para crear esquema de tablas (14 tablas)
+  - Endpoint para migrar todos los datos de MongoDB
+  - Seguimiento de estado de migración
+- 🔧 Fix: Campo `days_until_expiry` ahora incluido en GET /super-admin/companies
+
 ### v2.7.0 (Marzo 2026)
 - ✨ **Permisos de módulos funcionales en Sidebar**
   - Usuarios solo ven módulos permitidos
