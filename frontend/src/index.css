@@ -91,7 +91,7 @@
   }
 
   .stat-card {
-    @apply bg-white rounded-sm border shadow-sm p-6 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5;
+    @apply bg-white rounded-sm border shadow-sm p-4 sm:p-6 transition-all duration-200 hover:shadow-md hover:-translate-y-0.5;
   }
 
   .data-table {
@@ -99,11 +99,11 @@
   }
 
   .data-table th {
-    @apply bg-slate-50 text-left p-4 font-semibold text-slate-700 border-b;
+    @apply bg-slate-50 text-left p-2 sm:p-4 font-semibold text-slate-700 border-b text-xs sm:text-sm;
   }
 
   .data-table td {
-    @apply p-4 border-b text-slate-600;
+    @apply p-2 sm:p-4 border-b text-slate-600 text-xs sm:text-sm;
   }
 
   .data-table tr:hover {
@@ -111,7 +111,7 @@
   }
 
   .badge-status {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    @apply inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium;
   }
 
   .badge-active {
@@ -143,7 +143,58 @@
   }
 
   .btn-industrial {
-    @apply bg-primary text-white hover:bg-primary/90 shadow-sm font-medium px-4 py-2 rounded-sm transition-all duration-200;
+    @apply bg-primary text-white hover:bg-primary/90 shadow-sm font-medium px-3 py-2 sm:px-4 rounded-sm transition-all duration-200 text-sm;
+  }
+
+  /* Responsive table container */
+  .table-responsive {
+    @apply w-full overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0;
+  }
+
+  /* Mobile card view for tables */
+  .mobile-card {
+    @apply block sm:hidden p-4 bg-white border rounded-lg mb-3 shadow-sm;
+  }
+
+  .mobile-card-row {
+    @apply flex justify-between items-center py-1.5 border-b border-slate-100 last:border-0;
+  }
+
+  .mobile-card-label {
+    @apply text-xs text-slate-500 font-medium;
+  }
+
+  .mobile-card-value {
+    @apply text-sm text-slate-700 font-medium text-right;
+  }
+
+  /* Page header responsive */
+  .page-header {
+    @apply flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4 sm:mb-6;
+  }
+
+  .page-title {
+    @apply text-xl sm:text-2xl lg:text-3xl font-bold;
+  }
+
+  /* Form responsive */
+  .form-grid {
+    @apply grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4;
+  }
+
+  /* Stats grid responsive */
+  .stats-grid {
+    @apply grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4;
+  }
+
+  /* Hide on mobile utility */
+  .hide-mobile {
+    @apply hidden sm:table-cell;
+  }
+
+  /* Show only on mobile */
+  .show-mobile {
+    @apply sm:hidden;
   }
 }
 

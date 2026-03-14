@@ -65,23 +65,23 @@ const WIDGET_DEFINITIONS = [
 
 const StatCard = ({ title, value, description, icon: Icon, trend, trendValue, color = "primary" }) => (
   <Card className="stat-card" data-testid={`stat-${title.toLowerCase().replace(/\s/g, "-")}`}>
-    <CardHeader className="flex flex-row items-center justify-between pb-2">
-      <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
-      <div className={`p-2 rounded-sm bg-${color}/10`}>
-        <Icon className={`h-5 w-5 text-${color === "primary" ? "[#004e92]" : color}`} />
+    <CardHeader className="flex flex-row items-center justify-between pb-2 p-3 sm:p-6">
+      <CardTitle className="text-xs sm:text-sm font-medium text-muted-foreground">{title}</CardTitle>
+      <div className={`p-1.5 sm:p-2 rounded-sm bg-${color}/10`}>
+        <Icon className={`h-4 w-4 sm:h-5 sm:w-5 text-${color === "primary" ? "[#004e92]" : color}`} />
       </div>
     </CardHeader>
-    <CardContent>
-      <div className="text-3xl font-bold font-[Chivo]">{value}</div>
-      {description && <p className="text-sm text-muted-foreground mt-1">{description}</p>}
+    <CardContent className="p-3 sm:p-6 pt-0">
+      <div className="text-xl sm:text-2xl lg:text-3xl font-bold font-[Chivo]">{value}</div>
+      {description && <p className="text-xs sm:text-sm text-muted-foreground mt-1 hidden sm:block">{description}</p>}
       {trend && (
-        <div className="flex items-center mt-2">
+        <div className="flex items-center mt-1 sm:mt-2">
           {trend === "up" ? (
-            <ArrowUpRight className="h-4 w-4 text-emerald-500" />
+            <ArrowUpRight className="h-3 w-3 sm:h-4 sm:w-4 text-emerald-500" />
           ) : (
-            <ArrowDownRight className="h-4 w-4 text-red-500" />
+            <ArrowDownRight className="h-3 w-3 sm:h-4 sm:w-4 text-red-500" />
           )}
-          <span className={`text-sm ${trend === "up" ? "text-emerald-500" : "text-red-500"}`}>
+          <span className={`text-xs sm:text-sm ${trend === "up" ? "text-emerald-500" : "text-red-500"}`}>
             {trendValue}
           </span>
         </div>
@@ -187,22 +187,22 @@ export const Dashboard = () => {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in" data-testid="dashboard">
+    <div className="space-y-4 sm:space-y-6 animate-fade-in" data-testid="dashboard">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-3xl font-bold font-[Chivo] text-slate-900">Dashboard Estratégico</h1>
-          <p className="text-muted-foreground">{company.business_name}</p>
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold font-[Chivo] text-slate-900">Dashboard Estratégico</h1>
+          <p className="text-sm sm:text-base text-muted-foreground">{company.business_name}</p>
         </div>
-        <div className="flex items-center gap-3">
-          <Badge variant="outline" className="w-fit">
-            Actualizado: {new Date().toLocaleDateString("es-MX")}
+        <div className="flex items-center gap-2 sm:gap-3">
+          <Badge variant="outline" className="w-fit text-xs sm:text-sm">
+            {new Date().toLocaleDateString("es-MX")}
           </Badge>
           <Sheet open={configOpen} onOpenChange={setConfigOpen}>
             <SheetTrigger asChild>
-              <Button variant="outline" size="sm" data-testid="dashboard-config-btn">
-                <Settings2 className="h-4 w-4 mr-2" />
-                Configurar
+              <Button variant="outline" size="sm" data-testid="dashboard-config-btn" className="text-xs sm:text-sm">
+                <Settings2 className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2" />
+                <span className="hidden xs:inline">Configurar</span>
               </Button>
             </SheetTrigger>
             <SheetContent>
@@ -249,7 +249,7 @@ export const Dashboard = () => {
 
       {/* Stats Grid */}
       {widgetConfig.main_stats && (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
         <StatCard
           title="Proyectos Activos"
           value={stats?.projects?.active || 0}
@@ -312,29 +312,29 @@ export const Dashboard = () => {
       )}
 
       {/* Charts Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
         {/* Monthly Revenue Chart */}
         {widgetConfig.monthly_revenue && (
         <Card className="chart-container" data-testid="monthly-revenue-chart">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <DollarSign className="h-5 w-5 text-primary" />
-              Facturación vs Cobranza Mensual
+          <CardHeader className="p-3 sm:p-6">
+            <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+              <DollarSign className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+              Facturación vs Cobranza
             </CardTitle>
-            <CardDescription>Últimos 12 meses</CardDescription>
+            <CardDescription className="text-xs sm:text-sm">Últimos 12 meses</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="h-72">
+          <CardContent className="p-2 sm:p-6">
+            <div className="h-48 sm:h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={monthlyRevenue}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="month" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                  <XAxis dataKey="month" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
                   <Tooltip
                     formatter={(value) => formatCurrency(value)}
                     contentStyle={{ borderRadius: "4px", border: "1px solid #e2e8f0" }}
                   />
-                  <Legend />
+                  <Legend wrapperStyle={{ fontSize: '12px' }} />
                   <Bar dataKey="invoiced" name="Facturado" fill="#004e92" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="collected" name="Cobrado" fill="#10b981" radius={[4, 4, 0, 0]} />
                 </BarChart>
@@ -347,15 +347,15 @@ export const Dashboard = () => {
         {/* Quote Pipeline Chart */}
         {widgetConfig.quote_pipeline && (
         <Card className="chart-container" data-testid="quote-pipeline-chart">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5 text-primary" />
+          <CardHeader className="p-3 sm:p-6">
+            <CardTitle className="flex items-center gap-2 text-sm sm:text-base">
+              <FileText className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
               Pipeline de Cotizaciones
             </CardTitle>
-            <CardDescription>Estado actual por etapa</CardDescription>
+            <CardDescription className="text-xs sm:text-sm">Estado actual por etapa</CardDescription>
           </CardHeader>
-          <CardContent>
-            <div className="h-72">
+          <CardContent className="p-2 sm:p-6">
+            <div className="h-48 sm:h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie

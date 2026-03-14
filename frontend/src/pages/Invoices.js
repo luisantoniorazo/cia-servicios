@@ -417,69 +417,69 @@ export const Invoices = () => {
   }
 
   return (
-    <div className="space-y-6 animate-fade-in" data-testid="invoices-page">
+    <div className="space-y-4 sm:space-y-6 animate-fade-in" data-testid="invoices-page">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-3xl font-bold font-[Chivo] text-slate-900">Control de Facturación</h1>
-          <p className="text-muted-foreground">Gestión de facturas, abonos y cobranza</p>
+          <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold font-[Chivo] text-slate-900">Control de Facturación</h1>
+          <p className="text-sm sm:text-base text-muted-foreground">Gestión de facturas y cobranza</p>
         </div>
-        <Button className="btn-industrial" onClick={openNewInvoiceDialog} data-testid="new-invoice-btn">
-          <Plus className="mr-2 h-4 w-4" />
+        <Button className="btn-industrial" size="sm" onClick={openNewInvoiceDialog} data-testid="new-invoice-btn">
+          <Plus className="mr-1 sm:mr-2 h-4 w-4" />
           Nueva Factura
         </Button>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4">
         <Card>
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Facturado Total</p>
-                <p className="text-2xl font-bold">{formatCurrency(stats.total)}</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">Facturado</p>
+                <p className="text-lg sm:text-2xl font-bold">{formatCurrency(stats.total)}</p>
               </div>
-              <Receipt className="h-8 w-8 text-primary/50" />
+              <Receipt className="h-6 w-6 sm:h-8 sm:w-8 text-primary/50" />
             </div>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Cobrado</p>
-                <p className="text-2xl font-bold text-emerald-600">{formatCurrency(stats.collected)}</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">Cobrado</p>
+                <p className="text-lg sm:text-2xl font-bold text-emerald-600">{formatCurrency(stats.collected)}</p>
               </div>
-              <CheckCircle className="h-8 w-8 text-emerald-500/50" />
+              <CheckCircle className="h-6 w-6 sm:h-8 sm:w-8 text-emerald-500/50" />
             </div>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Por Cobrar</p>
-                <p className="text-2xl font-bold text-amber-600">{formatCurrency(stats.pending)}</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">Por Cobrar</p>
+                <p className="text-lg sm:text-2xl font-bold text-amber-600">{formatCurrency(stats.pending)}</p>
               </div>
-              <Clock className="h-8 w-8 text-amber-500/50" />
+              <Clock className="h-6 w-6 sm:h-8 sm:w-8 text-amber-500/50" />
             </div>
             <Progress value={(stats.collected / stats.total) * 100 || 0} className="mt-2" />
           </CardContent>
         </Card>
         <Card className={stats.overdue > 0 ? "border-red-200 bg-red-50" : ""}>
-          <CardContent className="p-4">
+          <CardContent className="p-3 sm:p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Vencidas</p>
-                <p className={`text-2xl font-bold ${stats.overdue > 0 ? "text-red-600" : ""}`}>
+                <p className="text-xs sm:text-sm text-muted-foreground">Vencidas</p>
+                <p className={`text-lg sm:text-2xl font-bold ${stats.overdue > 0 ? "text-red-600" : ""}`}>
                   {stats.overdue}
                 </p>
               </div>
-              <AlertTriangle className={`h-8 w-8 ${stats.overdue > 0 ? "text-red-500" : "text-slate-300"}`} />
+              <AlertTriangle className={`h-6 w-6 sm:h-8 sm:w-8 ${stats.overdue > 0 ? "text-red-500" : "text-slate-300"}`} />
             </div>
             {overdueData.total_overdue_amount > 0 && (
               <p className="text-xs text-red-600 mt-1">
-                Total: {formatCurrency(overdueData.total_overdue_amount)}
+                {formatCurrency(overdueData.total_overdue_amount)}
               </p>
             )}
           </CardContent>
@@ -489,19 +489,19 @@ export const Invoices = () => {
       {/* Overdue Alert */}
       {overdueData.overdue?.length > 0 && (
         <Card className="border-red-300 bg-red-50">
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="h-5 w-5 text-red-600" />
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+              <AlertTriangle className="h-5 w-5 text-red-600 hidden sm:block" />
               <div className="flex-1">
-                <p className="font-semibold text-red-800">¡Atención! Facturas Vencidas</p>
-                <p className="text-sm text-red-700">
-                  Tienes {overdueData.overdue.length} factura(s) vencida(s) por un total de{" "}
-                  {formatCurrency(overdueData.total_overdue_amount)}
+                <p className="font-semibold text-red-800 text-sm sm:text-base">¡Facturas Vencidas!</p>
+                <p className="text-xs sm:text-sm text-red-700">
+                  {overdueData.overdue.length} factura(s) - {formatCurrency(overdueData.total_overdue_amount)}
                 </p>
               </div>
               <Button 
                 variant="outline" 
-                className="border-red-300 text-red-700 hover:bg-red-100"
+                size="sm"
+                className="border-red-300 text-red-700 hover:bg-red-100 text-xs sm:text-sm"
                 onClick={() => setActiveTab("overdue")}
               >
                 Ver Vencidas
@@ -513,11 +513,11 @@ export const Invoices = () => {
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
-          <TabsTrigger value="all">Todas ({invoices.length})</TabsTrigger>
-          <TabsTrigger value="pending">Pendientes</TabsTrigger>
-          <TabsTrigger value="partial">Parciales</TabsTrigger>
-          <TabsTrigger value="paid">Pagadas</TabsTrigger>
+        <TabsList className="w-full sm:w-auto overflow-x-auto flex-nowrap">
+          <TabsTrigger value="all" className="text-xs sm:text-sm">Todas ({invoices.length})</TabsTrigger>
+          <TabsTrigger value="pending" className="text-xs sm:text-sm">Pendientes</TabsTrigger>
+          <TabsTrigger value="partial" className="text-xs sm:text-sm">Parciales</TabsTrigger>
+          <TabsTrigger value="paid" className="text-xs sm:text-sm">Pagadas</TabsTrigger>
           <TabsTrigger value="overdue" className="text-red-600">
             Vencidas ({overdueData.overdue?.length || 0})
           </TabsTrigger>

@@ -478,105 +478,108 @@ export const SuperAdminDashboard = () => {
       <div className="bg-slate-800 border-b border-slate-700">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Shield className="h-8 w-8 text-amber-500" />
+            <Shield className="h-6 sm:h-8 w-6 sm:w-8 text-amber-500" />
             <div>
-              <h1 className="text-xl font-bold text-white font-[Chivo]">Portal Super Admin</h1>
-              <p className="text-sm text-slate-400">Gestión de Licencias y Empresas</p>
+              <h1 className="text-lg sm:text-xl font-bold text-white font-[Chivo]">Portal Super Admin</h1>
+              <p className="text-xs sm:text-sm text-slate-400">Gestión de Licencias y Empresas</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <Button 
               variant="outline" 
-              className="border-blue-500 text-blue-400 hover:bg-blue-500/20" 
+              size="sm"
+              className="border-blue-500 text-blue-400 hover:bg-blue-500/20 text-xs sm:text-sm" 
               onClick={() => setServerConfigDialogOpen(true)}
               data-testid="server-config-btn"
             >
-              <Database className="mr-2 h-4 w-4" />
-              Config. Servidor
+              <Database className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+              <span className="hidden xs:inline">Config.</span> Servidor
             </Button>
             <Button 
               variant="outline" 
-              className="border-purple-500 text-purple-400 hover:bg-purple-500/20" 
+              size="sm"
+              className="border-purple-500 text-purple-400 hover:bg-purple-500/20 text-xs sm:text-sm" 
               onClick={() => navigate("/admin-portal/tickets")}
               data-testid="tickets-admin-btn"
             >
-              <TicketIcon className="mr-2 h-4 w-4" />
+              <TicketIcon className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
               Tickets
             </Button>
             <Button 
               variant="outline" 
-              className="border-amber-500 text-amber-400 hover:bg-amber-500/20" 
+              size="sm"
+              className="border-amber-500 text-amber-400 hover:bg-amber-500/20 text-xs sm:text-sm" 
               onClick={() => navigate("/admin-portal/system-monitor")}
               data-testid="system-monitor-btn"
             >
-              <Bot className="mr-2 h-4 w-4" />
-              Monitor del Sistema
+              <Bot className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Monitor</span>
             </Button>
-            <Button variant="outline" className="border-slate-600 text-slate-300" onClick={handleLogout}>
-              <LogOut className="mr-2 h-4 w-4" />
-              Cerrar Sesión
+            <Button variant="outline" size="sm" className="border-slate-600 text-slate-300 text-xs sm:text-sm" onClick={handleLogout}>
+              <LogOut className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Cerrar Sesión</span>
             </Button>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto p-6 space-y-6">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 sm:py-6 space-y-4 sm:space-y-6">
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 sm:gap-4">
           <Card className="bg-slate-800 border-slate-700">
-            <CardContent className="p-4">
+            <CardContent className="p-3 sm:p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-slate-400">Total Empresas</p>
-                  <p className="text-3xl font-bold text-white">{dashboard?.summary?.total_companies || 0}</p>
+                  <p className="text-xs sm:text-sm text-slate-400">Total Empresas</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-white">{dashboard?.summary?.total_companies || 0}</p>
                 </div>
-                <Building2 className="h-8 w-8 text-slate-500" />
+                <Building2 className="h-6 w-6 sm:h-8 sm:w-8 text-slate-500" />
               </div>
             </CardContent>
           </Card>
           <Card className="bg-slate-800 border-slate-700">
-            <CardContent className="p-4">
+            <CardContent className="p-3 sm:p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-slate-400">Activas</p>
-                  <p className="text-3xl font-bold text-emerald-400">{dashboard?.summary?.active || 0}</p>
+                  <p className="text-xs sm:text-sm text-slate-400">Activas</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-emerald-400">{dashboard?.summary?.active || 0}</p>
                 </div>
-                <CheckCircle className="h-8 w-8 text-emerald-500/50" />
+                <CheckCircle className="h-6 w-6 sm:h-8 sm:w-8 text-emerald-500/50" />
               </div>
             </CardContent>
           </Card>
           <Card className="bg-slate-800 border-slate-700">
-            <CardContent className="p-4">
+            <CardContent className="p-3 sm:p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-slate-400">Pendientes</p>
-                  <p className="text-3xl font-bold text-amber-400">{dashboard?.summary?.pending || 0}</p>
+                  <p className="text-xs sm:text-sm text-slate-400">Pendientes</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-amber-400">{dashboard?.summary?.pending || 0}</p>
                 </div>
-                <Pause className="h-8 w-8 text-amber-500/50" />
+                <Pause className="h-6 w-6 sm:h-8 sm:w-8 text-amber-500/50" />
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-slate-800 border-slate-700">
-            <CardContent className="p-4">
+          <Card className="bg-slate-800 border-slate-700 hidden sm:block">
+            <CardContent className="p-3 sm:p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-slate-400">En Prueba</p>
-                  <p className="text-3xl font-bold text-blue-400">{dashboard?.summary?.trial || 0}</p>
+                  <p className="text-xs sm:text-sm text-slate-400">En Prueba</p>
+                  <p className="text-2xl sm:text-3xl font-bold text-blue-400">{dashboard?.summary?.trial || 0}</p>
                 </div>
-                <PlayCircle className="h-8 w-8 text-blue-500/50" />
+                <PlayCircle className="h-6 w-6 sm:h-8 sm:w-8 text-blue-500/50" />
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-gradient-to-br from-amber-500/20 to-amber-600/20 border-amber-500/30">
-            <CardContent className="p-4">
+          <Card className="bg-gradient-to-br from-amber-500/20 to-amber-600/20 border-amber-500/30 col-span-2 sm:col-span-1">
+            <CardContent className="p-3 sm:p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-amber-200">Ingresos Mensuales</p>
-                  <p className="text-2xl font-bold text-amber-100">
+                  <p className="text-xs sm:text-sm text-amber-200">Ingresos Mensuales</p>
+                  <p className="text-xl sm:text-2xl font-bold text-amber-100">
                     {formatCurrency(dashboard?.summary?.monthly_revenue || 0)}
                   </p>
                 </div>
-                <DollarSign className="h-8 w-8 text-amber-500/50" />
+                <DollarSign className="h-6 w-6 sm:h-8 sm:w-8 text-amber-500/50" />
               </div>
             </CardContent>
           </Card>
@@ -600,39 +603,107 @@ export const SuperAdminDashboard = () => {
 
         {/* Companies Table */}
         <Card className="bg-slate-800 border-slate-700">
-          <CardHeader>
-            <div className="flex items-center justify-between">
+          <CardHeader className="p-4 sm:p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <CardTitle className="text-white flex items-center gap-2">
-                  <Building2 className="h-5 w-5 text-amber-500" />
+                <CardTitle className="text-white flex items-center gap-2 text-base sm:text-lg">
+                  <Building2 className="h-4 w-4 sm:h-5 sm:w-5 text-amber-500" />
                   Empresas Registradas
                 </CardTitle>
-                <CardDescription className="text-slate-400">
+                <CardDescription className="text-slate-400 text-xs sm:text-sm">
                   Gestión de licencias y suscripciones
                 </CardDescription>
               </div>
               <Button
-                className="bg-amber-500 hover:bg-amber-600 text-slate-900"
+                className="bg-amber-500 hover:bg-amber-600 text-slate-900 text-sm"
+                size="sm"
                 onClick={() => setDialogOpen(true)}
                 data-testid="create-company-btn"
               >
-                <Plus className="mr-2 h-4 w-4" />
-                Nueva Empresa
+                <Plus className="mr-1 sm:mr-2 h-4 w-4" />
+                <span className="sm:inline">Nueva Empresa</span>
               </Button>
             </div>
           </CardHeader>
-          <CardContent>
-            <div className="rounded-sm border border-slate-700 overflow-hidden">
+          <CardContent className="p-2 sm:p-6">
+            {/* Mobile Card View */}
+            <div className="block lg:hidden space-y-3">
+              {dashboard?.companies?.length === 0 ? (
+                <div className="text-center py-8 text-slate-500">No hay empresas registradas</div>
+              ) : (
+                dashboard?.companies?.map((company) => (
+                  <div key={company.id} className="bg-slate-900/50 rounded-lg p-4 border border-slate-700">
+                    <div className="flex justify-between items-start mb-3">
+                      <div>
+                        <div className="text-white font-medium text-sm">{company.business_name}</div>
+                        <div className="text-xs text-slate-400">{company.slug}</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge className={getStatusColor(company.subscription_status || company.status)} variant="outline">
+                          {getStatusLabel(company.subscription_status || company.status)}
+                        </Badge>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" className="text-slate-400 h-8 w-8">
+                              <MoreVertical className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="bg-slate-800 border-slate-700">
+                            <DropdownMenuItem className="text-slate-300" onClick={() => handleViewDetails(company.id)}>
+                              <Eye className="mr-2 h-4 w-4" />Ver Detalles
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-blue-400" onClick={() => handleEditAdmin(company.id)}>
+                              <Edit className="mr-2 h-4 w-4" />Editar Admin
+                            </DropdownMenuItem>
+                            <DropdownMenuItem className="text-purple-400" onClick={() => handleRenewSubscription(company)}>
+                              <DollarSign className="mr-2 h-4 w-4" />Renovar
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div>
+                        <span className="text-slate-500">Admin:</span>
+                        <span className="text-slate-300 ml-1">{company.admin_email || "-"}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Licencia:</span>
+                        <span className="text-slate-300 ml-1">{LICENSE_TYPES.find((l) => l.value === company.license_type)?.label || "Básica"}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Mensualidad:</span>
+                        <span className="text-white font-medium ml-1">{formatCurrency(company.monthly_fee)}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Vence:</span>
+                        <span className="text-slate-300 ml-1">
+                          {company.subscription_end ? formatDate(company.subscription_end) : "-"}
+                        </span>
+                      </div>
+                    </div>
+                    {company.days_until_expiry !== undefined && company.days_until_expiry <= 15 && (
+                      <Badge className={`mt-2 ${company.days_until_expiry <= 0 ? "bg-red-500/20 text-red-300" : "bg-yellow-500/20 text-yellow-300"}`} variant="outline">
+                        {company.days_until_expiry <= 0 ? "Vencida" : `${company.days_until_expiry} días para vencer`}
+                      </Badge>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Desktop Table View */}
+            <div className="hidden lg:block rounded-sm border border-slate-700 overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow className="bg-slate-900/50 border-slate-700">
-                    <TableHead className="text-slate-300">Empresa</TableHead>
-                    <TableHead className="text-slate-300">Admin</TableHead>
-                    <TableHead className="text-slate-300">Licencia</TableHead>
-                    <TableHead className="text-slate-300">Mensualidad</TableHead>
-                    <TableHead className="text-slate-300">Vencimiento</TableHead>
-                    <TableHead className="text-slate-300">Estado</TableHead>
-                    <TableHead className="text-slate-300">URL</TableHead>
+                    <TableHead className="text-slate-300 text-xs">Empresa</TableHead>
+                    <TableHead className="text-slate-300 text-xs">Admin</TableHead>
+                    <TableHead className="text-slate-300 text-xs">Licencia</TableHead>
+                    <TableHead className="text-slate-300 text-xs">Mensualidad</TableHead>
+                    <TableHead className="text-slate-300 text-xs">Vencimiento</TableHead>
+                    <TableHead className="text-slate-300 text-xs">Estado</TableHead>
+                    <TableHead className="text-slate-300 text-xs">URL</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
                   </TableRow>
                 </TableHeader>

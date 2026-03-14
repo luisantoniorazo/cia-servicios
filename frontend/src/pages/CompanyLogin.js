@@ -91,51 +91,51 @@ export const CompanyLogin = () => {
   }
 
   return (
-    <div className="login-bg flex items-center justify-center p-4" data-testid="company-login-page">
-      <div className="w-full max-w-md space-y-6 animate-fade-in">
+    <div className="login-bg flex items-center justify-center p-3 sm:p-4" data-testid="company-login-page">
+      <div className="w-full max-w-md space-y-4 sm:space-y-6 animate-fade-in">
         {/* Company Header */}
-        <div className="text-center space-y-4">
+        <div className="text-center space-y-3 sm:space-y-4">
           <div className="flex justify-center">
             {companyInfo?.logo_url ? (
-              <div className="bg-white/10 backdrop-blur-sm p-4 rounded-lg">
+              <div className="bg-white/10 backdrop-blur-sm p-3 sm:p-4 rounded-lg">
                 <img
                   src={companyInfo.logo_url}
                   alt={companyInfo.business_name}
-                  className="h-16 w-auto"
+                  className="h-12 sm:h-16 w-auto"
                 />
               </div>
             ) : (
-              <div className="bg-white/10 backdrop-blur-sm p-4 rounded-lg">
-                <Building2 className="h-16 w-16 text-white" />
+              <div className="bg-white/10 backdrop-blur-sm p-3 sm:p-4 rounded-lg">
+                <Building2 className="h-12 w-12 sm:h-16 sm:w-16 text-white" />
               </div>
             )}
           </div>
           <div>
-            <h1 className="text-3xl font-bold text-white font-[Chivo]">
+            <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-white font-[Chivo]">
               {companyInfo?.business_name}
             </h1>
-            <p className="text-slate-300 mt-2">Sistema de Control Empresarial</p>
+            <p className="text-slate-300 mt-1 sm:mt-2 text-sm sm:text-base">Sistema de Control Empresarial</p>
           </div>
         </div>
 
         <Card className="border-0 shadow-2xl">
-          <CardHeader className="space-y-1 pb-4">
-            <CardTitle className="text-2xl font-bold text-center">Iniciar Sesión</CardTitle>
-            <CardDescription className="text-center">
+          <CardHeader className="space-y-1 pb-3 sm:pb-4 p-4 sm:p-6">
+            <CardTitle className="text-xl sm:text-2xl font-bold text-center">Iniciar Sesión</CardTitle>
+            <CardDescription className="text-center text-xs sm:text-sm">
               Ingresa tus credenciales asignadas
             </CardDescription>
           </CardHeader>
-          <CardContent>
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Correo electrónico</Label>
+          <CardContent className="p-4 sm:p-6 pt-0">
+            <form onSubmit={handleLogin} className="space-y-3 sm:space-y-4">
+              <div className="space-y-1.5 sm:space-y-2">
+                <Label htmlFor="email" className="text-sm">Correo electrónico</Label>
                 <div className="relative">
                   <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="email"
                     type="email"
                     placeholder="usuario@empresa.com"
-                    className="pl-9"
+                    className="pl-9 h-10 sm:h-11"
                     value={loginForm.email}
                     onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
                     required
@@ -143,15 +143,15 @@ export const CompanyLogin = () => {
                   />
                 </div>
               </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Contraseña</Label>
+              <div className="space-y-1.5 sm:space-y-2">
+                <Label htmlFor="password" className="text-sm">Contraseña</Label>
                 <div className="relative">
                   <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                   <Input
                     id="password"
                     type="password"
                     placeholder="••••••••"
-                    className="pl-9"
+                    className="pl-9 h-10 sm:h-11"
                     value={loginForm.password}
                     onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
                     required
@@ -161,7 +161,7 @@ export const CompanyLogin = () => {
               </div>
               <Button
                 type="submit"
-                className="w-full bg-primary hover:bg-primary/90"
+                className="w-full bg-primary hover:bg-primary/90 h-10 sm:h-11"
                 disabled={isLoading}
                 data-testid="company-login-btn"
               >
@@ -169,15 +169,15 @@ export const CompanyLogin = () => {
               </Button>
             </form>
 
-            <div className="mt-6 pt-6 border-t text-center">
-              <p className="text-sm text-muted-foreground">
+            <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t text-center">
+              <p className="text-xs sm:text-sm text-muted-foreground">
                 ¿Olvidaste tu contraseña? Contacta a tu administrador.
               </p>
             </div>
           </CardContent>
         </Card>
 
-        <p className="text-center text-sm text-slate-400">
+        <p className="text-center text-xs sm:text-sm text-slate-400">
           &copy; 2024 CIA Servicios. Control Integral Administrativo.
         </p>
       </div>

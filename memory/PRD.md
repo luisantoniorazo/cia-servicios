@@ -255,7 +255,14 @@ Company Admin (CIA Servicios Demo):
   - Endpoint para crear esquema de tablas (14 tablas)
   - Endpoint para migrar todos los datos de MongoDB
   - Seguimiento de estado de migración
+- ✨ **Diseño Responsive Completo**
+  - Optimizado para móvil, tablet y escritorio
+  - Vista de tarjetas en móvil para tablas de datos
+  - Stats cards adaptivos (grid 2x2 en móvil, 4 columnas en desktop)
+  - Headers y botones compactos en pantallas pequeñas
+  - Login responsive con inputs adaptados al tamaño
 - 🔧 Fix: Campo `days_until_expiry` ahora incluido en GET /super-admin/companies
+- 🔧 Fix: Campo `subscription_status` consistente en todos los endpoints
 
 ### v2.7.0 (Marzo 2026)
 - ✨ **Permisos de módulos funcionales en Sidebar**
