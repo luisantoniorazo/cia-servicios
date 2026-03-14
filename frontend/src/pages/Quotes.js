@@ -10,6 +10,7 @@ import { Badge } from "../components/ui/badge";
 import { Skeleton } from "../components/ui/skeleton";
 import { Checkbox } from "../components/ui/checkbox";
 import { Separator } from "../components/ui/separator";
+import { SATProductSearch, SATUnitSearch } from "../components/SATSearch";
 import {
   Dialog,
   DialogContent,
@@ -705,25 +706,22 @@ export const Quotes = () => {
                       </div>
                     </div>
                     <div className="grid grid-cols-12 gap-2 items-end border-t border-slate-200 pt-2">
-                      <div className="col-span-6 md:col-span-3">
+                      <div className="col-span-6 md:col-span-4">
                         <Label className="text-xs text-blue-600">Clave SAT Producto</Label>
-                        <Input
+                        <SATProductSearch
                           value={item.clave_prod_serv || ""}
-                          onChange={(e) => handleItemChange(index, "clave_prod_serv", e.target.value)}
-                          placeholder="Ej: 80131502"
-                          className="text-xs"
+                          onChange={(val) => handleItemChange(index, "clave_prod_serv", val)}
+                          placeholder="Buscar producto SAT..."
                         />
                       </div>
-                      <div className="col-span-6 md:col-span-2">
+                      <div className="col-span-6 md:col-span-3">
                         <Label className="text-xs text-blue-600">Clave Unidad SAT</Label>
-                        <Input
+                        <SATUnitSearch
                           value={item.clave_unidad || ""}
-                          onChange={(e) => handleItemChange(index, "clave_unidad", e.target.value)}
-                          placeholder="Ej: H87, E48"
-                          className="text-xs"
+                          onChange={(val) => handleItemChange(index, "clave_unidad", val)}
                         />
                       </div>
-                      <div className="col-span-12 md:col-span-7">
+                      <div className="col-span-12 md:col-span-5">
                         <p className="text-[10px] text-slate-400 mt-1">Claves SAT para CFDI</p>
                       </div>
                     </div>
@@ -898,25 +896,22 @@ export const Quotes = () => {
                       </div>
                     </div>
                     <div className="grid grid-cols-12 gap-2 items-end border-t border-slate-200 pt-2">
-                      <div className="col-span-6 md:col-span-3">
+                      <div className="col-span-6 md:col-span-4">
                         <Label className="text-xs text-blue-600">Clave SAT Producto</Label>
-                        <Input
+                        <SATProductSearch
                           value={item.clave_prod_serv || ""}
-                          onChange={(e) => handleItemChange(index, "clave_prod_serv", e.target.value)}
-                          placeholder="Ej: 80131502"
-                          className="text-xs"
+                          onChange={(val) => handleItemChange(index, "clave_prod_serv", val)}
+                          placeholder="Buscar producto SAT..."
                         />
                       </div>
-                      <div className="col-span-6 md:col-span-2">
+                      <div className="col-span-6 md:col-span-3">
                         <Label className="text-xs text-blue-600">Clave Unidad SAT</Label>
-                        <Input
+                        <SATUnitSearch
                           value={item.clave_unidad || ""}
-                          onChange={(e) => handleItemChange(index, "clave_unidad", e.target.value)}
-                          placeholder="Ej: H87, E48"
-                          className="text-xs"
+                          onChange={(val) => handleItemChange(index, "clave_unidad", val)}
                         />
                       </div>
-                      <div className="col-span-12 md:col-span-7">
+                      <div className="col-span-12 md:col-span-5">
                         <p className="text-[10px] text-slate-400 mt-1">Claves SAT para CFDI</p>
                       </div>
                     </div>
