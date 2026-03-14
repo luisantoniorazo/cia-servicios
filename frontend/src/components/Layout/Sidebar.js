@@ -20,6 +20,10 @@ import {
   Menu,
   Crown,
   TicketIcon,
+  Bell,
+  User,
+  Activity,
+  Palette,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
@@ -33,6 +37,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
+import NotificationBell from "../Notifications/NotificationBell";
 
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_cia-operacional/artifacts/0bkwa552_Logo%20CIA.jpg";
 
@@ -49,7 +54,13 @@ const menuItems = [
   { path: "/kpis", label: "Indicadores", icon: BarChart3, moduleId: "kpis" },
   { path: "/intelligence", label: "Inteligencia IA", icon: Sparkles, moduleId: "intelligence" },
   { path: "/tickets", label: "Soporte", icon: TicketIcon, moduleId: "tickets" },
-  { path: "/settings", label: "Configuración", icon: Settings, moduleId: "settings" },
+  { path: "/reminders", label: "Recordatorios", icon: Bell, moduleId: "reminders" },
+];
+
+const configItems = [
+  { path: "/settings", label: "Empresa", icon: Settings, moduleId: "settings" },
+  { path: "/document-settings", label: "Documentos PDF", icon: Palette, moduleId: "document-settings" },
+  { path: "/activity-logs", label: "Historial", icon: Activity, moduleId: "activity-logs" },
 ];
 
 export const Sidebar = ({ isOpen, onToggle }) => {
@@ -168,11 +179,39 @@ export const Sidebar = ({ isOpen, onToggle }) => {
                   <span>{item.label}</span>
                 </NavLink>
               ))}
+              
+              {/* Config Section */}
+              <Separator className="my-3 bg-slate-800" />
+              <p className="px-3 py-2 text-xs font-medium text-slate-500 uppercase">Configuración</p>
+              {configItems
+                .filter((item) => {
+                  if (!user?.module_permissions) return true;
+                  if (item.moduleId === "settings" || item.moduleId === "document-settings" || item.moduleId === "activity-logs") {
+                    return user.role === "admin" || !user?.module_permissions;
+                  }
+                  return user.module_permissions.includes(item.moduleId);
+                })
+                .map((item) => (
+                <NavLink
+                  key={item.path}
+                  to={`${basePath}${item.path}`}
+                  className={({ isActive }) =>
+                    cn("sidebar-item", isActive && "sidebar-item-active")
+                  }
+                  data-testid={`nav-${item.path.slice(1)}`}
+                >
+                  <item.icon className="h-5 w-5" />
+                  <span>{item.label}</span>
+                </NavLink>
+              ))}
             </nav>
           </ScrollArea>
 
           {/* User menu */}
           <div className="p-4 border-t border-slate-800">
+            <div className="flex items-center gap-2 mb-3">
+              <NotificationBell />
+            </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -198,6 +237,10 @@ export const Sidebar = ({ isOpen, onToggle }) => {
               <DropdownMenuContent align="end" className="w-56">
                 <DropdownMenuLabel>Mi Cuenta</DropdownMenuLabel>
                 <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => navigate(`${basePath}/profile`)}>
+                  <User className="mr-2 h-4 w-4" />
+                  Mi Perfil
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => navigate(`${basePath}/settings`)}>
                   <Settings className="mr-2 h-4 w-4" />
                   Configuración

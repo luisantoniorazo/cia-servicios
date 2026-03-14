@@ -10,6 +10,7 @@ import SuperAdminDashboard from "./pages/SuperAdminDashboard";
 import SystemMonitor from "./pages/SystemMonitor";
 import TicketsAdmin from "./pages/TicketsAdmin";
 import CompanyLogin from "./pages/CompanyLogin";
+import { ForgotPassword, ResetPassword } from "./pages/PasswordReset";
 
 // Company Pages
 import Dashboard from "./pages/Dashboard";
@@ -25,6 +26,10 @@ import KPIs from "./pages/KPIs";
 import Intelligence from "./pages/Intelligence";
 import Settings from "./pages/Settings";
 import Tickets from "./pages/Tickets";
+import UserProfile from "./pages/UserProfile";
+import Reminders from "./pages/Reminders";
+import DocumentSettings from "./pages/DocumentSettings";
+import ActivityLogs from "./pages/ActivityLogs";
 
 // Layout
 import MainLayout from "./components/Layout/MainLayout";
@@ -182,6 +187,20 @@ function AppRoutes() {
           </SuperAdminRoute>
         }
       />
+      <Route
+        path="/admin-portal/activity-logs"
+        element={
+          <SuperAdminRoute>
+            <ActivityLogs isSuperAdmin={true} />
+          </SuperAdminRoute>
+        }
+      />
+
+      {/* Password Reset Routes */}
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password/:token" element={<ResetPassword />} />
+      <Route path="/empresa/:slug/forgot-password" element={<ForgotPassword />} />
+      <Route path="/empresa/:slug/reset-password/:token" element={<ResetPassword />} />
 
       {/* Company Login */}
       <Route
@@ -216,6 +235,10 @@ function AppRoutes() {
         <Route path="intelligence" element={<Intelligence />} />
         <Route path="settings" element={<Settings />} />
         <Route path="tickets" element={<Tickets />} />
+        <Route path="profile" element={<UserProfile />} />
+        <Route path="reminders" element={<Reminders />} />
+        <Route path="document-settings" element={<DocumentSettings />} />
+        <Route path="activity-logs" element={<ActivityLogs />} />
       </Route>
 
       {/* Catch all */}

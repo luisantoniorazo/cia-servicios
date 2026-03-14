@@ -100,6 +100,28 @@ class PurchaseOrderStatus(str, Enum):
     RECEIVED = "received"
     CANCELLED = "cancelled"
 
+class ActivityType(str, Enum):
+    LOGIN = "login"
+    LOGOUT = "logout"
+    CREATE = "create"
+    UPDATE = "update"
+    DELETE = "delete"
+    VIEW = "view"
+    EXPORT = "export"
+    EMAIL = "email"
+    PAYMENT = "payment"
+    SUBSCRIPTION = "subscription"
+    SYSTEM = "system"
+
+class NotificationType(str, Enum):
+    INFO = "info"
+    WARNING = "warning"
+    SUCCESS = "success"
+    ERROR = "error"
+    REMINDER = "reminder"
+    PAYMENT = "payment"
+    SYSTEM = "system"
+
 # ============== MODELS ==============
 # Company Models
 class CompanyBase(BaseModel):
@@ -537,6 +559,107 @@ class FieldReport(FieldReportBase):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+# ============== ACTIVITY LOG MODELS ==============
+class ActivityLog(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    company_id: Optional[str] = None
+    user_id: Optional[str] = None
+    user_email: Optional[str] = None
+    user_name: Optional[str] = None
+    activity_type: ActivityType
+    module: str  # quotes, invoices, projects, etc.
+    action: str  # Created quote, Updated invoice, etc.
+    entity_id: Optional[str] = None  # ID of the affected entity
+    entity_type: Optional[str] = None  # quote, invoice, project, etc.
+    details: Optional[Dict[str, Any]] = None
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+# ============== NOTIFICATION MODELS ==============
+class Notification(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    company_id: str
+    user_id: Optional[str] = None  # None = all users in company
+    title: str
+    message: str
+    notification_type: NotificationType = NotificationType.INFO
+    link: Optional[str] = None  # Link to related entity
+    read: bool = False
+    read_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+# ============== COMPANY NOTES MODELS ==============
+class CompanyNote(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    company_id: str
+    note: str
+    created_by: str
+    created_by_name: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+# ============== USER REMINDERS MODELS ==============
+class UserReminder(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    company_id: str
+    user_id: str
+    title: str
+    description: Optional[str] = None
+    remind_at: datetime
+    entity_type: Optional[str] = None  # client, quote, invoice, project
+    entity_id: Optional[str] = None
+    completed: bool = False
+    completed_at: Optional[datetime] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+# ============== DOCUMENT SETTINGS MODELS ==============
+class DocumentSettings(BaseModel):
+    company_id: str
+    primary_color: str = "#004e92"
+    secondary_color: str = "#1e293b"
+    font_family: str = "Helvetica"
+    show_logo: bool = True
+    show_company_info: bool = True
+    footer_text: Optional[str] = None
+    terms_and_conditions: Optional[str] = None
+    quote_validity_days: int = 30
+    invoice_payment_terms: Optional[str] = None
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+# ============== QUOTE SIGNATURE MODELS ==============
+class QuoteSignature(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    quote_id: str
+    company_id: str
+    client_name: str
+    client_email: str
+    signature_token: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    signed: bool = False
+    signed_at: Optional[datetime] = None
+    ip_address: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc) + timedelta(days=7))
+
+# ============== PASSWORD RESET MODELS ==============
+class PasswordResetToken(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    email: str
+    company_id: Optional[str] = None
+    token: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    used: bool = False
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    expires_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc) + timedelta(hours=24))
+
+# ============== USER PREFERENCES MODELS ==============
+class UserPreferences(BaseModel):
+    user_id: str
+    theme: str = "light"  # light, dark, system
+    language: str = "es"  # es, en
+    notifications_enabled: bool = True
+    email_notifications: bool = True
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
 # ============== AUTH HELPERS ==============
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
@@ -564,6 +687,67 @@ def generate_slug(business_name: str) -> str:
     slug = re.sub(r'-+', '-', slug)
     slug = slug.strip('-')
     return slug[:50]
+
+# ============== ACTIVITY LOGGING HELPER ==============
+async def log_activity(
+    activity_type: ActivityType,
+    module: str,
+    action: str,
+    company_id: Optional[str] = None,
+    user_id: Optional[str] = None,
+    user_email: Optional[str] = None,
+    user_name: Optional[str] = None,
+    entity_id: Optional[str] = None,
+    entity_type: Optional[str] = None,
+    details: Optional[Dict[str, Any]] = None,
+    ip_address: Optional[str] = None
+):
+    """Log an activity to the activity_logs collection"""
+    log_entry = {
+        "id": str(uuid.uuid4()),
+        "company_id": company_id,
+        "user_id": user_id,
+        "user_email": user_email,
+        "user_name": user_name,
+        "activity_type": activity_type.value,
+        "module": module,
+        "action": action,
+        "entity_id": entity_id,
+        "entity_type": entity_type,
+        "details": details,
+        "ip_address": ip_address,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    try:
+        await db.activity_logs.insert_one(log_entry)
+    except Exception as e:
+        logger.error(f"Error logging activity: {e}")
+
+# ============== NOTIFICATION HELPER ==============
+async def create_notification(
+    company_id: str,
+    title: str,
+    message: str,
+    notification_type: NotificationType = NotificationType.INFO,
+    user_id: Optional[str] = None,
+    link: Optional[str] = None
+):
+    """Create a notification for a user or all users in a company"""
+    notification = {
+        "id": str(uuid.uuid4()),
+        "company_id": company_id,
+        "user_id": user_id,
+        "title": title,
+        "message": message,
+        "notification_type": notification_type.value,
+        "link": link,
+        "read": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    try:
+        await db.notifications.insert_one(notification)
+    except Exception as e:
+        logger.error(f"Error creating notification: {e}")
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
     try:
@@ -5871,6 +6055,916 @@ async def download_file(doc_id: str, current_user: dict = Depends(get_current_us
         "filename": doc.get("name"),
         "content": doc.get("file_data"),
         "content_type": doc.get("content_type", "application/octet-stream")
+    }
+
+# ============== ACTIVITY LOGS ROUTES ==============
+@api_router.get("/super-admin/activity-logs")
+async def get_all_activity_logs(
+    company_id: Optional[str] = None,
+    activity_type: Optional[str] = None,
+    module: Optional[str] = None,
+    limit: int = 100,
+    skip: int = 0,
+    current_user: dict = Depends(require_super_admin)
+):
+    """Get activity logs (Super Admin)"""
+    query = {}
+    if company_id:
+        query["company_id"] = company_id
+    if activity_type:
+        query["activity_type"] = activity_type
+    if module:
+        query["module"] = module
+    
+    logs = await db.activity_logs.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    total = await db.activity_logs.count_documents(query)
+    
+    return {"logs": logs, "total": total}
+
+@api_router.get("/activity-logs")
+async def get_company_activity_logs(
+    activity_type: Optional[str] = None,
+    module: Optional[str] = None,
+    limit: int = 50,
+    skip: int = 0,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get activity logs for current company"""
+    company_id = current_user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No hay empresa asignada")
+    
+    query = {"company_id": company_id}
+    if activity_type:
+        query["activity_type"] = activity_type
+    if module:
+        query["module"] = module
+    
+    logs = await db.activity_logs.find(query, {"_id": 0}).sort("created_at", -1).skip(skip).limit(limit).to_list(limit)
+    total = await db.activity_logs.count_documents(query)
+    
+    return {"logs": logs, "total": total}
+
+# ============== COMPANY NOTES ROUTES (Super Admin) ==============
+class CompanyNoteCreate(BaseModel):
+    note: str
+
+@api_router.get("/super-admin/companies/{company_id}/notes")
+async def get_company_notes(company_id: str, current_user: dict = Depends(require_super_admin)):
+    """Get notes for a company"""
+    notes = await db.company_notes.find({"company_id": company_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    return notes
+
+@api_router.post("/super-admin/companies/{company_id}/notes")
+async def add_company_note(company_id: str, note_data: CompanyNoteCreate, current_user: dict = Depends(require_super_admin)):
+    """Add a note to a company"""
+    note = {
+        "id": str(uuid.uuid4()),
+        "company_id": company_id,
+        "note": note_data.note,
+        "created_by": current_user.get("sub"),
+        "created_by_name": current_user.get("full_name", current_user.get("email")),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.company_notes.insert_one(note)
+    
+    await log_activity(
+        ActivityType.CREATE, "companies", f"Nota agregada a empresa",
+        company_id=company_id, user_id=current_user.get("sub"),
+        user_email=current_user.get("email"), entity_id=note["id"], entity_type="company_note"
+    )
+    
+    return {"message": "Nota agregada", "note": {k: v for k, v in note.items() if k != "_id"}}
+
+@api_router.delete("/super-admin/companies/{company_id}/notes/{note_id}")
+async def delete_company_note(company_id: str, note_id: str, current_user: dict = Depends(require_super_admin)):
+    """Delete a company note"""
+    result = await db.company_notes.delete_one({"id": note_id, "company_id": company_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Nota no encontrada")
+    return {"message": "Nota eliminada"}
+
+# ============== DUPLICATE COMPANY ROUTE ==============
+class DuplicateCompanyRequest(BaseModel):
+    new_business_name: str
+    new_rfc: str
+    admin_email: str
+    admin_password: str
+    admin_full_name: str
+
+@api_router.post("/super-admin/companies/{company_id}/duplicate")
+async def duplicate_company(company_id: str, data: DuplicateCompanyRequest, current_user: dict = Depends(require_super_admin)):
+    """Duplicate a company with its configuration"""
+    source_company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not source_company:
+        raise HTTPException(status_code=404, detail="Empresa origen no encontrada")
+    
+    # Generate new slug
+    new_slug = generate_slug(data.new_business_name)
+    existing = await db.companies.find_one({"slug": new_slug})
+    if existing:
+        new_slug = f"{new_slug}-{str(uuid.uuid4())[:8]}"
+    
+    # Create new company
+    new_company_id = str(uuid.uuid4())
+    new_company = {
+        **source_company,
+        "id": new_company_id,
+        "business_name": data.new_business_name,
+        "rfc": data.new_rfc,
+        "slug": new_slug,
+        "subscription_status": SubscriptionStatus.PENDING.value,
+        "subscription_start": None,
+        "subscription_end": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.companies.insert_one(new_company)
+    
+    # Create admin user
+    admin_user = {
+        "id": str(uuid.uuid4()),
+        "company_id": new_company_id,
+        "email": data.admin_email,
+        "password_hash": hash_password(data.admin_password),
+        "full_name": data.admin_full_name,
+        "role": UserRole.ADMIN.value,
+        "is_active": True,
+        "permissions": {"all": True},
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.users.insert_one(admin_user)
+    
+    # Copy document settings if exist
+    doc_settings = await db.document_settings.find_one({"company_id": company_id}, {"_id": 0})
+    if doc_settings:
+        doc_settings["company_id"] = new_company_id
+        doc_settings["updated_at"] = datetime.now(timezone.utc).isoformat()
+        await db.document_settings.insert_one(doc_settings)
+    
+    await log_activity(
+        ActivityType.CREATE, "companies", f"Empresa duplicada desde {source_company['business_name']}",
+        company_id=new_company_id, user_id=current_user.get("sub"),
+        user_email=current_user.get("email"), entity_id=new_company_id, entity_type="company"
+    )
+    
+    return {
+        "message": "Empresa duplicada exitosamente",
+        "company": {k: v for k, v in new_company.items() if k != "_id"},
+        "login_url": f"/empresa/{new_slug}/login"
+    }
+
+# ============== COMPANY METRICS ROUTES ==============
+@api_router.get("/super-admin/companies/{company_id}/metrics")
+async def get_company_metrics(company_id: str, current_user: dict = Depends(require_super_admin)):
+    """Get usage metrics for a company"""
+    # Count entities
+    quotes_count = await db.quotes.count_documents({"company_id": company_id})
+    invoices_count = await db.invoices.count_documents({"company_id": company_id})
+    projects_count = await db.projects.count_documents({"company_id": company_id})
+    clients_count = await db.clients.count_documents({"company_id": company_id})
+    documents_count = await db.documents.count_documents({"company_id": company_id})
+    users_count = await db.users.count_documents({"company_id": company_id})
+    
+    # Last activity
+    last_activity = await db.activity_logs.find_one(
+        {"company_id": company_id}, 
+        {"_id": 0},
+        sort=[("created_at", -1)]
+    )
+    
+    # Active users (last 30 days)
+    thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    active_users = await db.activity_logs.distinct(
+        "user_id", 
+        {"company_id": company_id, "created_at": {"$gte": thirty_days_ago}, "activity_type": "login"}
+    )
+    
+    # Module usage
+    module_usage = await db.activity_logs.aggregate([
+        {"$match": {"company_id": company_id}},
+        {"$group": {"_id": "$module", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}},
+        {"$limit": 10}
+    ]).to_list(10)
+    
+    return {
+        "entity_counts": {
+            "quotes": quotes_count,
+            "invoices": invoices_count,
+            "projects": projects_count,
+            "clients": clients_count,
+            "documents": documents_count,
+            "users": users_count
+        },
+        "active_users_30d": len(active_users),
+        "last_activity": last_activity,
+        "module_usage": [{"module": m["_id"], "count": m["count"]} for m in module_usage]
+    }
+
+# ============== EXPORT COMPANIES ROUTE ==============
+@api_router.get("/super-admin/companies/export/csv")
+async def export_companies_csv(current_user: dict = Depends(require_super_admin)):
+    """Export all companies to CSV format"""
+    import csv
+    import io
+    
+    companies = await db.companies.find({}, {"_id": 0}).to_list(1000)
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    
+    # Header
+    writer.writerow([
+        "ID", "Nombre", "RFC", "Slug", "Estado", "Licencia", 
+        "Mensualidad", "Fecha Inicio", "Fecha Vencimiento", 
+        "Teléfono", "Email", "Dirección", "Creado"
+    ])
+    
+    for c in companies:
+        writer.writerow([
+            c.get("id", ""),
+            c.get("business_name", ""),
+            c.get("rfc", ""),
+            c.get("slug", ""),
+            c.get("subscription_status", ""),
+            c.get("license_type", ""),
+            c.get("monthly_fee", 0),
+            c.get("subscription_start", ""),
+            c.get("subscription_end", ""),
+            c.get("phone", ""),
+            c.get("email", ""),
+            c.get("address", ""),
+            c.get("created_at", "")
+        ])
+    
+    csv_content = output.getvalue()
+    csv_base64 = base64.b64encode(csv_content.encode('utf-8')).decode('utf-8')
+    
+    await log_activity(
+        ActivityType.EXPORT, "companies", "Exportación de empresas a CSV",
+        user_id=current_user.get("sub"), user_email=current_user.get("email")
+    )
+    
+    return {
+        "filename": f"empresas_{datetime.now().strftime('%Y%m%d')}.csv",
+        "content": csv_base64,
+        "content_type": "text/csv"
+    }
+
+# ============== AUTOMATIC SUSPENSION BY PAYMENT ==============
+@api_router.post("/super-admin/check-and-suspend-expired")
+async def check_and_suspend_expired(current_user: dict = Depends(require_super_admin)):
+    """Check for expired subscriptions and suspend them"""
+    now = datetime.now(timezone.utc)
+    
+    # Find companies with expired subscriptions that are still active
+    expired = await db.companies.find({
+        "subscription_status": {"$in": ["active", "trial"]},
+        "subscription_end": {"$lt": now.isoformat()}
+    }).to_list(100)
+    
+    suspended_count = 0
+    for company in expired:
+        await db.companies.update_one(
+            {"id": company["id"]},
+            {"$set": {
+                "subscription_status": SubscriptionStatus.SUSPENDED.value,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }}
+        )
+        suspended_count += 1
+        
+        # Notify admin
+        admin = await db.users.find_one({"company_id": company["id"], "role": UserRole.ADMIN.value})
+        if admin:
+            await create_notification(
+                company["id"],
+                "Suscripción Suspendida",
+                "Tu suscripción ha sido suspendida por falta de pago. Contacta a soporte para renovar.",
+                NotificationType.ERROR,
+                admin.get("id")
+            )
+        
+        await log_activity(
+            ActivityType.SUBSCRIPTION, "companies", f"Empresa suspendida por vencimiento",
+            company_id=company["id"], entity_id=company["id"], entity_type="company"
+        )
+    
+    return {"suspended_count": suspended_count, "message": f"{suspended_count} empresa(s) suspendida(s)"}
+
+# ============== NOTIFICATIONS ROUTES ==============
+@api_router.get("/notifications")
+async def get_notifications(
+    unread_only: bool = False,
+    limit: int = 20,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get notifications for current user"""
+    company_id = current_user.get("company_id")
+    user_id = current_user.get("sub")
+    
+    query = {
+        "company_id": company_id,
+        "$or": [{"user_id": user_id}, {"user_id": None}]
+    }
+    if unread_only:
+        query["read"] = False
+    
+    notifications = await db.notifications.find(query, {"_id": 0}).sort("created_at", -1).limit(limit).to_list(limit)
+    unread_count = await db.notifications.count_documents({**query, "read": False})
+    
+    return {"notifications": notifications, "unread_count": unread_count}
+
+@api_router.patch("/notifications/{notification_id}/read")
+async def mark_notification_read(notification_id: str, current_user: dict = Depends(get_current_user)):
+    """Mark a notification as read"""
+    result = await db.notifications.update_one(
+        {"id": notification_id},
+        {"$set": {"read": True, "read_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Notificación no encontrada")
+    return {"message": "Notificación marcada como leída"}
+
+@api_router.patch("/notifications/read-all")
+async def mark_all_notifications_read(current_user: dict = Depends(get_current_user)):
+    """Mark all notifications as read"""
+    company_id = current_user.get("company_id")
+    user_id = current_user.get("sub")
+    
+    result = await db.notifications.update_many(
+        {"company_id": company_id, "$or": [{"user_id": user_id}, {"user_id": None}], "read": False},
+        {"$set": {"read": True, "read_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"message": f"{result.modified_count} notificaciones marcadas como leídas"}
+
+# ============== PASSWORD RESET ROUTES ==============
+class PasswordResetRequest(BaseModel):
+    email: str
+    company_slug: Optional[str] = None
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
+
+@api_router.post("/auth/request-password-reset")
+async def request_password_reset(data: PasswordResetRequest):
+    """Request a password reset email"""
+    query = {"email": data.email}
+    if data.company_slug:
+        company = await db.companies.find_one({"slug": data.company_slug})
+        if company:
+            query["company_id"] = company["id"]
+    
+    user = await db.users.find_one(query)
+    if not user:
+        # Don't reveal if email exists
+        return {"message": "Si el correo existe, recibirás instrucciones para restablecer tu contraseña"}
+    
+    # Create reset token
+    token_data = {
+        "id": str(uuid.uuid4()),
+        "user_id": user["id"],
+        "email": user["email"],
+        "company_id": user.get("company_id"),
+        "token": str(uuid.uuid4()),
+        "used": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": (datetime.now(timezone.utc) + timedelta(hours=24)).isoformat()
+    }
+    await db.password_reset_tokens.insert_one(token_data)
+    
+    # Get company for URL
+    company = await db.companies.find_one({"id": user.get("company_id")})
+    reset_url = f"/reset-password/{token_data['token']}"
+    if company:
+        reset_url = f"/empresa/{company['slug']}/reset-password/{token_data['token']}"
+    
+    # Send email
+    html_body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #004e92, #000428); padding: 30px; text-align: center;">
+            <h1 style="color: white; margin: 0;">CIA SERVICIOS</h1>
+        </div>
+        <div style="padding: 30px; background: #f8fafc;">
+            <h2 style="color: #1e293b;">Restablecer Contraseña</h2>
+            <p style="color: #475569;">Hola {user.get('full_name', 'Usuario')},</p>
+            <p style="color: #475569;">
+                Recibimos una solicitud para restablecer tu contraseña. 
+                Haz clic en el siguiente botón para crear una nueva contraseña:
+            </p>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="{reset_url}" style="background: #004e92; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+                    Restablecer Contraseña
+                </a>
+            </div>
+            <p style="color: #94a3b8; font-size: 14px;">
+                Este enlace expirará en 24 horas. Si no solicitaste este cambio, ignora este correo.
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    await send_email_async("general", user["email"], "[CIA SERVICIOS] Restablecer Contraseña", html_body)
+    
+    return {"message": "Si el correo existe, recibirás instrucciones para restablecer tu contraseña"}
+
+@api_router.post("/auth/reset-password")
+async def reset_password(data: PasswordResetConfirm):
+    """Reset password with token"""
+    token_doc = await db.password_reset_tokens.find_one({
+        "token": data.token,
+        "used": False
+    })
+    
+    if not token_doc:
+        raise HTTPException(status_code=400, detail="Token inválido o expirado")
+    
+    # Check expiration
+    expires_at = datetime.fromisoformat(token_doc["expires_at"].replace('Z', '+00:00'))
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=400, detail="Token expirado")
+    
+    # Update password
+    new_hash = hash_password(data.new_password)
+    await db.users.update_one(
+        {"id": token_doc["user_id"]},
+        {"$set": {"password_hash": new_hash, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    # Mark token as used
+    await db.password_reset_tokens.update_one(
+        {"id": token_doc["id"]},
+        {"$set": {"used": True}}
+    )
+    
+    await log_activity(
+        ActivityType.UPDATE, "users", "Contraseña restablecida",
+        company_id=token_doc.get("company_id"), user_id=token_doc["user_id"],
+        user_email=token_doc["email"], entity_id=token_doc["user_id"], entity_type="user"
+    )
+    
+    return {"message": "Contraseña actualizada correctamente"}
+
+@api_router.get("/auth/verify-reset-token/{token}")
+async def verify_reset_token(token: str):
+    """Verify if a reset token is valid"""
+    token_doc = await db.password_reset_tokens.find_one({"token": token, "used": False})
+    if not token_doc:
+        return {"valid": False, "message": "Token inválido"}
+    
+    expires_at = datetime.fromisoformat(token_doc["expires_at"].replace('Z', '+00:00'))
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires_at:
+        return {"valid": False, "message": "Token expirado"}
+    
+    return {"valid": True, "email": token_doc["email"]}
+
+# ============== USER PROFILE ROUTES ==============
+class UserProfileUpdate(BaseModel):
+    full_name: Optional[str] = None
+    phone: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+@api_router.get("/profile")
+async def get_profile(current_user: dict = Depends(get_current_user)):
+    """Get current user profile"""
+    user = await db.users.find_one({"id": current_user.get("sub")}, {"_id": 0, "password_hash": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    # Get preferences
+    preferences = await db.user_preferences.find_one({"user_id": user["id"]}, {"_id": 0})
+    
+    return {
+        "user": user,
+        "preferences": preferences or {"theme": "light", "language": "es", "notifications_enabled": True}
+    }
+
+@api_router.patch("/profile")
+async def update_profile(data: UserProfileUpdate, current_user: dict = Depends(get_current_user)):
+    """Update current user profile"""
+    update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+    if not update_data:
+        return {"message": "No hay cambios para actualizar"}
+    
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    await db.users.update_one(
+        {"id": current_user.get("sub")},
+        {"$set": update_data}
+    )
+    
+    await log_activity(
+        ActivityType.UPDATE, "users", "Perfil actualizado",
+        company_id=current_user.get("company_id"), user_id=current_user.get("sub"),
+        user_email=current_user.get("email"), entity_id=current_user.get("sub"), entity_type="user"
+    )
+    
+    return {"message": "Perfil actualizado"}
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+@api_router.post("/profile/change-password")
+async def change_password(data: PasswordChange, current_user: dict = Depends(get_current_user)):
+    """Change current user's password"""
+    user = await db.users.find_one({"id": current_user.get("sub")})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    if not verify_password(data.current_password, user["password_hash"]):
+        raise HTTPException(status_code=400, detail="Contraseña actual incorrecta")
+    
+    new_hash = hash_password(data.new_password)
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"password_hash": new_hash, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    await log_activity(
+        ActivityType.UPDATE, "users", "Contraseña cambiada",
+        company_id=current_user.get("company_id"), user_id=current_user.get("sub"),
+        user_email=current_user.get("email")
+    )
+    
+    return {"message": "Contraseña actualizada"}
+
+# ============== USER PREFERENCES ROUTES ==============
+class UserPreferencesUpdate(BaseModel):
+    theme: Optional[str] = None
+    language: Optional[str] = None
+    notifications_enabled: Optional[bool] = None
+    email_notifications: Optional[bool] = None
+
+@api_router.get("/preferences")
+async def get_preferences(current_user: dict = Depends(get_current_user)):
+    """Get user preferences"""
+    prefs = await db.user_preferences.find_one({"user_id": current_user.get("sub")}, {"_id": 0})
+    if not prefs:
+        return {"theme": "light", "language": "es", "notifications_enabled": True, "email_notifications": True}
+    return prefs
+
+@api_router.patch("/preferences")
+async def update_preferences(data: UserPreferencesUpdate, current_user: dict = Depends(get_current_user)):
+    """Update user preferences"""
+    update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+    update_data["user_id"] = current_user.get("sub")
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    await db.user_preferences.update_one(
+        {"user_id": current_user.get("sub")},
+        {"$set": update_data},
+        upsert=True
+    )
+    
+    return {"message": "Preferencias actualizadas"}
+
+# ============== USER REMINDERS ROUTES ==============
+class ReminderCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    remind_at: datetime
+    entity_type: Optional[str] = None
+    entity_id: Optional[str] = None
+
+@api_router.get("/reminders")
+async def get_reminders(
+    include_completed: bool = False,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get user reminders"""
+    company_id = current_user.get("company_id")
+    user_id = current_user.get("sub")
+    
+    query = {"company_id": company_id, "user_id": user_id}
+    if not include_completed:
+        query["completed"] = False
+    
+    reminders = await db.reminders.find(query, {"_id": 0}).sort("remind_at", 1).to_list(100)
+    return reminders
+
+@api_router.post("/reminders")
+async def create_reminder(data: ReminderCreate, current_user: dict = Depends(get_current_user)):
+    """Create a reminder"""
+    company_id = current_user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No hay empresa asignada")
+    
+    reminder = {
+        "id": str(uuid.uuid4()),
+        "company_id": company_id,
+        "user_id": current_user.get("sub"),
+        "title": data.title,
+        "description": data.description,
+        "remind_at": data.remind_at.isoformat(),
+        "entity_type": data.entity_type,
+        "entity_id": data.entity_id,
+        "completed": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.reminders.insert_one(reminder)
+    
+    return {"message": "Recordatorio creado", "reminder": {k: v for k, v in reminder.items() if k != "_id"}}
+
+@api_router.patch("/reminders/{reminder_id}/complete")
+async def complete_reminder(reminder_id: str, current_user: dict = Depends(get_current_user)):
+    """Mark reminder as completed"""
+    result = await db.reminders.update_one(
+        {"id": reminder_id, "user_id": current_user.get("sub")},
+        {"$set": {"completed": True, "completed_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Recordatorio no encontrado")
+    return {"message": "Recordatorio completado"}
+
+@api_router.delete("/reminders/{reminder_id}")
+async def delete_reminder(reminder_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a reminder"""
+    result = await db.reminders.delete_one({"id": reminder_id, "user_id": current_user.get("sub")})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Recordatorio no encontrado")
+    return {"message": "Recordatorio eliminado"}
+
+# ============== DOCUMENT SETTINGS ROUTES ==============
+class DocumentSettingsUpdate(BaseModel):
+    primary_color: Optional[str] = None
+    secondary_color: Optional[str] = None
+    font_family: Optional[str] = None
+    show_logo: Optional[bool] = None
+    show_company_info: Optional[bool] = None
+    footer_text: Optional[str] = None
+    terms_and_conditions: Optional[str] = None
+    quote_validity_days: Optional[int] = None
+    invoice_payment_terms: Optional[str] = None
+
+@api_router.get("/document-settings")
+async def get_document_settings(current_user: dict = Depends(get_current_user)):
+    """Get document settings for company"""
+    company_id = current_user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No hay empresa asignada")
+    
+    settings = await db.document_settings.find_one({"company_id": company_id}, {"_id": 0})
+    if not settings:
+        return {
+            "company_id": company_id,
+            "primary_color": "#004e92",
+            "secondary_color": "#1e293b",
+            "font_family": "Helvetica",
+            "show_logo": True,
+            "show_company_info": True,
+            "footer_text": "",
+            "terms_and_conditions": "",
+            "quote_validity_days": 30,
+            "invoice_payment_terms": ""
+        }
+    return settings
+
+@api_router.patch("/document-settings")
+async def update_document_settings(data: DocumentSettingsUpdate, current_user: dict = Depends(get_current_user)):
+    """Update document settings"""
+    company_id = current_user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No hay empresa asignada")
+    
+    update_data = {k: v for k, v in data.model_dump().items() if v is not None}
+    update_data["company_id"] = company_id
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    await db.document_settings.update_one(
+        {"company_id": company_id},
+        {"$set": update_data},
+        upsert=True
+    )
+    
+    await log_activity(
+        ActivityType.UPDATE, "settings", "Configuración de documentos actualizada",
+        company_id=company_id, user_id=current_user.get("sub"),
+        user_email=current_user.get("email")
+    )
+    
+    return {"message": "Configuración actualizada"}
+
+# ============== QUOTE SIGNATURE ROUTES ==============
+@api_router.post("/quotes/{quote_id}/request-signature")
+async def request_quote_signature(quote_id: str, current_user: dict = Depends(get_current_user)):
+    """Request signature for a quote"""
+    company_id = current_user.get("company_id")
+    
+    quote = await db.quotes.find_one({"id": quote_id, "company_id": company_id})
+    if not quote:
+        raise HTTPException(status_code=404, detail="Cotización no encontrada")
+    
+    client = await db.clients.find_one({"id": quote.get("client_id")})
+    if not client or not client.get("email"):
+        raise HTTPException(status_code=400, detail="El cliente no tiene correo electrónico")
+    
+    # Create signature request
+    signature = {
+        "id": str(uuid.uuid4()),
+        "quote_id": quote_id,
+        "company_id": company_id,
+        "client_name": client.get("name", ""),
+        "client_email": client.get("email"),
+        "signature_token": str(uuid.uuid4()),
+        "signed": False,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+    }
+    await db.quote_signatures.insert_one(signature)
+    
+    # Get company
+    company = await db.companies.find_one({"id": company_id})
+    company_name = company.get("business_name", "CIA SERVICIOS") if company else "CIA SERVICIOS"
+    
+    # Send email
+    sign_url = f"/firma/{signature['signature_token']}"
+    html_body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #004e92, #000428); padding: 30px; text-align: center;">
+            <h1 style="color: white; margin: 0;">{company_name}</h1>
+        </div>
+        <div style="padding: 30px; background: #f8fafc;">
+            <h2 style="color: #1e293b;">Firma Requerida</h2>
+            <p style="color: #475569;">Estimado(a) {client.get('name', 'Cliente')},</p>
+            <p style="color: #475569;">
+                Se ha generado una cotización que requiere su aprobación. 
+                Por favor revise y firme el documento haciendo clic en el siguiente botón:
+            </p>
+            <div style="background: white; border: 1px solid #e2e8f0; padding: 15px; margin: 20px 0; border-radius: 8px;">
+                <p style="margin: 0;"><strong>Cotización:</strong> {quote.get('quote_number', quote_id)}</p>
+                <p style="margin: 5px 0 0 0;"><strong>Total:</strong> ${quote.get('total', 0):,.2f} MXN</p>
+            </div>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="{sign_url}" style="background: #004e92; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+                    Revisar y Firmar
+                </a>
+            </div>
+            <p style="color: #94a3b8; font-size: 14px;">
+                Este enlace expirará en 7 días.
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    await send_email_async("general", client["email"], f"[{company_name}] Cotización pendiente de firma", html_body)
+    
+    await log_activity(
+        ActivityType.EMAIL, "quotes", f"Solicitud de firma enviada",
+        company_id=company_id, user_id=current_user.get("sub"),
+        user_email=current_user.get("email"), entity_id=quote_id, entity_type="quote"
+    )
+    
+    return {"message": "Solicitud de firma enviada", "signature_id": signature["id"]}
+
+@api_router.get("/sign/{token}")
+async def get_quote_for_signature(token: str):
+    """Get quote details for signature (public endpoint)"""
+    signature = await db.quote_signatures.find_one({"signature_token": token})
+    if not signature:
+        raise HTTPException(status_code=404, detail="Enlace inválido")
+    
+    if signature.get("signed"):
+        return {"already_signed": True, "signed_at": signature.get("signed_at")}
+    
+    # Check expiration
+    expires_at = datetime.fromisoformat(signature["expires_at"].replace('Z', '+00:00'))
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=400, detail="Enlace expirado")
+    
+    quote = await db.quotes.find_one({"id": signature["quote_id"]}, {"_id": 0})
+    if not quote:
+        raise HTTPException(status_code=404, detail="Cotización no encontrada")
+    
+    company = await db.companies.find_one({"id": signature["company_id"]}, {"_id": 0, "logo_file": 0})
+    client = await db.clients.find_one({"id": quote.get("client_id")}, {"_id": 0})
+    
+    return {
+        "quote": quote,
+        "company": company,
+        "client": client,
+        "signature": {k: v for k, v in signature.items() if k not in ["_id", "signature_token"]}
+    }
+
+class SignatureConfirm(BaseModel):
+    token: str
+    client_name: str
+
+@api_router.post("/sign/confirm")
+async def confirm_signature(data: SignatureConfirm):
+    """Confirm quote signature (public endpoint)"""
+    signature = await db.quote_signatures.find_one({"signature_token": data.token, "signed": False})
+    if not signature:
+        raise HTTPException(status_code=400, detail="Enlace inválido o ya firmado")
+    
+    # Check expiration
+    expires_at = datetime.fromisoformat(signature["expires_at"].replace('Z', '+00:00'))
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) > expires_at:
+        raise HTTPException(status_code=400, detail="Enlace expirado")
+    
+    now = datetime.now(timezone.utc)
+    
+    # Update signature
+    await db.quote_signatures.update_one(
+        {"id": signature["id"]},
+        {"$set": {
+            "signed": True,
+            "signed_at": now.isoformat(),
+            "client_name": data.client_name
+        }}
+    )
+    
+    # Update quote status
+    await db.quotes.update_one(
+        {"id": signature["quote_id"]},
+        {"$set": {
+            "status": QuoteStatus.AUTHORIZED.value,
+            "signed_at": now.isoformat(),
+            "signed_by": data.client_name,
+            "updated_at": now.isoformat()
+        }}
+    )
+    
+    # Create notification for company
+    await create_notification(
+        signature["company_id"],
+        "Cotización Firmada",
+        f"La cotización ha sido firmada por {data.client_name}",
+        NotificationType.SUCCESS,
+        link=f"/cotizaciones/{signature['quote_id']}"
+    )
+    
+    await log_activity(
+        ActivityType.UPDATE, "quotes", f"Cotización firmada por cliente",
+        company_id=signature["company_id"], entity_id=signature["quote_id"], entity_type="quote",
+        details={"signed_by": data.client_name}
+    )
+    
+    return {"message": "Cotización firmada exitosamente"}
+
+# ============== SUPER ADMIN REVENUE STATS ==============
+@api_router.get("/super-admin/revenue-stats")
+async def get_revenue_stats(current_user: dict = Depends(require_super_admin)):
+    """Get revenue statistics for Super Admin dashboard"""
+    now = datetime.now(timezone.utc)
+    
+    # Monthly revenue for last 12 months
+    monthly_revenue = []
+    for i in range(11, -1, -1):
+        month_start = (now - timedelta(days=30*i)).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        month_end = (month_start + timedelta(days=32)).replace(day=1)
+        
+        # Get companies active in this period
+        active_companies = await db.companies.find({
+            "subscription_status": "active",
+            "subscription_start": {"$lte": month_end.isoformat()}
+        }).to_list(1000)
+        
+        month_total = sum(c.get("monthly_fee", 0) for c in active_companies)
+        
+        monthly_revenue.append({
+            "month": month_start.strftime("%b %Y"),
+            "revenue": month_total,
+            "companies": len(active_companies)
+        })
+    
+    # Total by license type
+    license_stats = await db.companies.aggregate([
+        {"$match": {"subscription_status": "active"}},
+        {"$group": {
+            "_id": "$license_type",
+            "count": {"$sum": 1},
+            "revenue": {"$sum": "$monthly_fee"}
+        }}
+    ]).to_list(10)
+    
+    # Upcoming renewals
+    next_30_days = (now + timedelta(days=30)).isoformat()
+    upcoming_renewals = await db.companies.find({
+        "subscription_status": "active",
+        "subscription_end": {"$lte": next_30_days, "$gte": now.isoformat()}
+    }, {"_id": 0, "business_name": 1, "monthly_fee": 1, "subscription_end": 1}).to_list(20)
+    
+    return {
+        "monthly_revenue": monthly_revenue,
+        "license_stats": [{"license": s["_id"], "count": s["count"], "revenue": s["revenue"]} for s in license_stats],
+        "upcoming_renewals": upcoming_renewals,
+        "total_monthly_revenue": sum(mr["revenue"] for mr in monthly_revenue[-1:])
     }
 
 # Include router and configure CORS

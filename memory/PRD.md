@@ -242,6 +242,58 @@ Company Admin (CIA Servicios Demo):
 - [ ] Exportación de reportes a PDF/CSV
 
 ## Changelog
+### v3.0.0 (Marzo 2026) - MAJOR UPDATE
+- ✨ **Sistema de Actividad y Logs**
+  - Historial de actividad completo por empresa
+  - Filtros por tipo de actividad y módulo
+  - Registro automático de acciones (login, crear, editar, eliminar)
+  - Vista para Super Admin con todas las empresas
+  
+- ✨ **Gestión de Usuarios Mejorada**
+  - Página de perfil de usuario (nombre, teléfono, avatar)
+  - Cambio de contraseña desde perfil
+  - Recuperación de contraseña por email
+  - Preferencias de usuario (tema, idioma, notificaciones)
+  
+- ✨ **Sistema de Notificaciones**
+  - Campanita con contador de no leídas
+  - Notificaciones en tiempo real
+  - Marcar como leído individual/todas
+  - Tipos: info, warning, success, error
+  
+- ✨ **Recordatorios Internos**
+  - Crear recordatorios personales
+  - Fecha y hora de recordatorio
+  - Marcar como completados
+  - Vista de pendientes/completados
+  
+- ✨ **Configuración de Documentos PDF**
+  - Colores personalizables
+  - Selección de fuente
+  - Mostrar/ocultar logo
+  - Texto de pie de página
+  - Términos y condiciones
+  - Vigencia de cotizaciones
+  
+- ✨ **Firma Digital de Cotizaciones**
+  - Enviar solicitud de firma por email
+  - Cliente puede ver y firmar desde enlace
+  - Actualización automática de estado
+  - Notificación al firmar
+  
+- ✨ **Funciones Super Admin**
+  - Duplicar configuración de empresa
+  - Notas/comentarios por empresa
+  - Métricas de uso por empresa
+  - Estadísticas de ingresos mensuales
+  - Exportar listado de empresas a CSV
+  - Bloqueo automático por morosidad
+  
+- ✨ **Preferencias de Usuario**
+  - Modo claro/oscuro/sistema
+  - Idioma (español/inglés) - preparado
+  - Notificaciones activar/desactivar
+
 ### v2.9.0 (Marzo 2026)
 - ✨ **Sistema de Correos Configurables**
   - Dos cuentas de email independientes: Cobranza y General

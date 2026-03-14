@@ -170,9 +170,13 @@ export const CompanyLogin = () => {
             </form>
 
             <div className="mt-4 sm:mt-6 pt-4 sm:pt-6 border-t text-center">
-              <p className="text-xs sm:text-sm text-muted-foreground">
-                ¿Olvidaste tu contraseña? Contacta a tu administrador.
-              </p>
+              <button
+                type="button"
+                onClick={() => navigate(`/empresa/${slug}/forgot-password`)}
+                className="text-xs sm:text-sm text-primary hover:underline"
+              >
+                ¿Olvidaste tu contraseña?
+              </button>
             </div>
           </CardContent>
         </Card>
