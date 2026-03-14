@@ -68,9 +68,12 @@ import {
   Database,
   Server,
   Settings,
+  Settings2,
   Save,
   TicketIcon,
+  Mail,
 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 
 const LICENSE_TYPES = [
   { value: "basic", label: "Básica", users: 5 },
@@ -102,7 +105,32 @@ export const SuperAdminDashboard = () => {
     backup_schedule: "daily",
     cloud_provider: "mysql",
     migration_status: "pending",
+    // Email Cobranza
+    email_cobranza_enabled: false,
+    email_cobranza_address: "",
+    email_cobranza_password: "",
+    email_cobranza_smtp_host: "",
+    email_cobranza_smtp_port: 587,
+    email_cobranza_use_tls: true,
+    email_cobranza_use_ssl: false,
+    email_cobranza_provider: "custom",
+    // Email General
+    email_general_enabled: false,
+    email_general_address: "",
+    email_general_password: "",
+    email_general_smtp_host: "",
+    email_general_smtp_port: 587,
+    email_general_use_tls: true,
+    email_general_use_ssl: false,
+    email_general_provider: "custom",
+    // Notification Settings
+    notify_subscription_days_before: 15,
+    notify_invoice_overdue: true,
+    notify_invoice_days_before: 5,
   });
+  const [smtpPresets, setSmtpPresets] = useState({});
+  const [testingEmail, setTestingEmail] = useState(null);
+  const [configTab, setConfigTab] = useState("database");
   const [savingServerConfig, setSavingServerConfig] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [creatingSchema, setCreatingSchema] = useState(false);
@@ -168,6 +196,11 @@ export const SuperAdminDashboard = () => {
       if (response.data) {
         setServerConfig(response.data);
       }
+      // Also fetch SMTP presets
+      const presetsResponse = await api.get("/super-admin/smtp-presets");
+      if (presetsResponse.data) {
+        setSmtpPresets(presetsResponse.data);
+      }
     } catch (error) {
       // Config might not exist yet, that's okay
       console.log("No server config found");
@@ -185,6 +218,39 @@ export const SuperAdminDashboard = () => {
       toast.error("Error al guardar configuración");
     } finally {
       setSavingServerConfig(false);
+    }
+  };
+
+  const applySmtpPreset = (emailType, provider) => {
+    const preset = smtpPresets[provider];
+    if (preset) {
+      setServerConfig(prev => ({
+        ...prev,
+        [`email_${emailType}_provider`]: provider,
+        [`email_${emailType}_smtp_host`]: preset.smtp_host,
+        [`email_${emailType}_smtp_port`]: preset.smtp_port,
+        [`email_${emailType}_use_tls`]: preset.use_tls,
+        [`email_${emailType}_use_ssl`]: preset.use_ssl,
+      }));
+    }
+  };
+
+  const handleTestEmail = async (emailType) => {
+    setTestingEmail(emailType);
+    try {
+      const response = await api.post("/super-admin/test-email", {
+        email_type: emailType,
+        test_recipient: serverConfig[`email_${emailType}_address`]
+      });
+      if (response.data.success) {
+        toast.success("Correo de prueba enviado correctamente");
+      } else {
+        toast.error(response.data.message);
+      }
+    } catch (error) {
+      toast.error("Error: " + (error.response?.data?.detail || error.message));
+    } finally {
+      setTestingEmail(null);
     }
   };
 
@@ -1295,177 +1361,163 @@ export const SuperAdminDashboard = () => {
 
       {/* Server Configuration Dialog */}
       <Dialog open={serverConfigDialogOpen} onOpenChange={setServerConfigDialogOpen}>
-        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
           <form onSubmit={handleSaveServerConfig}>
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
-                <Database className="h-5 w-5 text-blue-500" />
-                Configuración del Servidor MySQL
+                <Settings2 className="h-5 w-5 text-blue-500" />
+                Configuración del Sistema
               </DialogTitle>
               <DialogDescription>
-                Configura la conexión al servidor MySQL donde se almacenarán los datos del sistema
+                Configura la base de datos, correos y notificaciones del sistema
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-4">
-              {/* Connection Status Badge */}
-              <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border">
-                <span className="font-medium text-sm">Estado de Migración:</span>
-                <Badge className={
-                  serverConfig.migration_status === "completed" ? "bg-green-500" :
-                  serverConfig.migration_status === "schema_created" ? "bg-blue-500" :
-                  serverConfig.migration_status === "in_progress" ? "bg-yellow-500" :
-                  serverConfig.migration_status === "failed" ? "bg-red-500" :
-                  "bg-slate-500"
-                }>
-                  {serverConfig.migration_status === "completed" ? "Completado" :
-                   serverConfig.migration_status === "schema_created" ? "Esquema Creado" :
-                   serverConfig.migration_status === "in_progress" ? "En Progreso" :
-                   serverConfig.migration_status === "failed" ? "Fallido" :
-                   "Pendiente"}
-                </Badge>
-              </div>
+            
+            <Tabs value={configTab} onValueChange={setConfigTab} className="mt-4">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="database" className="text-xs sm:text-sm">
+                  <Database className="h-4 w-4 mr-1 sm:mr-2" />
+                  <span className="hidden sm:inline">Base de</span> Datos
+                </TabsTrigger>
+                <TabsTrigger value="email_cobranza" className="text-xs sm:text-sm">
+                  <Mail className="h-4 w-4 mr-1 sm:mr-2" />
+                  Cobranza
+                </TabsTrigger>
+                <TabsTrigger value="email_general" className="text-xs sm:text-sm">
+                  <Mail className="h-4 w-4 mr-1 sm:mr-2" />
+                  General
+                </TabsTrigger>
+              </TabsList>
 
-              {/* MySQL Connection Settings */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Host del Servidor *</Label>
-                  <Input
-                    value={serverConfig.mysql_host}
-                    onChange={(e) => setServerConfig({ ...serverConfig, mysql_host: e.target.value })}
-                    placeholder="localhost o IP del servidor"
-                    data-testid="mysql-host-input"
-                  />
+              {/* DATABASE TAB */}
+              <TabsContent value="database" className="space-y-4 mt-4">
+                {/* Connection Status Badge */}
+                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border">
+                  <span className="font-medium text-sm">Estado de Migración:</span>
+                  <Badge className={
+                    serverConfig.migration_status === "completed" ? "bg-green-500" :
+                    serverConfig.migration_status === "schema_created" ? "bg-blue-500" :
+                    serverConfig.migration_status === "in_progress" ? "bg-yellow-500" :
+                    serverConfig.migration_status === "failed" ? "bg-red-500" :
+                    "bg-slate-500"
+                  }>
+                    {serverConfig.migration_status === "completed" ? "Completado" :
+                     serverConfig.migration_status === "schema_created" ? "Esquema Creado" :
+                     serverConfig.migration_status === "in_progress" ? "En Progreso" :
+                     serverConfig.migration_status === "failed" ? "Fallido" :
+                     "Pendiente"}
+                  </Badge>
                 </div>
-                <div className="grid gap-2">
-                  <Label>Puerto</Label>
-                  <Input
-                    type="number"
-                    value={serverConfig.mysql_port}
-                    onChange={(e) => setServerConfig({ ...serverConfig, mysql_port: parseInt(e.target.value) || 3306 })}
-                    placeholder="3306"
-                    data-testid="mysql-port-input"
-                  />
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Usuario *</Label>
-                  <Input
-                    value={serverConfig.mysql_user}
-                    onChange={(e) => setServerConfig({ ...serverConfig, mysql_user: e.target.value })}
-                    placeholder="root"
-                    data-testid="mysql-user-input"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label>Contraseña *</Label>
-                  <Input
-                    type="password"
-                    value={serverConfig.mysql_password}
-                    onChange={(e) => setServerConfig({ ...serverConfig, mysql_password: e.target.value })}
-                    placeholder="••••••••"
-                    data-testid="mysql-password-input"
-                  />
-                </div>
-              </div>
 
-              <div className="grid gap-2">
-                <Label>Nombre de Base de Datos *</Label>
-                <Input
-                  value={serverConfig.mysql_database}
-                  onChange={(e) => setServerConfig({ ...serverConfig, mysql_database: e.target.value })}
-                  placeholder="cia_servicios"
-                  data-testid="mysql-database-input"
-                />
-                <p className="text-xs text-muted-foreground">
-                  La base de datos debe existir previamente en el servidor
-                </p>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleTestMySQLConnection}
-                  disabled={testingConnection || !serverConfig.mysql_host || !serverConfig.mysql_user}
-                  className="text-blue-600 border-blue-300 hover:bg-blue-50"
-                >
-                  {testingConnection ? (
-                    <>
-                      <span className="animate-spin mr-2">⏳</span>
-                      Probando...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle className="mr-2 h-4 w-4" />
-                      Probar Conexión
-                    </>
-                  )}
-                </Button>
-                
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleCreateMySQLSchema}
-                  disabled={creatingSchema || serverConfig.migration_status === "completed"}
-                  className="text-green-600 border-green-300 hover:bg-green-50"
-                >
-                  {creatingSchema ? (
-                    <>
-                      <span className="animate-spin mr-2">⏳</span>
-                      Creando...
-                    </>
-                  ) : (
-                    <>
-                      <Database className="mr-2 h-4 w-4" />
-                      Crear Esquema
-                    </>
-                  )}
-                </Button>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={handleMigrateToMySQL}
-                  disabled={migratingData || serverConfig.migration_status !== "schema_created"}
-                  className="text-orange-600 border-orange-300 hover:bg-orange-50"
-                >
-                  {migratingData ? (
-                    <>
-                      <span className="animate-spin mr-2">⏳</span>
-                      Migrando...
-                    </>
-                  ) : (
-                    <>
-                      <Server className="mr-2 h-4 w-4" />
-                      Migrar Datos
-                    </>
-                  )}
-                </Button>
-              </div>
-
-              <Separator />
-              
-              {/* Backup Settings */}
-              <div className="space-y-3">
-                <h4 className="font-semibold text-sm">Configuración de Respaldos</h4>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <Label>Respaldos Automáticos</Label>
-                    <p className="text-xs text-muted-foreground">Habilitar respaldos automáticos de la base de datos</p>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={serverConfig.backup_enabled}
-                    onChange={(e) => setServerConfig({ ...serverConfig, backup_enabled: e.target.checked })}
-                    className="h-4 w-4"
-                  />
-                </div>
-                {serverConfig.backup_enabled && (
+                {/* MySQL Connection Settings */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="grid gap-2">
-                    <Label>Frecuencia de Respaldo</Label>
+                    <Label>Host del Servidor *</Label>
+                    <Input
+                      value={serverConfig.mysql_host}
+                      onChange={(e) => setServerConfig({ ...serverConfig, mysql_host: e.target.value })}
+                      placeholder="localhost o IP del servidor"
+                      data-testid="mysql-host-input"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Puerto</Label>
+                    <Input
+                      type="number"
+                      value={serverConfig.mysql_port}
+                      onChange={(e) => setServerConfig({ ...serverConfig, mysql_port: parseInt(e.target.value) || 3306 })}
+                      placeholder="3306"
+                      data-testid="mysql-port-input"
+                    />
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label>Usuario *</Label>
+                    <Input
+                      value={serverConfig.mysql_user}
+                      onChange={(e) => setServerConfig({ ...serverConfig, mysql_user: e.target.value })}
+                      placeholder="root"
+                      data-testid="mysql-user-input"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label>Contraseña *</Label>
+                    <Input
+                      type="password"
+                      value={serverConfig.mysql_password}
+                      onChange={(e) => setServerConfig({ ...serverConfig, mysql_password: e.target.value })}
+                      placeholder="••••••••"
+                      data-testid="mysql-password-input"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <Label>Nombre de Base de Datos *</Label>
+                  <Input
+                    value={serverConfig.mysql_database}
+                    onChange={(e) => setServerConfig({ ...serverConfig, mysql_database: e.target.value })}
+                    placeholder="cia_servicios"
+                    data-testid="mysql-database-input"
+                  />
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTestMySQLConnection}
+                    disabled={testingConnection || !serverConfig.mysql_host || !serverConfig.mysql_user}
+                    className="text-blue-600 border-blue-300 hover:bg-blue-50"
+                  >
+                    {testingConnection ? "Probando..." : "Probar Conexión"}
+                  </Button>
+                  
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleCreateMySQLSchema}
+                    disabled={creatingSchema || serverConfig.migration_status === "completed"}
+                    className="text-green-600 border-green-300 hover:bg-green-50"
+                  >
+                    {creatingSchema ? "Creando..." : "Crear Esquema"}
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleMigrateToMySQL}
+                    disabled={migratingData || serverConfig.migration_status !== "schema_created"}
+                    className="text-orange-600 border-orange-300 hover:bg-orange-50"
+                  >
+                    {migratingData ? "Migrando..." : "Migrar Datos"}
+                  </Button>
+                </div>
+
+                <Separator />
+                
+                {/* Backup Settings */}
+                <div className="space-y-3">
+                  <h4 className="font-semibold text-sm">Configuración de Respaldos</h4>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Label>Respaldos Automáticos</Label>
+                      <p className="text-xs text-muted-foreground">Habilitar respaldos automáticos</p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={serverConfig.backup_enabled}
+                      onChange={(e) => setServerConfig({ ...serverConfig, backup_enabled: e.target.checked })}
+                      className="h-4 w-4"
+                    />
+                  </div>
+                  {serverConfig.backup_enabled && (
                     <Select 
                       value={serverConfig.backup_schedule} 
                       onValueChange={(value) => setServerConfig({ ...serverConfig, backup_schedule: value })}
@@ -1474,33 +1526,315 @@ export const SuperAdminDashboard = () => {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="hourly">Cada hora</SelectItem>
                         <SelectItem value="daily">Diario</SelectItem>
                         <SelectItem value="weekly">Semanal</SelectItem>
                         <SelectItem value="monthly">Mensual</SelectItem>
                       </SelectContent>
                     </Select>
-                  </div>
-                )}
-              </div>
-
-              {/* Info Box */}
-              <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                <div className="flex items-start gap-2">
-                  <Database className="h-4 w-4 text-blue-600 mt-0.5" />
-                  <div className="text-sm text-blue-800">
-                    <strong>Pasos para migrar a MySQL:</strong>
-                    <ol className="list-decimal ml-4 mt-1 space-y-1">
-                      <li>Ingresa las credenciales de tu servidor MySQL</li>
-                      <li>Haz clic en "Probar Conexión" para verificar</li>
-                      <li>Haz clic en "Crear Esquema" para crear las tablas</li>
-                      <li>Haz clic en "Migrar Datos" para transferir la información</li>
-                    </ol>
-                  </div>
+                  )}
                 </div>
-              </div>
-            </div>
-            <DialogFooter>
+              </TabsContent>
+
+              {/* EMAIL COBRANZA TAB */}
+              <TabsContent value="email_cobranza" className="space-y-4 mt-4">
+                <div className="flex items-center justify-between p-3 bg-amber-50 rounded-lg border border-amber-200">
+                  <div>
+                    <span className="font-medium text-sm text-amber-800">Email de Cobranza</span>
+                    <p className="text-xs text-amber-600">Para recordatorios de pago y facturas vencidas</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={serverConfig.email_cobranza_enabled}
+                    onChange={(e) => setServerConfig({ ...serverConfig, email_cobranza_enabled: e.target.checked })}
+                    className="h-5 w-5"
+                  />
+                </div>
+
+                {serverConfig.email_cobranza_enabled && (
+                  <>
+                    <div className="grid gap-2">
+                      <Label>Proveedor de Correo</Label>
+                      <Select 
+                        value={serverConfig.email_cobranza_provider} 
+                        onValueChange={(value) => applySmtpPreset("cobranza", value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar proveedor..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="custom">Configuración Manual</SelectItem>
+                          <SelectItem value="gmail">Gmail / Google Workspace</SelectItem>
+                          <SelectItem value="outlook">Outlook / Microsoft 365</SelectItem>
+                          <SelectItem value="yahoo">Yahoo Mail</SelectItem>
+                          <SelectItem value="zoho">Zoho Mail</SelectItem>
+                          <SelectItem value="cpanel">cPanel (Hosting)</SelectItem>
+                          <SelectItem value="hostinger">Hostinger</SelectItem>
+                          <SelectItem value="godaddy">GoDaddy</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {smtpPresets[serverConfig.email_cobranza_provider]?.notes && (
+                        <p className="text-xs text-blue-600">{smtpPresets[serverConfig.email_cobranza_provider].notes}</p>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label>Correo Electrónico *</Label>
+                        <Input
+                          type="email"
+                          value={serverConfig.email_cobranza_address}
+                          onChange={(e) => setServerConfig({ ...serverConfig, email_cobranza_address: e.target.value })}
+                          placeholder="cobranza@tudominio.com"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Contraseña *</Label>
+                        <Input
+                          type="password"
+                          value={serverConfig.email_cobranza_password}
+                          onChange={(e) => setServerConfig({ ...serverConfig, email_cobranza_password: e.target.value })}
+                          placeholder="••••••••"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label>Servidor SMTP</Label>
+                        <Input
+                          value={serverConfig.email_cobranza_smtp_host}
+                          onChange={(e) => setServerConfig({ ...serverConfig, email_cobranza_smtp_host: e.target.value })}
+                          placeholder="smtp.tudominio.com"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Puerto</Label>
+                        <Input
+                          type="number"
+                          value={serverConfig.email_cobranza_smtp_port}
+                          onChange={(e) => setServerConfig({ ...serverConfig, email_cobranza_smtp_port: parseInt(e.target.value) || 587 })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-6">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={serverConfig.email_cobranza_use_tls}
+                          onChange={(e) => setServerConfig({ ...serverConfig, email_cobranza_use_tls: e.target.checked, email_cobranza_use_ssl: false })}
+                          className="h-4 w-4"
+                        />
+                        Usar TLS
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={serverConfig.email_cobranza_use_ssl}
+                          onChange={(e) => setServerConfig({ ...serverConfig, email_cobranza_use_ssl: e.target.checked, email_cobranza_use_tls: false })}
+                          className="h-4 w-4"
+                        />
+                        Usar SSL
+                      </label>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleTestEmail("cobranza")}
+                      disabled={testingEmail === "cobranza" || !serverConfig.email_cobranza_address}
+                      className="text-amber-600 border-amber-300 hover:bg-amber-50"
+                    >
+                      <Mail className="mr-2 h-4 w-4" />
+                      {testingEmail === "cobranza" ? "Enviando..." : "Enviar Correo de Prueba"}
+                    </Button>
+
+                    <Separator />
+
+                    <div className="space-y-3">
+                      <h4 className="font-semibold text-sm">Configuración de Notificaciones</h4>
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <Label>Recordatorio de facturas vencidas</Label>
+                          <p className="text-xs text-muted-foreground">Enviar correo a clientes con facturas vencidas</p>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={serverConfig.notify_invoice_overdue}
+                          onChange={(e) => setServerConfig({ ...serverConfig, notify_invoice_overdue: e.target.checked })}
+                          className="h-4 w-4"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Días antes del vencimiento para notificar</Label>
+                        <Select 
+                          value={String(serverConfig.notify_invoice_days_before)} 
+                          onValueChange={(value) => setServerConfig({ ...serverConfig, notify_invoice_days_before: parseInt(value) })}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="3">3 días antes</SelectItem>
+                            <SelectItem value="5">5 días antes</SelectItem>
+                            <SelectItem value="7">7 días antes</SelectItem>
+                            <SelectItem value="10">10 días antes</SelectItem>
+                            <SelectItem value="15">15 días antes</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </TabsContent>
+
+              {/* EMAIL GENERAL TAB */}
+              <TabsContent value="email_general" className="space-y-4 mt-4">
+                <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg border border-blue-200">
+                  <div>
+                    <span className="font-medium text-sm text-blue-800">Email General</span>
+                    <p className="text-xs text-blue-600">Para comunicación general y notificaciones del sistema</p>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={serverConfig.email_general_enabled}
+                    onChange={(e) => setServerConfig({ ...serverConfig, email_general_enabled: e.target.checked })}
+                    className="h-5 w-5"
+                  />
+                </div>
+
+                {serverConfig.email_general_enabled && (
+                  <>
+                    <div className="grid gap-2">
+                      <Label>Proveedor de Correo</Label>
+                      <Select 
+                        value={serverConfig.email_general_provider} 
+                        onValueChange={(value) => applySmtpPreset("general", value)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Seleccionar proveedor..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="custom">Configuración Manual</SelectItem>
+                          <SelectItem value="gmail">Gmail / Google Workspace</SelectItem>
+                          <SelectItem value="outlook">Outlook / Microsoft 365</SelectItem>
+                          <SelectItem value="yahoo">Yahoo Mail</SelectItem>
+                          <SelectItem value="zoho">Zoho Mail</SelectItem>
+                          <SelectItem value="cpanel">cPanel (Hosting)</SelectItem>
+                          <SelectItem value="hostinger">Hostinger</SelectItem>
+                          <SelectItem value="godaddy">GoDaddy</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      {smtpPresets[serverConfig.email_general_provider]?.notes && (
+                        <p className="text-xs text-blue-600">{smtpPresets[serverConfig.email_general_provider].notes}</p>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label>Correo Electrónico *</Label>
+                        <Input
+                          type="email"
+                          value={serverConfig.email_general_address}
+                          onChange={(e) => setServerConfig({ ...serverConfig, email_general_address: e.target.value })}
+                          placeholder="info@tudominio.com"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Contraseña *</Label>
+                        <Input
+                          type="password"
+                          value={serverConfig.email_general_password}
+                          onChange={(e) => setServerConfig({ ...serverConfig, email_general_password: e.target.value })}
+                          placeholder="••••••••"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label>Servidor SMTP</Label>
+                        <Input
+                          value={serverConfig.email_general_smtp_host}
+                          onChange={(e) => setServerConfig({ ...serverConfig, email_general_smtp_host: e.target.value })}
+                          placeholder="smtp.tudominio.com"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Puerto</Label>
+                        <Input
+                          type="number"
+                          value={serverConfig.email_general_smtp_port}
+                          onChange={(e) => setServerConfig({ ...serverConfig, email_general_smtp_port: parseInt(e.target.value) || 587 })}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-6">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={serverConfig.email_general_use_tls}
+                          onChange={(e) => setServerConfig({ ...serverConfig, email_general_use_tls: e.target.checked, email_general_use_ssl: false })}
+                          className="h-4 w-4"
+                        />
+                        Usar TLS
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={serverConfig.email_general_use_ssl}
+                          onChange={(e) => setServerConfig({ ...serverConfig, email_general_use_ssl: e.target.checked, email_general_use_tls: false })}
+                          className="h-4 w-4"
+                        />
+                        Usar SSL
+                      </label>
+                    </div>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleTestEmail("general")}
+                      disabled={testingEmail === "general" || !serverConfig.email_general_address}
+                      className="text-blue-600 border-blue-300 hover:bg-blue-50"
+                    >
+                      <Mail className="mr-2 h-4 w-4" />
+                      {testingEmail === "general" ? "Enviando..." : "Enviar Correo de Prueba"}
+                    </Button>
+
+                    <Separator />
+
+                    <div className="space-y-3">
+                      <h4 className="font-semibold text-sm">Recordatorios de Suscripción</h4>
+                      <div className="grid gap-2">
+                        <Label>Días antes del vencimiento para notificar admins</Label>
+                        <Select 
+                          value={String(serverConfig.notify_subscription_days_before)} 
+                          onValueChange={(value) => setServerConfig({ ...serverConfig, notify_subscription_days_before: parseInt(value) })}
+                        >
+                          <SelectTrigger className="w-full">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="7">7 días antes</SelectItem>
+                            <SelectItem value="10">10 días antes</SelectItem>
+                            <SelectItem value="15">15 días antes</SelectItem>
+                            <SelectItem value="30">30 días antes</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Los administradores de empresas recibirán un correo recordando renovar su suscripción
+                        </p>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </TabsContent>
+            </Tabs>
+
+            <DialogFooter className="mt-6">
               <Button type="button" variant="outline" onClick={() => setServerConfigDialogOpen(false)}>
                 Cerrar
               </Button>
@@ -1510,7 +1844,7 @@ export const SuperAdminDashboard = () => {
                 disabled={savingServerConfig}
               >
                 <Save className="mr-2 h-4 w-4" />
-                {savingServerConfig ? "Guardando..." : "Guardar Configuración"}
+                {savingServerConfig ? "Guardando..." : "Guardar Todo"}
               </Button>
             </DialogFooter>
           </form>

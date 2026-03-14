@@ -17,6 +17,11 @@ import re
 import asyncio
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -836,6 +841,17 @@ async def list_all_companies(current_user: dict = Depends(require_super_admin)):
     return result
 
 # ============== SERVER CONFIG ROUTES ==============
+class EmailConfigModel(BaseModel):
+    """Configuration for a single email account"""
+    enabled: bool = False
+    email: Optional[str] = None
+    password: Optional[str] = None
+    smtp_host: Optional[str] = None
+    smtp_port: int = 587
+    use_tls: bool = True
+    use_ssl: bool = False
+    provider: str = "custom"  # custom, gmail, outlook, cpanel, zoho
+
 class ServerConfigModel(BaseModel):
     # MySQL Configuration
     mysql_host: Optional[str] = None
@@ -851,6 +867,28 @@ class ServerConfigModel(BaseModel):
     cloud_provider: str = "mysql"
     # Migration status
     migration_status: str = "pending"  # pending, in_progress, completed, failed
+    # Email Configuration - Cobranza
+    email_cobranza_enabled: bool = False
+    email_cobranza_address: Optional[str] = None
+    email_cobranza_password: Optional[str] = None
+    email_cobranza_smtp_host: Optional[str] = None
+    email_cobranza_smtp_port: int = 587
+    email_cobranza_use_tls: bool = True
+    email_cobranza_use_ssl: bool = False
+    email_cobranza_provider: str = "custom"
+    # Email Configuration - General
+    email_general_enabled: bool = False
+    email_general_address: Optional[str] = None
+    email_general_password: Optional[str] = None
+    email_general_smtp_host: Optional[str] = None
+    email_general_smtp_port: int = 587
+    email_general_use_tls: bool = True
+    email_general_use_ssl: bool = False
+    email_general_provider: str = "custom"
+    # Notification Settings
+    notify_subscription_days_before: int = 15
+    notify_invoice_overdue: bool = True
+    notify_invoice_days_before: int = 5
 
 @api_router.get("/super-admin/server-config")
 async def get_server_config(current_user: dict = Depends(require_super_admin)):
@@ -868,7 +906,29 @@ async def get_server_config(current_user: dict = Depends(require_super_admin)):
             "backup_enabled": False,
             "backup_schedule": "daily",
             "cloud_provider": "mysql",
-            "migration_status": "pending"
+            "migration_status": "pending",
+            # Email Cobranza
+            "email_cobranza_enabled": False,
+            "email_cobranza_address": "",
+            "email_cobranza_password": "",
+            "email_cobranza_smtp_host": "",
+            "email_cobranza_smtp_port": 587,
+            "email_cobranza_use_tls": True,
+            "email_cobranza_use_ssl": False,
+            "email_cobranza_provider": "custom",
+            # Email General
+            "email_general_enabled": False,
+            "email_general_address": "",
+            "email_general_password": "",
+            "email_general_smtp_host": "",
+            "email_general_smtp_port": 587,
+            "email_general_use_tls": True,
+            "email_general_use_ssl": False,
+            "email_general_provider": "custom",
+            # Notification Settings
+            "notify_subscription_days_before": 15,
+            "notify_invoice_overdue": True,
+            "notify_invoice_days_before": 5
         }
     return config
 
@@ -886,6 +946,353 @@ async def save_server_config(config: ServerConfigModel, current_user: dict = Dep
         upsert=True
     )
     return {"message": "Configuración guardada", "config": config_dict}
+
+@api_router.post("/super-admin/server-config")
+async def save_server_config(config: ServerConfigModel, current_user: dict = Depends(require_super_admin)):
+    """Save server configuration"""
+    config_dict = config.model_dump()
+    config_dict["type"] = "server_config"
+    config_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
+    config_dict["updated_by"] = current_user.get("sub")
+    
+    await db.system_config.update_one(
+        {"type": "server_config"},
+        {"$set": config_dict},
+        upsert=True
+    )
+    return {"message": "Configuración guardada", "config": config_dict}
+
+# ============== EMAIL UTILITY FUNCTIONS ==============
+SMTP_PRESETS = {
+    "gmail": {
+        "smtp_host": "smtp.gmail.com",
+        "smtp_port": 587,
+        "use_tls": True,
+        "use_ssl": False,
+        "notes": "Requiere contraseña de aplicación (2FA activado)"
+    },
+    "outlook": {
+        "smtp_host": "smtp.office365.com",
+        "smtp_port": 587,
+        "use_tls": True,
+        "use_ssl": False,
+        "notes": "Usar cuenta Microsoft 365 o Outlook.com"
+    },
+    "yahoo": {
+        "smtp_host": "smtp.mail.yahoo.com",
+        "smtp_port": 587,
+        "use_tls": True,
+        "use_ssl": False,
+        "notes": "Requiere contraseña de aplicación"
+    },
+    "zoho": {
+        "smtp_host": "smtp.zoho.com",
+        "smtp_port": 587,
+        "use_tls": True,
+        "use_ssl": False,
+        "notes": "Usar credenciales de Zoho Mail"
+    },
+    "cpanel": {
+        "smtp_host": "mail.tudominio.com",
+        "smtp_port": 465,
+        "use_tls": False,
+        "use_ssl": True,
+        "notes": "Cambiar 'tudominio.com' por tu dominio real"
+    },
+    "hostinger": {
+        "smtp_host": "smtp.hostinger.com",
+        "smtp_port": 465,
+        "use_tls": False,
+        "use_ssl": True,
+        "notes": "Usar credenciales de Hostinger Email"
+    },
+    "godaddy": {
+        "smtp_host": "smtpout.secureserver.net",
+        "smtp_port": 465,
+        "use_tls": False,
+        "use_ssl": True,
+        "notes": "Usar credenciales de GoDaddy Workspace Email"
+    },
+    "custom": {
+        "smtp_host": "",
+        "smtp_port": 587,
+        "use_tls": True,
+        "use_ssl": False,
+        "notes": "Configuración manual"
+    }
+}
+
+def send_email_sync(smtp_host: str, smtp_port: int, use_tls: bool, use_ssl: bool, 
+                    sender_email: str, sender_password: str, 
+                    to_email: str, subject: str, html_body: str, text_body: str = None):
+    """Send email synchronously using SMTP"""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = sender_email
+    msg["To"] = to_email
+    
+    if text_body:
+        part1 = MIMEText(text_body, "plain")
+        msg.attach(part1)
+    
+    part2 = MIMEText(html_body, "html")
+    msg.attach(part2)
+    
+    try:
+        if use_ssl:
+            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30)
+        else:
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
+            if use_tls:
+                server.starttls()
+        
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, to_email, msg.as_string())
+        server.quit()
+        return {"success": True, "message": "Email enviado correctamente"}
+    except smtplib.SMTPAuthenticationError:
+        return {"success": False, "message": "Error de autenticación. Verifica el correo y contraseña."}
+    except smtplib.SMTPConnectError:
+        return {"success": False, "message": "No se pudo conectar al servidor SMTP. Verifica el host y puerto."}
+    except smtplib.SMTPException as e:
+        return {"success": False, "message": f"Error SMTP: {str(e)}"}
+    except Exception as e:
+        return {"success": False, "message": f"Error: {str(e)}"}
+
+async def get_email_config(email_type: str = "general"):
+    """Get email configuration from database"""
+    config = await db.system_config.find_one({"type": "server_config"}, {"_id": 0})
+    if not config:
+        return None
+    
+    prefix = f"email_{email_type}_"
+    if not config.get(f"{prefix}enabled"):
+        return None
+    
+    return {
+        "email": config.get(f"{prefix}address"),
+        "password": config.get(f"{prefix}password"),
+        "smtp_host": config.get(f"{prefix}smtp_host"),
+        "smtp_port": config.get(f"{prefix}smtp_port", 587),
+        "use_tls": config.get(f"{prefix}use_tls", True),
+        "use_ssl": config.get(f"{prefix}use_ssl", False),
+    }
+
+async def send_email_async(email_type: str, to_email: str, subject: str, html_body: str, text_body: str = None):
+    """Send email using configured SMTP settings"""
+    config = await get_email_config(email_type)
+    if not config or not config.get("email"):
+        logger.warning(f"Email {email_type} no configurado")
+        return {"success": False, "message": f"Email de {email_type} no configurado"}
+    
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        None,
+        send_email_sync,
+        config["smtp_host"],
+        config["smtp_port"],
+        config["use_tls"],
+        config["use_ssl"],
+        config["email"],
+        config["password"],
+        to_email,
+        subject,
+        html_body,
+        text_body
+    )
+    return result
+
+@api_router.get("/super-admin/smtp-presets")
+async def get_smtp_presets(current_user: dict = Depends(require_super_admin)):
+    """Get available SMTP presets for different email providers"""
+    return SMTP_PRESETS
+
+class TestEmailRequest(BaseModel):
+    email_type: str  # "cobranza" or "general"
+    test_recipient: str
+
+@api_router.post("/super-admin/test-email")
+async def test_email_connection(request: TestEmailRequest, current_user: dict = Depends(require_super_admin)):
+    """Test email configuration by sending a test email"""
+    config = await get_email_config(request.email_type)
+    if not config or not config.get("email"):
+        raise HTTPException(status_code=400, detail=f"Email de {request.email_type} no configurado")
+    
+    subject = f"[CIA SERVICIOS] Prueba de correo - {request.email_type.title()}"
+    html_body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #004e92, #000428); padding: 30px; text-align: center;">
+            <h1 style="color: white; margin: 0;">CIA SERVICIOS</h1>
+            <p style="color: #94a3b8; margin-top: 10px;">Control Integral Administrativo</p>
+        </div>
+        <div style="padding: 30px; background: #f8fafc;">
+            <h2 style="color: #1e293b;">✅ Prueba Exitosa</h2>
+            <p style="color: #475569;">
+                Este es un correo de prueba para verificar la configuración del email de <strong>{request.email_type}</strong>.
+            </p>
+            <p style="color: #475569;">
+                Si recibes este mensaje, la configuración es correcta y el sistema puede enviar notificaciones automáticas.
+            </p>
+            <div style="background: #e2e8f0; padding: 15px; border-radius: 8px; margin-top: 20px;">
+                <p style="margin: 0; color: #64748b; font-size: 14px;">
+                    <strong>Tipo de correo:</strong> {request.email_type.title()}<br>
+                    <strong>Enviado desde:</strong> {config['email']}<br>
+                    <strong>Servidor SMTP:</strong> {config['smtp_host']}:{config['smtp_port']}
+                </p>
+            </div>
+        </div>
+        <div style="padding: 20px; text-align: center; background: #1e293b;">
+            <p style="color: #94a3b8; margin: 0; font-size: 12px;">
+                &copy; 2024 CIA SERVICIOS - Sistema de Control Empresarial
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    result = await send_email_async(request.email_type, request.test_recipient, subject, html_body)
+    return result
+
+# Email Templates
+def get_subscription_reminder_template(company_name: str, admin_name: str, days_remaining: int, expiry_date: str):
+    """Generate HTML template for subscription expiration reminder"""
+    urgency_color = "#ef4444" if days_remaining <= 5 else "#f59e0b" if days_remaining <= 10 else "#3b82f6"
+    return f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #004e92, #000428); padding: 30px; text-align: center;">
+            <h1 style="color: white; margin: 0;">CIA SERVICIOS</h1>
+            <p style="color: #94a3b8; margin-top: 10px;">Aviso de Renovación</p>
+        </div>
+        <div style="padding: 30px; background: #f8fafc;">
+            <p style="color: #475569;">Estimado(a) <strong>{admin_name}</strong>,</p>
+            <p style="color: #475569;">
+                Le informamos que la suscripción de <strong>{company_name}</strong> está próxima a vencer.
+            </p>
+            <div style="background: {urgency_color}; color: white; padding: 20px; border-radius: 8px; text-align: center; margin: 20px 0;">
+                <p style="margin: 0; font-size: 24px; font-weight: bold;">{days_remaining} días restantes</p>
+                <p style="margin: 5px 0 0 0; font-size: 14px;">Fecha de vencimiento: {expiry_date}</p>
+            </div>
+            <p style="color: #475569;">
+                Para renovar su suscripción y evitar interrupciones en el servicio, por favor contacte a nuestro equipo 
+                de soporte o realice el pago correspondiente.
+            </p>
+            <div style="text-align: center; margin-top: 30px;">
+                <a href="#" style="background: #004e92; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+                    Renovar Ahora
+                </a>
+            </div>
+        </div>
+        <div style="padding: 20px; text-align: center; background: #1e293b;">
+            <p style="color: #94a3b8; margin: 0; font-size: 12px;">
+                &copy; 2024 CIA SERVICIOS - Control Integral Administrativo
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+
+def get_invoice_reminder_template(client_name: str, invoice_number: str, amount: float, due_date: str, days_overdue: int = 0, company_name: str = ""):
+    """Generate HTML template for invoice payment reminder"""
+    is_overdue = days_overdue > 0
+    status_text = f"VENCIDA hace {days_overdue} días" if is_overdue else f"Vence el {due_date}"
+    status_color = "#ef4444" if is_overdue else "#f59e0b"
+    
+    return f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #004e92, #000428); padding: 30px; text-align: center;">
+            <h1 style="color: white; margin: 0;">{company_name}</h1>
+            <p style="color: #94a3b8; margin-top: 10px;">Recordatorio de Pago</p>
+        </div>
+        <div style="padding: 30px; background: #f8fafc;">
+            <p style="color: #475569;">Estimado(a) <strong>{client_name}</strong>,</p>
+            <p style="color: #475569;">
+                Le recordamos que tiene una factura pendiente de pago:
+            </p>
+            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b;">Factura:</td>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold;">{invoice_number}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b;">Monto:</td>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold; color: #004e92;">${amount:,.2f} MXN</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px 0; color: #64748b;">Estado:</td>
+                        <td style="padding: 10px 0; text-align: right; font-weight: bold; color: {status_color};">{status_text}</td>
+                    </tr>
+                </table>
+            </div>
+            <p style="color: #475569;">
+                Agradecemos su pronta atención a este asunto. Si ya realizó el pago, por favor haga caso omiso de este mensaje.
+            </p>
+        </div>
+        <div style="padding: 20px; text-align: center; background: #1e293b;">
+            <p style="color: #94a3b8; margin: 0; font-size: 12px;">
+                &copy; 2024 {company_name} - Powered by CIA SERVICIOS
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+
+@api_router.post("/super-admin/send-subscription-reminders")
+async def send_subscription_reminders(current_user: dict = Depends(require_super_admin)):
+    """Send subscription expiration reminders to companies"""
+    config = await db.system_config.find_one({"type": "server_config"}, {"_id": 0})
+    days_before = config.get("notify_subscription_days_before", 15) if config else 15
+    
+    now = datetime.now(timezone.utc)
+    reminder_threshold = now + timedelta(days=days_before)
+    
+    # Find companies with subscriptions expiring soon
+    companies = await db.companies.find({
+        "subscription_end": {"$lte": reminder_threshold.isoformat(), "$gt": now.isoformat()}
+    }).to_list(100)
+    
+    sent_count = 0
+    failed_count = 0
+    results = []
+    
+    for company in companies:
+        # Get admin email
+        admin = await db.users.find_one({"company_id": company["id"], "role": UserRole.ADMIN})
+        if not admin or not admin.get("email"):
+            continue
+        
+        # Calculate days remaining
+        sub_end = datetime.fromisoformat(company["subscription_end"].replace('Z', '+00:00'))
+        if sub_end.tzinfo is None:
+            sub_end = sub_end.replace(tzinfo=timezone.utc)
+        days_remaining = (sub_end - now).days
+        
+        # Generate email
+        html_body = get_subscription_reminder_template(
+            company_name=company["business_name"],
+            admin_name=admin.get("full_name", "Administrador"),
+            days_remaining=days_remaining,
+            expiry_date=sub_end.strftime("%d/%m/%Y")
+        )
+        
+        subject = f"[CIA SERVICIOS] Tu suscripción vence en {days_remaining} días"
+        result = await send_email_async("general", admin["email"], subject, html_body)
+        
+        if result["success"]:
+            sent_count += 1
+            results.append({"company": company["business_name"], "status": "sent"})
+        else:
+            failed_count += 1
+            results.append({"company": company["business_name"], "status": "failed", "error": result["message"]})
+    
+    return {
+        "sent": sent_count,
+        "failed": failed_count,
+        "details": results
+    }
 
 @api_router.post("/super-admin/test-mysql-connection")
 async def test_mysql_connection(config: ServerConfigModel, current_user: dict = Depends(require_super_admin)):

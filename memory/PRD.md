@@ -229,7 +229,7 @@ Company Admin (CIA Servicios Demo):
 - [x] **Migración a MySQL implementada (UI + Backend)** ✨ NEW
 
 ### P1 - Próxima Fase
-- [ ] Notificaciones por email (recordatorios de renovación 15 días antes)
+- [x] Notificaciones por email (recordatorios de renovación) ✅ DONE
 - [ ] Exportación a Excel
 - [x] Restricción de acceso basada en permisos (frontend) ✅ DONE
 
@@ -242,6 +242,18 @@ Company Admin (CIA Servicios Demo):
 - [ ] Exportación de reportes a PDF/CSV
 
 ## Changelog
+### v2.9.0 (Marzo 2026)
+- ✨ **Sistema de Correos Configurables**
+  - Dos cuentas de email independientes: Cobranza y General
+  - Autoconfiguración de proveedores SMTP (Gmail, Outlook, cPanel, Hostinger, GoDaddy, Zoho)
+  - Botón de prueba para verificar configuración
+  - Plantillas HTML profesionales para correos
+- ✨ **Notificaciones Automáticas**
+  - Recordatorios de facturas vencidas a clientes
+  - Recordatorios de renovación de suscripción a admins
+  - Configuración de días antes del vencimiento para notificar
+- 🔧 UI de configuración reorganizada con pestañas (Base de Datos, Cobranza, General)
+
 ### v2.8.0 (Marzo 2026)
 - ✨ **Gestión de Suscripciones de Empresas**
   - Columna "Vencimiento" en tabla de empresas
