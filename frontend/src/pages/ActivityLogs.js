@@ -84,7 +84,7 @@ export const ActivityLogs = ({ isSuperAdmin = false }) => {
   const [filters, setFilters] = useState({
     activity_type: "all",
     module: "all",
-    company_id: "",
+    company_id: "all",
   });
   const [companies, setCompanies] = useState([]);
   const [total, setTotal] = useState(0);
@@ -115,7 +115,7 @@ export const ActivityLogs = ({ isSuperAdmin = false }) => {
       params.append("skip", page * limit);
       if (filters.activity_type !== "all") params.append("activity_type", filters.activity_type);
       if (filters.module !== "all") params.append("module", filters.module);
-      if (filters.company_id) params.append("company_id", filters.company_id);
+      if (filters.company_id && filters.company_id !== "all") params.append("company_id", filters.company_id);
 
       const endpoint = isSuperAdmin ? "/super-admin/activity-logs" : "/activity-logs";
       const response = await api.get(`${endpoint}?${params.toString()}`);
@@ -205,7 +205,7 @@ export const ActivityLogs = ({ isSuperAdmin = false }) => {
                   <SelectValue placeholder="Todas las empresas" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Todas las empresas</SelectItem>
+                  <SelectItem value="all">Todas las empresas</SelectItem>
                   {companies.map((company) => (
                     <SelectItem key={company.id} value={company.id}>
                       {company.business_name}
@@ -219,7 +219,7 @@ export const ActivityLogs = ({ isSuperAdmin = false }) => {
               variant="outline"
               size="sm"
               onClick={() => {
-                setFilters({ activity_type: "all", module: "all", company_id: "" });
+                setFilters({ activity_type: "all", module: "all", company_id: "all" });
                 setPage(0);
               }}
             >

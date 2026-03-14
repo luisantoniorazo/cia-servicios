@@ -131,6 +131,8 @@ export const SuperAdminDashboard = () => {
   const [smtpPresets, setSmtpPresets] = useState({});
   const [testingEmail, setTestingEmail] = useState(null);
   const [configTab, setConfigTab] = useState("database");
+  const [revenueStats, setRevenueStats] = useState(null);
+  const [loadingRevenue, setLoadingRevenue] = useState(false);
   const [savingServerConfig, setSavingServerConfig] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
   const [creatingSchema, setCreatingSchema] = useState(false);
@@ -174,7 +176,20 @@ export const SuperAdminDashboard = () => {
   useEffect(() => {
     fetchDashboard();
     fetchServerConfig();
+    fetchRevenueStats();
   }, []);
+
+  const fetchRevenueStats = async () => {
+    setLoadingRevenue(true);
+    try {
+      const response = await api.get("/super-admin/revenue-stats");
+      setRevenueStats(response.data);
+    } catch (error) {
+      console.log("Error fetching revenue stats:", error);
+    } finally {
+      setLoadingRevenue(false);
+    }
+  };
 
   const fetchDashboard = async () => {
     try {
@@ -650,6 +665,110 @@ export const SuperAdminDashboard = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Revenue Statistics Section */}
+        <Card className="bg-slate-800 border-slate-700">
+          <CardHeader className="p-4 sm:p-6">
+            <CardTitle className="text-white flex items-center gap-2 text-base sm:text-lg">
+              <BarChart3 className="h-4 w-4 sm:h-5 sm:w-5 text-emerald-500" />
+              Estadísticas de Ingresos
+            </CardTitle>
+            <CardDescription className="text-slate-400 text-xs sm:text-sm">
+              Análisis de ingresos mensuales y renovaciones
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-4 sm:p-6">
+            {loadingRevenue ? (
+              <div className="flex justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-500"></div>
+              </div>
+            ) : revenueStats ? (
+              <div className="space-y-6">
+                {/* Monthly Revenue Chart */}
+                <div>
+                  <h4 className="text-sm font-medium text-slate-300 mb-3">Ingresos Últimos 12 Meses</h4>
+                  <div className="flex gap-1 items-end h-32">
+                    {revenueStats.monthly_revenue?.map((month, idx) => {
+                      const maxRevenue = Math.max(...revenueStats.monthly_revenue.map(m => m.revenue || 1));
+                      const height = maxRevenue > 0 ? (month.revenue / maxRevenue) * 100 : 0;
+                      return (
+                        <div key={idx} className="flex-1 flex flex-col items-center gap-1">
+                          <div 
+                            className="w-full bg-emerald-500/30 rounded-t hover:bg-emerald-500/50 transition-colors relative group"
+                            style={{ height: `${Math.max(height, 5)}%` }}
+                          >
+                            <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-700 px-2 py-1 rounded text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                              {formatCurrency(month.revenue)} ({month.companies} emp.)
+                            </div>
+                          </div>
+                          <span className="text-[10px] text-slate-500 transform -rotate-45 origin-top-left mt-1 hidden sm:block">
+                            {month.month?.split(' ')[0]}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* License Type Distribution */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {revenueStats.license_stats?.map((stat) => (
+                    <div key={stat.license} className="bg-slate-900/50 rounded-lg p-3">
+                      <p className="text-xs text-slate-400 capitalize">
+                        {stat.license === "basic" ? "Básica" : 
+                         stat.license === "professional" ? "Profesional" : 
+                         stat.license === "enterprise" ? "Empresarial" : 
+                         stat.license === "unlimited" ? "Ilimitada" : stat.license}
+                      </p>
+                      <p className="text-lg font-bold text-white">{stat.count}</p>
+                      <p className="text-xs text-emerald-400">{formatCurrency(stat.revenue)}/mes</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Upcoming Renewals */}
+                {revenueStats.upcoming_renewals?.length > 0 && (
+                  <div>
+                    <h4 className="text-sm font-medium text-slate-300 mb-3">Renovaciones Próximas (30 días)</h4>
+                    <div className="space-y-2">
+                      {revenueStats.upcoming_renewals.map((renewal, idx) => (
+                        <div key={idx} className="flex justify-between items-center bg-slate-900/50 rounded-lg p-3">
+                          <div>
+                            <p className="text-sm text-white">{renewal.business_name}</p>
+                            <p className="text-xs text-slate-400">
+                              Vence: {renewal.subscription_end ? new Date(renewal.subscription_end).toLocaleDateString('es-MX') : '-'}
+                            </p>
+                          </div>
+                          <p className="text-sm font-medium text-emerald-400">{formatCurrency(renewal.monthly_fee)}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Summary */}
+                <div className="flex flex-wrap gap-4 pt-4 border-t border-slate-700">
+                  <div className="bg-emerald-500/10 rounded-lg px-4 py-2">
+                    <p className="text-xs text-emerald-400">Total Mensual Actual</p>
+                    <p className="text-xl font-bold text-emerald-300">
+                      {formatCurrency(revenueStats.total_monthly_revenue || 0)}
+                    </p>
+                  </div>
+                  <div className="bg-blue-500/10 rounded-lg px-4 py-2">
+                    <p className="text-xs text-blue-400">Empresas Activas</p>
+                    <p className="text-xl font-bold text-blue-300">
+                      {dashboard?.summary?.active || 0}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center py-8 text-slate-500">
+                No hay datos de ingresos disponibles
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Payment Reminder */}
         {dashboard?.pending_payment?.length > 0 && (

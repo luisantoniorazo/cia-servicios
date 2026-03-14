@@ -2,7 +2,7 @@
 
 ## Información General
 - **Nombre**: CIA SERVICIOS - Control Estratégico de Servicios y Proyectos
-- **Versión**: 2.7.0
+- **Versión**: 3.1.0
 - **Última Actualización**: Marzo 2026
 - **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2
 
@@ -232,6 +232,8 @@ Company Admin (CIA Servicios Demo):
 - [x] Notificaciones por email (recordatorios de renovación) ✅ DONE
 - [ ] Exportación a Excel
 - [x] Restricción de acceso basada en permisos (frontend) ✅ DONE
+- [x] Estadísticas de ingresos en dashboard Super Admin ✅ NEW
+- [ ] Refactorización completa de server.py (en progreso - estructura creada)
 
 ### P2 - Mejoras
 - [ ] Integración de pagos (Stripe) para renovaciones
@@ -242,6 +244,24 @@ Company Admin (CIA Servicios Demo):
 - [ ] Exportación de reportes a PDF/CSV
 
 ## Changelog
+### v3.1.0 (Marzo 2026) - CURRENT SESSION
+- ✨ **Estadísticas de Ingresos en Super Admin Dashboard**
+  - Gráfico de barras de ingresos últimos 12 meses
+  - Distribución por tipo de licencia
+  - Renovaciones próximas (30 días)
+  - Resumen total mensual actual
+- ✨ **Estructura Backend Modularizada**
+  - Creados módulos separados: /models, /routes, /utils, /services
+  - Preparación para refactorización completa del monolítico server.py
+- 🔧 **Corrección ActivityLogs**
+  - Fix error de Select con valor vacío
+  - Filtro de empresa cambiado de "" a "all"
+- ✅ **Verificación de funcionalidades existentes**
+  - Recuperación de contraseña: funcionando
+  - Logs de actividad: funcionando
+  - Notificaciones in-app: funcionando (NotificationBell)
+  - Estadísticas de ingresos: nuevo endpoint funcionando
+
 ### v3.0.0 (Marzo 2026) - MAJOR UPDATE
 - ✨ **Sistema de Actividad y Logs**
   - Historial de actividad completo por empresa
