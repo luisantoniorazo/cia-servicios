@@ -8,6 +8,7 @@ import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { Badge } from "../components/ui/badge";
 import { Skeleton } from "../components/ui/skeleton";
+import { Separator } from "../components/ui/separator";
 import {
   Dialog,
   DialogContent,
@@ -94,6 +95,15 @@ export const CRM = () => {
     probability: 0,
     notes: "",
     credit_days: 0,
+    // Campos SAT para CFDI
+    razon_social_fiscal: "",
+    regimen_fiscal: "",
+    uso_cfdi: "G03",
+    codigo_postal_fiscal: "",
+  });
+  const [satCatalogs, setSatCatalogs] = useState({
+    regimenes: [],
+    usosCfdi: [],
   });
   const [followupForm, setFollowupForm] = useState({
     scheduled_date: "",
@@ -107,8 +117,24 @@ export const CRM = () => {
     if (company?.id) {
       fetchClients();
       fetchPendingFollowups();
+      fetchSatCatalogs();
     }
   }, [company]);
+
+  const fetchSatCatalogs = async () => {
+    try {
+      const [regimenesRes, usosRes] = await Promise.all([
+        api.get("/sat/regimen-fiscal"),
+        api.get("/sat/uso-cfdi"),
+      ]);
+      setSatCatalogs({
+        regimenes: regimenesRes.data,
+        usosCfdi: usosRes.data,
+      });
+    } catch (error) {
+      console.error("Error loading SAT catalogs:", error);
+    }
+  };
 
   const fetchClients = async () => {
     try {
@@ -172,6 +198,10 @@ export const CRM = () => {
       probability: client.probability || 0,
       notes: client.notes || "",
       credit_days: client.credit_days || 0,
+      razon_social_fiscal: client.razon_social_fiscal || "",
+      regimen_fiscal: client.regimen_fiscal || "",
+      uso_cfdi: client.uso_cfdi || "G03",
+      codigo_postal_fiscal: client.codigo_postal_fiscal || "",
     });
     setDialogOpen(true);
   };
@@ -249,6 +279,10 @@ export const CRM = () => {
       probability: 0,
       notes: "",
       credit_days: 0,
+      razon_social_fiscal: "",
+      regimen_fiscal: "",
+      uso_cfdi: "G03",
+      codigo_postal_fiscal: "",
     });
   };
 
@@ -456,6 +490,72 @@ export const CRM = () => {
                     </div>
                   )}
                 </div>
+                
+                {/* Datos Fiscales SAT */}
+                {!formData.is_prospect && (
+                  <>
+                    <Separator className="my-2" />
+                    <p className="text-sm font-medium text-muted-foreground">Datos Fiscales (CFDI)</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label>Razón Social Fiscal</Label>
+                        <Input
+                          value={formData.razon_social_fiscal}
+                          onChange={(e) => setFormData({ ...formData, razon_social_fiscal: e.target.value })}
+                          placeholder="Exacta como en constancia SAT"
+                        />
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Código Postal Fiscal</Label>
+                        <Input
+                          value={formData.codigo_postal_fiscal}
+                          onChange={(e) => setFormData({ ...formData, codigo_postal_fiscal: e.target.value })}
+                          placeholder="12345"
+                          maxLength={5}
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid gap-2">
+                        <Label>Régimen Fiscal</Label>
+                        <Select
+                          value={formData.regimen_fiscal}
+                          onValueChange={(value) => setFormData({ ...formData, regimen_fiscal: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleccionar..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {satCatalogs.regimenes.map((r) => (
+                              <SelectItem key={r.clave} value={r.clave}>
+                                {r.clave} - {r.descripcion.substring(0, 40)}...
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="grid gap-2">
+                        <Label>Uso CFDI</Label>
+                        <Select
+                          value={formData.uso_cfdi}
+                          onValueChange={(value) => setFormData({ ...formData, uso_cfdi: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Seleccionar..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {satCatalogs.usosCfdi.map((u) => (
+                              <SelectItem key={u.clave} value={u.clave}>
+                                {u.clave} - {u.descripcion.substring(0, 35)}...
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  </>
+                )}
+
                 <div className="grid gap-2">
                   <Label htmlFor="notes">Notas</Label>
                   <Textarea

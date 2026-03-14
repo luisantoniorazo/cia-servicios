@@ -59,6 +59,7 @@ const menuItems = [
 
 const configItems = [
   { path: "/settings", label: "Empresa", icon: Settings, moduleId: "settings" },
+  { path: "/fiscal-settings", label: "Fiscal / CFDI", icon: FileText, moduleId: "fiscal-settings" },
   { path: "/document-settings", label: "Documentos PDF", icon: Palette, moduleId: "document-settings" },
   { path: "/activity-logs", label: "Historial", icon: Activity, moduleId: "activity-logs" },
 ];

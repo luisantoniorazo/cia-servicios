@@ -136,6 +136,10 @@ class CompanyBase(BaseModel):
     monthly_fee: float = 0.0
     license_type: str = "basic"
     max_users: int = 5
+    # Campos SAT para CFDI
+    regimen_fiscal: Optional[str] = None  # Régimen fiscal de la empresa
+    codigo_postal_fiscal: Optional[str] = None  # CP del domicilio fiscal
+    lugar_expedicion: Optional[str] = None  # Lugar de expedición de CFDI
 
 class CompanyCreate(BaseModel):
     business_name: str
@@ -239,6 +243,12 @@ class ClientBase(BaseModel):
     probability: int = 0
     notes: Optional[str] = None
     credit_days: int = 0  # Plazo de crédito en días
+    # Campos SAT para CFDI
+    rfc: Optional[str] = None  # RFC del cliente
+    razon_social_fiscal: Optional[str] = None  # Razón social exacta como en SAT
+    regimen_fiscal: Optional[str] = None  # Clave del régimen fiscal (601, 603, 612, etc.)
+    uso_cfdi: Optional[str] = None  # Uso del CFDI (G01, G03, P01, etc.)
+    codigo_postal_fiscal: Optional[str] = None  # CP del domicilio fiscal
 
 class ClientCreate(ClientBase):
     pass
@@ -295,6 +305,10 @@ class QuoteItem(BaseModel):
     unit: str = "pza"
     unit_price: float = 0.0
     total: float = 0.0
+    # Campos SAT para CFDI
+    clave_prod_serv: Optional[str] = None  # Clave SAT del producto/servicio
+    clave_unidad: Optional[str] = None  # Clave SAT de la unidad (H87, E48, etc.)
+    numero_identificacion: Optional[str] = None  # Número de parte o SKU
 
 class QuoteBase(BaseModel):
     company_id: str
@@ -659,6 +673,163 @@ class UserPreferences(BaseModel):
     notifications_enabled: bool = True
     email_notifications: bool = True
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+# ============== CFDI / FACTURACIÓN ELECTRÓNICA MODELS ==============
+class CSDCertificate(BaseModel):
+    """Certificado de Sello Digital para facturación electrónica"""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    company_id: str
+    certificate_number: Optional[str] = None  # Número de certificado
+    certificate_file: Optional[str] = None  # .cer en base64
+    private_key_file: Optional[str] = None  # .key en base64
+    private_key_password: Optional[str] = None  # Contraseña encriptada
+    valid_from: Optional[datetime] = None
+    valid_to: Optional[datetime] = None
+    is_active: bool = True
+    pac_provider: str = "none"  # none, facturama, finkok, sw_sapien
+    pac_user: Optional[str] = None
+    pac_password: Optional[str] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+class CFDIStatus(str, Enum):
+    DRAFT = "draft"
+    STAMPED = "stamped"  # Timbrado
+    CANCELLED = "cancelled"
+    CANCELLATION_PENDING = "cancellation_pending"
+
+class CFDI(BaseModel):
+    """Comprobante Fiscal Digital por Internet"""
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    company_id: str
+    invoice_id: str  # Referencia a la factura interna
+    uuid: Optional[str] = None  # UUID del SAT (folio fiscal)
+    serie: Optional[str] = None
+    folio: Optional[str] = None
+    fecha: Optional[datetime] = None
+    forma_pago: str = "99"  # Por definir
+    metodo_pago: str = "PUE"  # Pago en Una sola Exhibición
+    tipo_comprobante: str = "I"  # Ingreso
+    lugar_expedicion: Optional[str] = None
+    moneda: str = "MXN"
+    tipo_cambio: float = 1.0
+    subtotal: float = 0.0
+    descuento: float = 0.0
+    total: float = 0.0
+    # Impuestos
+    total_impuestos_trasladados: float = 0.0
+    total_impuestos_retenidos: float = 0.0
+    # XML y PDF
+    xml_content: Optional[str] = None  # XML timbrado en base64
+    pdf_content: Optional[str] = None  # PDF con complemento en base64
+    # Estado
+    status: CFDIStatus = CFDIStatus.DRAFT
+    stamped_at: Optional[datetime] = None
+    cancelled_at: Optional[datetime] = None
+    cancellation_reason: Optional[str] = None
+    # Respuesta del PAC
+    pac_response: Optional[Dict[str, Any]] = None
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+# Catálogos SAT (constantes más usadas)
+SAT_REGIMEN_FISCAL = [
+    {"clave": "601", "descripcion": "General de Ley Personas Morales"},
+    {"clave": "603", "descripcion": "Personas Morales con Fines no Lucrativos"},
+    {"clave": "605", "descripcion": "Sueldos y Salarios e Ingresos Asimilados a Salarios"},
+    {"clave": "606", "descripcion": "Arrendamiento"},
+    {"clave": "607", "descripcion": "Régimen de Enajenación o Adquisición de Bienes"},
+    {"clave": "608", "descripcion": "Demás ingresos"},
+    {"clave": "609", "descripcion": "Consolidación"},
+    {"clave": "610", "descripcion": "Residentes en el Extranjero sin Establecimiento Permanente en México"},
+    {"clave": "611", "descripcion": "Ingresos por Dividendos (socios y accionistas)"},
+    {"clave": "612", "descripcion": "Personas Físicas con Actividades Empresariales y Profesionales"},
+    {"clave": "614", "descripcion": "Ingresos por intereses"},
+    {"clave": "615", "descripcion": "Régimen de los ingresos por obtención de premios"},
+    {"clave": "616", "descripcion": "Sin obligaciones fiscales"},
+    {"clave": "620", "descripcion": "Sociedades Cooperativas de Producción que optan por diferir sus ingresos"},
+    {"clave": "621", "descripcion": "Incorporación Fiscal"},
+    {"clave": "622", "descripcion": "Actividades Agrícolas, Ganaderas, Silvícolas y Pesqueras"},
+    {"clave": "623", "descripcion": "Opcional para Grupos de Sociedades"},
+    {"clave": "624", "descripcion": "Coordinados"},
+    {"clave": "625", "descripcion": "Régimen de las Actividades Empresariales con ingresos a través de Plataformas Tecnológicas"},
+    {"clave": "626", "descripcion": "Régimen Simplificado de Confianza"},
+]
+
+SAT_USO_CFDI = [
+    {"clave": "G01", "descripcion": "Adquisición de mercancías"},
+    {"clave": "G02", "descripcion": "Devoluciones, descuentos o bonificaciones"},
+    {"clave": "G03", "descripcion": "Gastos en general"},
+    {"clave": "I01", "descripcion": "Construcciones"},
+    {"clave": "I02", "descripcion": "Mobiliario y equipo de oficina por inversiones"},
+    {"clave": "I03", "descripcion": "Equipo de transporte"},
+    {"clave": "I04", "descripcion": "Equipo de cómputo y accesorios"},
+    {"clave": "I05", "descripcion": "Dados, troqueles, moldes, matrices y herramental"},
+    {"clave": "I06", "descripcion": "Comunicaciones telefónicas"},
+    {"clave": "I07", "descripcion": "Comunicaciones satelitales"},
+    {"clave": "I08", "descripcion": "Otra maquinaria y equipo"},
+    {"clave": "D01", "descripcion": "Honorarios médicos, dentales y gastos hospitalarios"},
+    {"clave": "D02", "descripcion": "Gastos médicos por incapacidad o discapacidad"},
+    {"clave": "D03", "descripcion": "Gastos funerales"},
+    {"clave": "D04", "descripcion": "Donativos"},
+    {"clave": "D05", "descripcion": "Intereses reales efectivamente pagados por créditos hipotecarios"},
+    {"clave": "D06", "descripcion": "Aportaciones voluntarias al SAR"},
+    {"clave": "D07", "descripcion": "Primas por seguros de gastos médicos"},
+    {"clave": "D08", "descripcion": "Gastos de transportación escolar obligatoria"},
+    {"clave": "D09", "descripcion": "Depósitos en cuentas para el ahorro, primas de pensiones"},
+    {"clave": "D10", "descripcion": "Pagos por servicios educativos (colegiaturas)"},
+    {"clave": "S01", "descripcion": "Sin efectos fiscales"},
+    {"clave": "CP01", "descripcion": "Pagos"},
+    {"clave": "CN01", "descripcion": "Nómina"},
+]
+
+SAT_FORMA_PAGO = [
+    {"clave": "01", "descripcion": "Efectivo"},
+    {"clave": "02", "descripcion": "Cheque nominativo"},
+    {"clave": "03", "descripcion": "Transferencia electrónica de fondos"},
+    {"clave": "04", "descripcion": "Tarjeta de crédito"},
+    {"clave": "05", "descripcion": "Monedero electrónico"},
+    {"clave": "06", "descripcion": "Dinero electrónico"},
+    {"clave": "08", "descripcion": "Vales de despensa"},
+    {"clave": "12", "descripcion": "Dación en pago"},
+    {"clave": "13", "descripcion": "Pago por subrogación"},
+    {"clave": "14", "descripcion": "Pago por consignación"},
+    {"clave": "15", "descripcion": "Condonación"},
+    {"clave": "17", "descripcion": "Compensación"},
+    {"clave": "23", "descripcion": "Novación"},
+    {"clave": "24", "descripcion": "Confusión"},
+    {"clave": "25", "descripcion": "Remisión de deuda"},
+    {"clave": "26", "descripcion": "Prescripción o caducidad"},
+    {"clave": "27", "descripcion": "A satisfacción del acreedor"},
+    {"clave": "28", "descripcion": "Tarjeta de débito"},
+    {"clave": "29", "descripcion": "Tarjeta de servicios"},
+    {"clave": "30", "descripcion": "Aplicación de anticipos"},
+    {"clave": "31", "descripcion": "Intermediario pagos"},
+    {"clave": "99", "descripcion": "Por definir"},
+]
+
+SAT_METODO_PAGO = [
+    {"clave": "PUE", "descripcion": "Pago en una sola exhibición"},
+    {"clave": "PPD", "descripcion": "Pago en parcialidades o diferido"},
+]
+
+SAT_UNIDADES_COMUNES = [
+    {"clave": "H87", "descripcion": "Pieza"},
+    {"clave": "E48", "descripcion": "Unidad de Servicio"},
+    {"clave": "ACT", "descripcion": "Actividad"},
+    {"clave": "KGM", "descripcion": "Kilogramo"},
+    {"clave": "LTR", "descripcion": "Litro"},
+    {"clave": "MTR", "descripcion": "Metro"},
+    {"clave": "MTK", "descripcion": "Metro cuadrado"},
+    {"clave": "MTQ", "descripcion": "Metro cúbico"},
+    {"clave": "XBX", "descripcion": "Caja"},
+    {"clave": "XPK", "descripcion": "Paquete"},
+    {"clave": "SET", "descripcion": "Conjunto"},
+    {"clave": "HUR", "descripcion": "Hora"},
+    {"clave": "DAY", "descripcion": "Día"},
+    {"clave": "MON", "descripcion": "Mes"},
+    {"clave": "ANN", "descripcion": "Año"},
+]
 
 # ============== AUTH HELPERS ==============
 def hash_password(password: str) -> str:
@@ -6965,6 +7136,174 @@ async def get_revenue_stats(current_user: dict = Depends(require_super_admin)):
         "license_stats": [{"license": s["_id"], "count": s["count"], "revenue": s["revenue"]} for s in license_stats],
         "upcoming_renewals": upcoming_renewals,
         "total_monthly_revenue": sum(mr["revenue"] for mr in monthly_revenue[-1:])
+    }
+
+# ============== CATÁLOGOS SAT ROUTES ==============
+@api_router.get("/sat/regimen-fiscal")
+async def get_sat_regimen_fiscal():
+    """Get SAT fiscal regimen catalog"""
+    return SAT_REGIMEN_FISCAL
+
+@api_router.get("/sat/uso-cfdi")
+async def get_sat_uso_cfdi():
+    """Get SAT CFDI usage catalog"""
+    return SAT_USO_CFDI
+
+@api_router.get("/sat/forma-pago")
+async def get_sat_forma_pago():
+    """Get SAT payment method catalog"""
+    return SAT_FORMA_PAGO
+
+@api_router.get("/sat/metodo-pago")
+async def get_sat_metodo_pago():
+    """Get SAT payment type catalog"""
+    return SAT_METODO_PAGO
+
+@api_router.get("/sat/unidades")
+async def get_sat_unidades():
+    """Get SAT common units catalog"""
+    return SAT_UNIDADES_COMUNES
+
+@api_router.get("/sat/productos/search")
+async def search_sat_productos(q: str, limit: int = 20):
+    """Search SAT product/service catalog (placeholder - needs full catalog)"""
+    # This would need a full database of SAT products
+    # For now, return common services
+    common_services = [
+        {"clave": "80161500", "descripcion": "Servicios de apoyo gerencial"},
+        {"clave": "81112100", "descripcion": "Servicios de datos"},
+        {"clave": "81112200", "descripcion": "Servicios de programación informática"},
+        {"clave": "81111500", "descripcion": "Ingeniería de software o hardware"},
+        {"clave": "81111800", "descripcion": "Servicios de sistemas y administración de componentes de sistemas"},
+        {"clave": "78111800", "descripcion": "Mantenimiento y reparación de instalaciones"},
+        {"clave": "72154000", "descripcion": "Servicios de construcción de obras civiles"},
+        {"clave": "43211500", "descripcion": "Computadoras"},
+        {"clave": "43211700", "descripcion": "Equipos informáticos y accesorios"},
+        {"clave": "84111500", "descripcion": "Servicios de contabilidad"},
+        {"clave": "80111600", "descripcion": "Servicios de personal temporal"},
+        {"clave": "90121500", "descripcion": "Servicios de restaurantes y catering"},
+        {"clave": "78131602", "descripcion": "Almacenamiento de datos"},
+        {"clave": "81101500", "descripcion": "Ingeniería civil y arquitectura"},
+        {"clave": "72101500", "descripcion": "Servicios de construcción de edificios"},
+    ]
+    
+    if q:
+        q_lower = q.lower()
+        filtered = [p for p in common_services if q_lower in p["descripcion"].lower() or q_lower in p["clave"]]
+        return filtered[:limit]
+    return common_services[:limit]
+
+# ============== CSD CERTIFICATES ROUTES ==============
+class CSDUpload(BaseModel):
+    certificate_file: str  # .cer in base64
+    private_key_file: str  # .key in base64
+    private_key_password: str
+    pac_provider: str = "none"
+    pac_user: Optional[str] = None
+    pac_password: Optional[str] = None
+
+@api_router.get("/company/csd-certificate")
+async def get_csd_certificate(current_user: dict = Depends(get_current_user)):
+    """Get company's CSD certificate info"""
+    company_id = current_user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No company assigned")
+    
+    cert = await db.csd_certificates.find_one(
+        {"company_id": company_id, "is_active": True},
+        {"_id": 0, "certificate_file": 0, "private_key_file": 0, "private_key_password": 0}
+    )
+    
+    return cert or {"has_certificate": False}
+
+@api_router.post("/company/csd-certificate")
+async def upload_csd_certificate(data: CSDUpload, current_user: dict = Depends(get_current_user)):
+    """Upload or update CSD certificate"""
+    company_id = current_user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No company assigned")
+    
+    # Only admin can upload certificates
+    if current_user.get("role") not in [UserRole.ADMIN.value, "admin"]:
+        raise HTTPException(status_code=403, detail="Solo el administrador puede configurar certificados")
+    
+    # Deactivate existing certificates
+    await db.csd_certificates.update_many(
+        {"company_id": company_id},
+        {"$set": {"is_active": False}}
+    )
+    
+    # Save new certificate
+    cert_data = {
+        "id": str(uuid.uuid4()),
+        "company_id": company_id,
+        "certificate_file": data.certificate_file,
+        "private_key_file": data.private_key_file,
+        "private_key_password": data.private_key_password,  # TODO: Encrypt this
+        "pac_provider": data.pac_provider,
+        "pac_user": data.pac_user,
+        "pac_password": data.pac_password,  # TODO: Encrypt this
+        "is_active": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.csd_certificates.insert_one(cert_data)
+    
+    await log_activity(
+        ActivityType.CREATE, "settings", "Certificado CSD configurado",
+        company_id=company_id, user_id=current_user.get("sub"),
+        user_email=current_user.get("email")
+    )
+    
+    return {"message": "Certificado guardado correctamente", "id": cert_data["id"]}
+
+@api_router.delete("/company/csd-certificate")
+async def delete_csd_certificate(current_user: dict = Depends(get_current_user)):
+    """Delete CSD certificate"""
+    company_id = current_user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No company assigned")
+    
+    if current_user.get("role") not in [UserRole.ADMIN.value, "admin"]:
+        raise HTTPException(status_code=403, detail="Solo el administrador puede eliminar certificados")
+    
+    await db.csd_certificates.delete_many({"company_id": company_id})
+    
+    return {"message": "Certificado eliminado"}
+
+# ============== CFDI STATUS CHECK ==============
+@api_router.get("/company/cfdi-status")
+async def get_cfdi_status(current_user: dict = Depends(get_current_user)):
+    """Check if company is ready for electronic invoicing"""
+    company_id = current_user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No company assigned")
+    
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    cert = await db.csd_certificates.find_one({"company_id": company_id, "is_active": True})
+    
+    issues = []
+    
+    # Check company data
+    if not company.get("rfc"):
+        issues.append("Falta RFC de la empresa")
+    if not company.get("regimen_fiscal"):
+        issues.append("Falta régimen fiscal de la empresa")
+    if not company.get("codigo_postal_fiscal"):
+        issues.append("Falta código postal fiscal")
+    
+    # Check certificate
+    if not cert:
+        issues.append("No hay certificado CSD configurado")
+    elif cert.get("pac_provider") == "none":
+        issues.append("No hay proveedor PAC configurado")
+    
+    return {
+        "ready": len(issues) == 0,
+        "issues": issues,
+        "has_certificate": cert is not None,
+        "pac_provider": cert.get("pac_provider") if cert else None
     }
 
 # Include router and configure CORS

@@ -30,6 +30,7 @@ import UserProfile from "./pages/UserProfile";
 import Reminders from "./pages/Reminders";
 import DocumentSettings from "./pages/DocumentSettings";
 import ActivityLogs from "./pages/ActivityLogs";
+import FiscalSettings from "./pages/FiscalSettings";
 
 // Layout
 import MainLayout from "./components/Layout/MainLayout";
@@ -239,6 +240,7 @@ function AppRoutes() {
         <Route path="reminders" element={<Reminders />} />
         <Route path="document-settings" element={<DocumentSettings />} />
         <Route path="activity-logs" element={<ActivityLogs />} />
+        <Route path="fiscal-settings" element={<FiscalSettings />} />
       </Route>
 
       {/* Catch all */}
