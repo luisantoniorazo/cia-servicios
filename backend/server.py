@@ -1732,7 +1732,7 @@ async def get_companies_with_admin_info(companies: list) -> list:
             "id": c["id"],
             "business_name": c["business_name"],
             "slug": c.get("slug"),
-            "status": c.get("subscription_status"),
+            "subscription_status": c.get("subscription_status"),
             "monthly_fee": c.get("monthly_fee", 0),
             "license_type": c.get("license_type", "basic"),
             "subscription_end": c.get("subscription_end"),
