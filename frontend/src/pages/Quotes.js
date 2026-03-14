@@ -94,7 +94,7 @@ export const Quotes = () => {
     description: "",
     status: "prospect",
     show_tax: true,
-    items: [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0 }],
+    items: [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0, clave_prod_serv: "", clave_unidad: "" }],
   });
 
   useEffect(() => {
@@ -137,7 +137,7 @@ export const Quotes = () => {
   const addItem = () => {
     setFormData({
       ...formData,
-      items: [...formData.items, { description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0 }],
+      items: [...formData.items, { description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0, clave_prod_serv: "", clave_unidad: "" }],
     });
   };
 
@@ -209,7 +209,7 @@ export const Quotes = () => {
       description: quote.description || "",
       status: quote.status,
       show_tax: quote.show_tax !== false,
-      items: quote.items || [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0 }],
+      items: quote.items || [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0, clave_prod_serv: "", clave_unidad: "" }],
     });
     setEditDialogOpen(true);
   };
@@ -307,7 +307,7 @@ export const Quotes = () => {
       description: "",
       status: "prospect",
       show_tax: true,
-      items: [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0 }],
+      items: [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0, clave_prod_serv: "", clave_unidad: "" }],
     });
   };
 
@@ -655,52 +655,77 @@ export const Quotes = () => {
                   </Button>
                 </div>
                 {formData.items.map((item, index) => (
-                  <div key={index} className="grid grid-cols-12 gap-2 items-end p-3 bg-slate-50 rounded-sm">
-                    <div className="col-span-4">
-                      <Label className="text-xs">Descripción</Label>
-                      <Input
-                        value={item.description}
-                        onChange={(e) => handleItemChange(index, "description", e.target.value)}
-                        placeholder="Concepto"
-                      />
+                  <div key={index} className="p-3 bg-slate-50 rounded-sm space-y-2">
+                    <div className="grid grid-cols-12 gap-2 items-end">
+                      <div className="col-span-12 md:col-span-4">
+                        <Label className="text-xs">Descripción</Label>
+                        <Input
+                          value={item.description}
+                          onChange={(e) => handleItemChange(index, "description", e.target.value)}
+                          placeholder="Concepto"
+                        />
+                      </div>
+                      <div className="col-span-4 md:col-span-2">
+                        <Label className="text-xs">Cantidad</Label>
+                        <Input
+                          type="number"
+                          value={item.quantity}
+                          onChange={(e) => handleItemChange(index, "quantity", parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="col-span-4 md:col-span-1">
+                        <Label className="text-xs">Unidad</Label>
+                        <Input
+                          value={item.unit}
+                          onChange={(e) => handleItemChange(index, "unit", e.target.value)}
+                        />
+                      </div>
+                      <div className="col-span-4 md:col-span-2">
+                        <Label className="text-xs">P. Unitario</Label>
+                        <Input
+                          type="number"
+                          value={item.unit_price}
+                          onChange={(e) => handleItemChange(index, "unit_price", parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="col-span-8 md:col-span-2">
+                        <Label className="text-xs">Total</Label>
+                        <Input value={formatCurrency(item.quantity * item.unit_price)} disabled />
+                      </div>
+                      <div className="col-span-4 md:col-span-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeItem(index)}
+                          disabled={formData.items.length === 1}
+                        >
+                          <MinusCircle className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="col-span-2">
-                      <Label className="text-xs">Cantidad</Label>
-                      <Input
-                        type="number"
-                        value={item.quantity}
-                        onChange={(e) => handleItemChange(index, "quantity", parseFloat(e.target.value) || 0)}
-                      />
-                    </div>
-                    <div className="col-span-1">
-                      <Label className="text-xs">Unidad</Label>
-                      <Input
-                        value={item.unit}
-                        onChange={(e) => handleItemChange(index, "unit", e.target.value)}
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <Label className="text-xs">P. Unitario</Label>
-                      <Input
-                        type="number"
-                        value={item.unit_price}
-                        onChange={(e) => handleItemChange(index, "unit_price", parseFloat(e.target.value) || 0)}
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <Label className="text-xs">Total</Label>
-                      <Input value={formatCurrency(item.quantity * item.unit_price)} disabled />
-                    </div>
-                    <div className="col-span-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeItem(index)}
-                        disabled={formData.items.length === 1}
-                      >
-                        <MinusCircle className="h-4 w-4 text-red-500" />
-                      </Button>
+                    <div className="grid grid-cols-12 gap-2 items-end border-t border-slate-200 pt-2">
+                      <div className="col-span-6 md:col-span-3">
+                        <Label className="text-xs text-blue-600">Clave SAT Producto</Label>
+                        <Input
+                          value={item.clave_prod_serv || ""}
+                          onChange={(e) => handleItemChange(index, "clave_prod_serv", e.target.value)}
+                          placeholder="Ej: 80131502"
+                          className="text-xs"
+                        />
+                      </div>
+                      <div className="col-span-6 md:col-span-2">
+                        <Label className="text-xs text-blue-600">Clave Unidad SAT</Label>
+                        <Input
+                          value={item.clave_unidad || ""}
+                          onChange={(e) => handleItemChange(index, "clave_unidad", e.target.value)}
+                          placeholder="Ej: H87, E48"
+                          className="text-xs"
+                        />
+                      </div>
+                      <div className="col-span-12 md:col-span-7">
+                        <p className="text-[10px] text-slate-400 mt-1">Claves SAT para CFDI</p>
+                      </div>
                     </div>
                   </div>
                 ))}
@@ -823,52 +848,77 @@ export const Quotes = () => {
                   </Button>
                 </div>
                 {formData.items.map((item, index) => (
-                  <div key={index} className="grid grid-cols-12 gap-2 items-end p-3 bg-slate-50 rounded-sm">
-                    <div className="col-span-4">
-                      <Label className="text-xs">Descripción</Label>
-                      <Input
-                        value={item.description}
-                        onChange={(e) => handleItemChange(index, "description", e.target.value)}
-                        placeholder="Concepto"
-                      />
+                  <div key={index} className="p-3 bg-slate-50 rounded-sm space-y-2">
+                    <div className="grid grid-cols-12 gap-2 items-end">
+                      <div className="col-span-12 md:col-span-4">
+                        <Label className="text-xs">Descripción</Label>
+                        <Input
+                          value={item.description}
+                          onChange={(e) => handleItemChange(index, "description", e.target.value)}
+                          placeholder="Concepto"
+                        />
+                      </div>
+                      <div className="col-span-4 md:col-span-2">
+                        <Label className="text-xs">Cantidad</Label>
+                        <Input
+                          type="number"
+                          value={item.quantity}
+                          onChange={(e) => handleItemChange(index, "quantity", parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="col-span-4 md:col-span-1">
+                        <Label className="text-xs">Unidad</Label>
+                        <Input
+                          value={item.unit}
+                          onChange={(e) => handleItemChange(index, "unit", e.target.value)}
+                        />
+                      </div>
+                      <div className="col-span-4 md:col-span-2">
+                        <Label className="text-xs">P. Unitario</Label>
+                        <Input
+                          type="number"
+                          value={item.unit_price}
+                          onChange={(e) => handleItemChange(index, "unit_price", parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="col-span-8 md:col-span-2">
+                        <Label className="text-xs">Total</Label>
+                        <Input value={formatCurrency(item.quantity * item.unit_price)} disabled />
+                      </div>
+                      <div className="col-span-4 md:col-span-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeItem(index)}
+                          disabled={formData.items.length === 1}
+                        >
+                          <MinusCircle className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="col-span-2">
-                      <Label className="text-xs">Cantidad</Label>
-                      <Input
-                        type="number"
-                        value={item.quantity}
-                        onChange={(e) => handleItemChange(index, "quantity", parseFloat(e.target.value) || 0)}
-                      />
-                    </div>
-                    <div className="col-span-1">
-                      <Label className="text-xs">Unidad</Label>
-                      <Input
-                        value={item.unit}
-                        onChange={(e) => handleItemChange(index, "unit", e.target.value)}
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <Label className="text-xs">P. Unitario</Label>
-                      <Input
-                        type="number"
-                        value={item.unit_price}
-                        onChange={(e) => handleItemChange(index, "unit_price", parseFloat(e.target.value) || 0)}
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <Label className="text-xs">Total</Label>
-                      <Input value={formatCurrency(item.quantity * item.unit_price)} disabled />
-                    </div>
-                    <div className="col-span-1">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => removeItem(index)}
-                        disabled={formData.items.length === 1}
-                      >
-                        <MinusCircle className="h-4 w-4 text-red-500" />
-                      </Button>
+                    <div className="grid grid-cols-12 gap-2 items-end border-t border-slate-200 pt-2">
+                      <div className="col-span-6 md:col-span-3">
+                        <Label className="text-xs text-blue-600">Clave SAT Producto</Label>
+                        <Input
+                          value={item.clave_prod_serv || ""}
+                          onChange={(e) => handleItemChange(index, "clave_prod_serv", e.target.value)}
+                          placeholder="Ej: 80131502"
+                          className="text-xs"
+                        />
+                      </div>
+                      <div className="col-span-6 md:col-span-2">
+                        <Label className="text-xs text-blue-600">Clave Unidad SAT</Label>
+                        <Input
+                          value={item.clave_unidad || ""}
+                          onChange={(e) => handleItemChange(index, "clave_unidad", e.target.value)}
+                          placeholder="Ej: H87, E48"
+                          className="text-xs"
+                        />
+                      </div>
+                      <div className="col-span-12 md:col-span-7">
+                        <p className="text-[10px] text-slate-400 mt-1">Claves SAT para CFDI</p>
+                      </div>
                     </div>
                   </div>
                 ))}
