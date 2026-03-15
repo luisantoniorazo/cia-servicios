@@ -72,6 +72,38 @@ const PAYMENT_METHODS = [
   { value: "tarjeta", label: "Tarjeta" },
 ];
 
+// Catálogo SAT c_FormaPago para CFDI
+const SAT_FORMAS_PAGO = [
+  { value: "01", label: "01 - Efectivo" },
+  { value: "02", label: "02 - Cheque nominativo" },
+  { value: "03", label: "03 - Transferencia electrónica de fondos" },
+  { value: "04", label: "04 - Tarjeta de crédito" },
+  { value: "05", label: "05 - Monedero electrónico" },
+  { value: "06", label: "06 - Dinero electrónico" },
+  { value: "08", label: "08 - Vales de despensa" },
+  { value: "12", label: "12 - Dación en pago" },
+  { value: "13", label: "13 - Pago por subrogación" },
+  { value: "14", label: "14 - Pago por consignación" },
+  { value: "15", label: "15 - Condonación" },
+  { value: "17", label: "17 - Compensación" },
+  { value: "23", label: "23 - Novación" },
+  { value: "24", label: "24 - Confusión" },
+  { value: "25", label: "25 - Remisión de deuda" },
+  { value: "26", label: "26 - Prescripción o caducidad" },
+  { value: "27", label: "27 - A satisfacción del acreedor" },
+  { value: "28", label: "28 - Tarjeta de débito" },
+  { value: "29", label: "29 - Tarjeta de servicios" },
+  { value: "30", label: "30 - Aplicación de anticipos" },
+  { value: "31", label: "31 - Intermediario pagos" },
+  { value: "99", label: "99 - Por definir" },
+];
+
+const MONEDAS = [
+  { value: "MXN", label: "MXN - Peso Mexicano" },
+  { value: "USD", label: "USD - Dólar Americano" },
+  { value: "EUR", label: "EUR - Euro" },
+];
+
 export const Invoices = () => {
   const { api, company } = useAuth();
   const [invoices, setInvoices] = useState([]);
@@ -102,12 +134,27 @@ export const Invoices = () => {
   });
   
   const [paymentForm, setPaymentForm] = useState({
+    // Datos básicos del pago
     amount: "",
     payment_date: new Date().toISOString().split("T")[0],
     payment_method: "transferencia",
     reference: "",
     notes: "",
     proof_file: null,
+    // Datos SAT para complemento de pago CFDI
+    sat_forma_pago: "03", // Default: Transferencia electrónica
+    moneda_pago: "MXN",
+    tipo_cambio: "1",
+    num_operacion: "",
+    // Datos bancarios ordenante (quien paga)
+    rfc_banco_ordenante: "",
+    nombre_banco_ordenante: "",
+    cuenta_ordenante: "",
+    // Datos bancarios beneficiario (quien recibe)
+    rfc_banco_beneficiario: "",
+    cuenta_beneficiaria: "",
+    // Control de parcialidades
+    num_parcialidad: "1",
   });
   
   const [satForm, setSatForm] = useState({
@@ -892,86 +939,265 @@ export const Invoices = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Payment Dialog */}
+      {/* Payment Dialog - Complemento de Pago CFDI */}
       <Dialog open={paymentDialogOpen} onOpenChange={setPaymentDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
           <form onSubmit={handlePayment}>
             <DialogHeader>
-              <DialogTitle>Registrar Abono</DialogTitle>
+              <DialogTitle>Registrar Abono / Complemento de Pago</DialogTitle>
               <DialogDescription>
-                Factura: {selectedInvoice?.invoice_number} | 
-                Saldo: {formatCurrency((selectedInvoice?.total || 0) - (selectedInvoice?.paid_amount || 0))}
+                Factura: <strong>{selectedInvoice?.invoice_number}</strong> | 
+                Total: {formatCurrency(selectedInvoice?.total || 0)} |
+                Pagado: {formatCurrency(selectedInvoice?.paid_amount || 0)} |
+                <span className="text-primary font-semibold"> Saldo: {formatCurrency((selectedInvoice?.total || 0) - (selectedInvoice?.paid_amount || 0))}</span>
               </DialogDescription>
             </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Monto del Abono *</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={paymentForm.amount}
-                    onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
-                    placeholder="0.00"
-                    required
-                  />
+            <div className="space-y-4 py-4">
+              {/* Sección: Datos del Pago */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                  <DollarSign className="h-4 w-4" />
+                  Datos del Pago
+                </h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="grid gap-1">
+                    <Label className="text-xs">Monto del Abono *</Label>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      value={paymentForm.amount}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
+                      placeholder="0.00"
+                      required
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label className="text-xs">Fecha de Pago *</Label>
+                    <Input
+                      type="date"
+                      value={paymentForm.payment_date}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })}
+                      required
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label className="text-xs">No. Parcialidad</Label>
+                    <Input
+                      type="number"
+                      min="1"
+                      value={paymentForm.num_parcialidad}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, num_parcialidad: e.target.value })}
+                      className="h-9"
+                    />
+                  </div>
                 </div>
-                <div className="grid gap-2">
-                  <Label>Fecha de Pago *</Label>
-                  <Input
-                    type="date"
-                    value={paymentForm.payment_date}
-                    onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })}
-                    required
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-1">
+                    <Label className="text-xs">Forma de Pago SAT *</Label>
+                    <Select
+                      value={paymentForm.sat_forma_pago}
+                      onValueChange={(value) => setPaymentForm({ ...paymentForm, sat_forma_pago: value })}
+                    >
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {SAT_FORMAS_PAGO.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-1">
+                    <Label className="text-xs">Número de Operación</Label>
+                    <Input
+                      value={paymentForm.num_operacion}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, num_operacion: e.target.value })}
+                      placeholder="No. transferencia, autorización, etc."
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="grid gap-1">
+                    <Label className="text-xs">Moneda del Pago</Label>
+                    <Select
+                      value={paymentForm.moneda_pago}
+                      onValueChange={(value) => setPaymentForm({ ...paymentForm, moneda_pago: value })}
+                    >
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {MONEDAS.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid gap-1">
+                    <Label className="text-xs">Tipo de Cambio</Label>
+                    <Input
+                      type="number"
+                      step="0.0001"
+                      value={paymentForm.tipo_cambio}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, tipo_cambio: e.target.value })}
+                      placeholder="1.0000"
+                      disabled={paymentForm.moneda_pago === "MXN"}
+                      className="h-9"
+                    />
+                  </div>
+                  <div className="grid gap-1">
+                    <Label className="text-xs">Método (interno)</Label>
+                    <Select
+                      value={paymentForm.payment_method}
+                      onValueChange={(value) => setPaymentForm({ ...paymentForm, payment_method: value })}
+                    >
+                      <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {PAYMENT_METHODS.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Sección: Datos Bancarios */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                  <CreditCard className="h-4 w-4" />
+                  Datos Bancarios <span className="text-xs font-normal text-slate-400">(Opcionales para CFDI)</span>
+                </h4>
+                
+                {/* Banco Ordenante (quien paga) */}
+                <div className="p-3 bg-slate-50 rounded-lg space-y-2">
+                  <p className="text-xs font-medium text-slate-600">Banco Ordenante (quien paga)</p>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="grid gap-1">
+                      <Label className="text-xs">RFC Banco</Label>
+                      <Input
+                        value={paymentForm.rfc_banco_ordenante}
+                        onChange={(e) => setPaymentForm({ ...paymentForm, rfc_banco_ordenante: e.target.value.toUpperCase() })}
+                        placeholder="BBA830831LJ2"
+                        maxLength={12}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="grid gap-1">
+                      <Label className="text-xs">Nombre Banco</Label>
+                      <Input
+                        value={paymentForm.nombre_banco_ordenante}
+                        onChange={(e) => setPaymentForm({ ...paymentForm, nombre_banco_ordenante: e.target.value })}
+                        placeholder="BBVA México"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="grid gap-1">
+                      <Label className="text-xs">Cuenta Ordenante</Label>
+                      <Input
+                        value={paymentForm.cuenta_ordenante}
+                        onChange={(e) => setPaymentForm({ ...paymentForm, cuenta_ordenante: e.target.value })}
+                        placeholder="Últimos 4 dígitos o CLABE"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Banco Beneficiario (quien recibe) */}
+                <div className="p-3 bg-blue-50 rounded-lg space-y-2">
+                  <p className="text-xs font-medium text-blue-700">Banco Beneficiario (quien recibe el pago)</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-1">
+                      <Label className="text-xs">RFC Banco</Label>
+                      <Input
+                        value={paymentForm.rfc_banco_beneficiario}
+                        onChange={(e) => setPaymentForm({ ...paymentForm, rfc_banco_beneficiario: e.target.value.toUpperCase() })}
+                        placeholder="BNM840515VB1"
+                        maxLength={12}
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                    <div className="grid gap-1">
+                      <Label className="text-xs">Cuenta Beneficiaria</Label>
+                      <Input
+                        value={paymentForm.cuenta_beneficiaria}
+                        onChange={(e) => setPaymentForm({ ...paymentForm, cuenta_beneficiaria: e.target.value })}
+                        placeholder="CLABE o No. Cuenta"
+                        className="h-8 text-xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Sección: Comprobante y Notas */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                  <FileText className="h-4 w-4" />
+                  Comprobante y Notas
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="grid gap-1">
+                    <Label className="text-xs">Comprobante de Pago</Label>
+                    <Input
+                      type="file"
+                      accept=".pdf,.png,.jpg,.jpeg"
+                      onChange={(e) => setPaymentForm({ ...paymentForm, proof_file: e.target.files?.[0] })}
+                      className="h-9 text-xs"
+                    />
+                    <p className="text-[10px] text-muted-foreground">PDF o imagen del comprobante bancario</p>
+                  </div>
+                  <div className="grid gap-1">
+                    <Label className="text-xs">Referencia</Label>
+                    <Input
+                      value={paymentForm.reference}
+                      onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })}
+                      placeholder="No. de cheque, folio, etc."
+                      className="h-9"
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-1">
+                  <Label className="text-xs">Notas / Observaciones</Label>
+                  <Textarea
+                    value={paymentForm.notes}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
+                    placeholder="Observaciones adicionales del pago..."
+                    rows={2}
+                    className="text-xs"
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Método de Pago</Label>
-                  <Select
-                    value={paymentForm.payment_method}
-                    onValueChange={(value) => setPaymentForm({ ...paymentForm, payment_method: value })}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      {PAYMENT_METHODS.map((m) => (
-                        <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+
+              {/* Resumen del documento relacionado */}
+              {selectedInvoice?.sat_invoice_uuid && (
+                <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-xs font-medium text-green-700 mb-2">Documento Relacionado (CFDI)</p>
+                  <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div><span className="text-slate-500">UUID:</span> <span className="font-mono">{selectedInvoice.sat_invoice_uuid}</span></div>
+                    <div><span className="text-slate-500">Folio:</span> {selectedInvoice.invoice_number}</div>
+                    <div><span className="text-slate-500">Total Factura:</span> {formatCurrency(selectedInvoice.total)}</div>
+                    <div><span className="text-slate-500">Saldo Anterior:</span> {formatCurrency((selectedInvoice.total || 0) - (selectedInvoice.paid_amount || 0))}</div>
+                  </div>
                 </div>
-                <div className="grid gap-2">
-                  <Label>Referencia</Label>
-                  <Input
-                    value={paymentForm.reference}
-                    onChange={(e) => setPaymentForm({ ...paymentForm, reference: e.target.value })}
-                    placeholder="No. transferencia, cheque, etc."
-                  />
-                </div>
-              </div>
-              <div className="grid gap-2">
-                <Label>Comprobante de Pago</Label>
-                <Input
-                  type="file"
-                  accept=".pdf,.png,.jpg,.jpeg"
-                  onChange={(e) => setPaymentForm({ ...paymentForm, proof_file: e.target.files?.[0] })}
-                />
-                <p className="text-xs text-muted-foreground">PDF o imagen del comprobante</p>
-              </div>
-              <div className="grid gap-2">
-                <Label>Notas</Label>
-                <Textarea
-                  value={paymentForm.notes}
-                  onChange={(e) => setPaymentForm({ ...paymentForm, notes: e.target.value })}
-                  placeholder="Observaciones del pago..."
-                  rows={2}
-                />
+              )}
+
+              {/* Info para CFDI */}
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-xs text-amber-700">
+                  <strong>Nota:</strong> Los datos bancarios son opcionales pero recomendados para el complemento de pago CFDI 4.0. 
+                  El saldo insoluto se calculará automáticamente al registrar el pago.
+                </p>
               </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setPaymentDialogOpen(false)}>Cancelar</Button>
-              <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700">Registrar Abono</Button>
+              <Button type="submit" className="btn-industrial">Registrar Abono</Button>
             </DialogFooter>
           </form>
         </DialogContent>

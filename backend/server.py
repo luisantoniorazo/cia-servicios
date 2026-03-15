@@ -457,7 +457,7 @@ class Invoice(InvoiceBase):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-# Payment Models (Abonos)
+# Payment Models (Abonos) - Con datos para Complemento de Pago CFDI
 class PaymentBase(BaseModel):
     company_id: str
     invoice_id: str
@@ -468,6 +468,26 @@ class PaymentBase(BaseModel):
     reference: Optional[str] = None
     notes: Optional[str] = None
     proof_file: Optional[str] = None  # Base64 of payment proof image/PDF
+    # Datos SAT para Complemento de Pago CFDI 4.0
+    sat_forma_pago: Optional[str] = "03"  # Catálogo c_FormaPago (03 = Transferencia)
+    moneda_pago: str = "MXN"
+    tipo_cambio: float = 1.0
+    num_operacion: Optional[str] = None
+    # Datos bancarios ordenante (quien paga)
+    rfc_banco_ordenante: Optional[str] = None
+    nombre_banco_ordenante: Optional[str] = None
+    cuenta_ordenante: Optional[str] = None
+    # Datos bancarios beneficiario (quien recibe)
+    rfc_banco_beneficiario: Optional[str] = None
+    cuenta_beneficiaria: Optional[str] = None
+    # Control de parcialidades
+    num_parcialidad: int = 1
+    saldo_anterior: float = 0.0
+    saldo_insoluto: float = 0.0
+    # CFDI del complemento (cuando se timbre)
+    cfdi_complemento_uuid: Optional[str] = None
+    cfdi_complemento_xml: Optional[str] = None
+    cfdi_complemento_pdf: Optional[str] = None
 
 class PaymentCreate(PaymentBase):
     pass
