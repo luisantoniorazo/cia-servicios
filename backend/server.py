@@ -420,13 +420,23 @@ class Followup(FollowupBase):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 # Invoice Models
+class InvoiceItem(BaseModel):
+    description: str
+    quantity: float = 1
+    unit: str = "pza"
+    unit_price: float = 0.0
+    total: float = 0.0
+    clave_prod_serv: Optional[str] = None  # SAT product/service key
+    clave_unidad: Optional[str] = None  # SAT unit key
+
 class InvoiceBase(BaseModel):
     company_id: str
     client_id: str
     project_id: Optional[str] = None
     quote_id: Optional[str] = None
     invoice_number: str
-    concept: str
+    concept: Optional[str] = None
+    items: List[InvoiceItem] = []
     subtotal: float = 0.0
     tax: float = 0.0
     total: float = 0.0

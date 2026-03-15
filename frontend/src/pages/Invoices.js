@@ -10,6 +10,8 @@ import { Skeleton } from "../components/ui/skeleton";
 import { Progress } from "../components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { Textarea } from "../components/ui/textarea";
+import { SATProductSearch, SATUnitSearch } from "../components/SATSearch";
+import { Separator } from "../components/ui/separator";
 import {
   Dialog,
   DialogContent,
@@ -44,6 +46,8 @@ import { toast } from "sonner";
 import {
   Receipt,
   Plus,
+  PlusCircle,
+  MinusCircle,
   MoreVertical,
   DollarSign,
   CheckCircle,
@@ -89,10 +93,10 @@ export const Invoices = () => {
     client_id: "",
     project_id: "",
     invoice_number: "",
-    concept: "",
-    subtotal: "",
-    tax: "",
-    total: "",
+    items: [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0, clave_prod_serv: "", clave_unidad: "" }],
+    subtotal: 0,
+    tax: 0,
+    total: 0,
     invoice_date: new Date().toISOString().split("T")[0],
     due_date: "",
   });
@@ -158,16 +162,47 @@ export const Invoices = () => {
     }
   };
 
+  const calculateTotals = (items) => {
+    const subtotal = items.reduce((acc, item) => acc + (item.quantity * item.unit_price), 0);
+    const tax = subtotal * 0.16;
+    const total = subtotal + tax;
+    return { subtotal, tax, total };
+  };
+
+  const handleItemChange = (index, field, value) => {
+    const newItems = [...formData.items];
+    newItems[index][field] = value;
+    if (field === "quantity" || field === "unit_price") {
+      newItems[index].total = newItems[index].quantity * newItems[index].unit_price;
+    }
+    const { subtotal, tax, total } = calculateTotals(newItems);
+    setFormData({ ...formData, items: newItems, subtotal, tax, total });
+  };
+
+  const addItem = () => {
+    setFormData({
+      ...formData,
+      items: [...formData.items, { description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0, clave_prod_serv: "", clave_unidad: "" }],
+    });
+  };
+
+  const removeItem = (index) => {
+    if (formData.items.length === 1) return;
+    const newItems = formData.items.filter((_, i) => i !== index);
+    const { subtotal, tax, total } = calculateTotals(newItems);
+    setFormData({ ...formData, items: newItems, subtotal, tax, total });
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const subtotal = parseFloat(formData.subtotal) || 0;
-      const tax = subtotal * 0.16;
-      const total = subtotal + tax;
+      const { subtotal, tax, total } = calculateTotals(formData.items);
+      const concept = formData.items.map(i => i.description).filter(Boolean).join(", ") || "Factura";
       
       await api.post("/invoices", {
         company_id: company.id,
         ...formData,
+        concept,
         subtotal,
         tax,
         total,
@@ -335,10 +370,10 @@ export const Invoices = () => {
       client_id: "",
       project_id: "",
       invoice_number: generateInvoiceNumber(),
-      concept: "",
-      subtotal: "",
-      tax: "",
-      total: "",
+      items: [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0, clave_prod_serv: "", clave_unidad: "" }],
+      subtotal: 0,
+      tax: 0,
+      total: 0,
       invoice_date: new Date().toISOString().split("T")[0],
       due_date: "",
     });
@@ -679,14 +714,14 @@ export const Invoices = () => {
 
       {/* Create Invoice Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+        <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
           <form onSubmit={handleSubmit}>
             <DialogHeader>
               <DialogTitle>Nueva Factura</DialogTitle>
-              <DialogDescription>Registra una nueva factura para seguimiento</DialogDescription>
+              <DialogDescription>Registra una nueva factura con datos fiscales para CFDI</DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="grid gap-2">
                   <Label>Folio</Label>
                   <Input
@@ -713,63 +748,145 @@ export const Invoices = () => {
                   />
                 </div>
               </div>
-              <div className="grid gap-2">
-                <Label>Cliente *</Label>
-                <Select
-                  value={formData.client_id}
-                  onValueChange={(value) => setFormData({ ...formData, client_id: value })}
-                >
-                  <SelectTrigger><SelectValue placeholder="Seleccionar cliente" /></SelectTrigger>
-                  <SelectContent>
-                    {clients.filter(c => !c.is_prospect).map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name} {c.reference && `(${c.reference})`}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Cliente *</Label>
+                  <Select
+                    value={formData.client_id}
+                    onValueChange={(value) => setFormData({ ...formData, client_id: value })}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Seleccionar cliente" /></SelectTrigger>
+                    <SelectContent>
+                      {clients.filter(c => !c.is_prospect).map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name} {c.reference && `(${c.reference})`} {c.rfc && `- ${c.rfc}`}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>Proyecto (opcional)</Label>
+                  <Select
+                    value={formData.project_id}
+                    onValueChange={(value) => setFormData({ ...formData, project_id: value })}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Seleccionar proyecto" /></SelectTrigger>
+                    <SelectContent>
+                      {projects.map((p) => (
+                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-              <div className="grid gap-2">
-                <Label>Proyecto (opcional)</Label>
-                <Select
-                  value={formData.project_id}
-                  onValueChange={(value) => setFormData({ ...formData, project_id: value })}
-                >
-                  <SelectTrigger><SelectValue placeholder="Seleccionar proyecto" /></SelectTrigger>
-                  <SelectContent>
-                    {projects.map((p) => (
-                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+
+              {/* Items Section */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Conceptos / Partidas</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={addItem}>
+                    <PlusCircle className="mr-1 h-4 w-4" />
+                    Agregar
+                  </Button>
+                </div>
+                {formData.items.map((item, index) => (
+                  <div key={index} className="p-3 bg-slate-50 rounded-lg space-y-3 border">
+                    <div className="grid grid-cols-12 gap-2 items-end">
+                      <div className="col-span-12 md:col-span-5">
+                        <Label className="text-xs">Descripción *</Label>
+                        <Input
+                          value={item.description}
+                          onChange={(e) => handleItemChange(index, "description", e.target.value)}
+                          placeholder="Descripción del servicio/producto"
+                          required
+                        />
+                      </div>
+                      <div className="col-span-3 md:col-span-2">
+                        <Label className="text-xs">Cantidad</Label>
+                        <Input
+                          type="number"
+                          value={item.quantity}
+                          onChange={(e) => handleItemChange(index, "quantity", parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="col-span-3 md:col-span-1">
+                        <Label className="text-xs">Unidad</Label>
+                        <Input
+                          value={item.unit}
+                          onChange={(e) => handleItemChange(index, "unit", e.target.value)}
+                        />
+                      </div>
+                      <div className="col-span-4 md:col-span-2">
+                        <Label className="text-xs">P. Unitario</Label>
+                        <Input
+                          type="number"
+                          value={item.unit_price}
+                          onChange={(e) => handleItemChange(index, "unit_price", parseFloat(e.target.value) || 0)}
+                        />
+                      </div>
+                      <div className="col-span-2 md:col-span-2 flex items-end gap-1">
+                        <div className="flex-1">
+                          <Label className="text-xs">Total</Label>
+                          <Input value={formatCurrency(item.quantity * item.unit_price)} disabled className="text-xs" />
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeItem(index)}
+                          disabled={formData.items.length === 1}
+                          className="h-9 w-9"
+                        >
+                          <MinusCircle className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+                    </div>
+                    {/* SAT Keys */}
+                    <div className="grid grid-cols-12 gap-2 items-end border-t pt-2">
+                      <div className="col-span-6 md:col-span-5">
+                        <Label className="text-xs text-blue-600">Clave SAT Producto/Servicio</Label>
+                        <SATProductSearch
+                          value={item.clave_prod_serv || ""}
+                          onChange={(val) => handleItemChange(index, "clave_prod_serv", val)}
+                          placeholder="Buscar clave SAT..."
+                        />
+                      </div>
+                      <div className="col-span-6 md:col-span-3">
+                        <Label className="text-xs text-blue-600">Clave Unidad SAT</Label>
+                        <SATUnitSearch
+                          value={item.clave_unidad || ""}
+                          onChange={(val) => handleItemChange(index, "clave_unidad", val)}
+                        />
+                      </div>
+                      <div className="col-span-12 md:col-span-4">
+                        <p className="text-[10px] text-slate-400">Requeridos para facturación CFDI</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="grid gap-2">
-                <Label>Concepto *</Label>
-                <Input
-                  value={formData.concept}
-                  onChange={(e) => setFormData({ ...formData, concept: e.target.value })}
-                  placeholder="Descripción del servicio"
-                  required
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>Subtotal *</Label>
-                <Input
-                  type="number"
-                  value={formData.subtotal}
-                  onChange={(e) => setFormData({ ...formData, subtotal: e.target.value })}
-                  placeholder="0.00"
-                  required
-                />
-                <p className="text-xs text-muted-foreground">
-                  IVA (16%): {formatCurrency((parseFloat(formData.subtotal) || 0) * 0.16)} | 
-                  Total: {formatCurrency((parseFloat(formData.subtotal) || 0) * 1.16)}
-                </p>
+
+              {/* Totals */}
+              <div className="space-y-2 p-4 bg-slate-100 rounded-lg">
+                <div className="flex justify-between text-sm">
+                  <span>Subtotal:</span>
+                  <span className="font-medium">{formatCurrency(formData.subtotal)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>IVA (16%):</span>
+                  <span className="font-medium">{formatCurrency(formData.tax)}</span>
+                </div>
+                <Separator />
+                <div className="flex justify-between text-lg font-bold">
+                  <span>Total:</span>
+                  <span className="text-primary">{formatCurrency(formData.total)}</span>
+                </div>
               </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-              <Button type="submit" className="btn-industrial">Registrar</Button>
+              <Button type="submit" className="btn-industrial">Registrar Factura</Button>
             </DialogFooter>
           </form>
         </DialogContent>
