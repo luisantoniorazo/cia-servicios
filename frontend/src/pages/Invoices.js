@@ -275,7 +275,9 @@ export const Invoices = () => {
         proofBase64 = await fileToBase64(paymentForm.proof_file);
       }
       
-      const client = clients.find(c => c.id === selectedInvoice.client_id);
+      // Calcular saldo anterior e insoluto
+      const saldoAnterior = (selectedInvoice.total || 0) - (selectedInvoice.paid_amount || 0);
+      const saldoInsoluto = saldoAnterior - parseFloat(paymentForm.amount);
       
       await api.post("/payments", {
         company_id: company.id,
@@ -287,6 +289,19 @@ export const Invoices = () => {
         reference: paymentForm.reference,
         notes: paymentForm.notes,
         proof_file: proofBase64,
+        // Datos SAT para Complemento de Pago
+        sat_forma_pago: paymentForm.sat_forma_pago,
+        moneda_pago: paymentForm.moneda_pago,
+        tipo_cambio: parseFloat(paymentForm.tipo_cambio) || 1,
+        num_operacion: paymentForm.num_operacion,
+        rfc_banco_ordenante: paymentForm.rfc_banco_ordenante,
+        nombre_banco_ordenante: paymentForm.nombre_banco_ordenante,
+        cuenta_ordenante: paymentForm.cuenta_ordenante,
+        rfc_banco_beneficiario: paymentForm.rfc_banco_beneficiario,
+        cuenta_beneficiaria: paymentForm.cuenta_beneficiaria,
+        num_parcialidad: parseInt(paymentForm.num_parcialidad) || 1,
+        saldo_anterior: saldoAnterior,
+        saldo_insoluto: Math.max(0, saldoInsoluto),
       });
       
       toast.success("Abono registrado exitosamente");
@@ -451,9 +466,30 @@ export const Invoices = () => {
 
   const openPaymentDialog = (invoice) => {
     setSelectedInvoice(invoice);
+    
+    // Calcular número de parcialidad automáticamente
+    // Contar pagos existentes para esta factura
+    const pagosFactura = payments.filter(p => p.invoice_id === invoice.id);
+    const numParcialidad = pagosFactura.length + 1;
+    
     setPaymentForm(prev => ({
       ...prev,
       amount: (invoice.total - invoice.paid_amount).toFixed(2),
+      num_parcialidad: numParcialidad.toString(),
+      // Resetear otros campos
+      payment_date: new Date().toISOString().split("T")[0],
+      sat_forma_pago: "03",
+      moneda_pago: "MXN",
+      tipo_cambio: "1",
+      num_operacion: "",
+      rfc_banco_ordenante: "",
+      nombre_banco_ordenante: "",
+      cuenta_ordenante: "",
+      rfc_banco_beneficiario: "",
+      cuenta_beneficiaria: "",
+      reference: "",
+      notes: "",
+      proof_file: null,
     }));
     setPaymentDialogOpen(true);
   };
@@ -945,11 +981,23 @@ export const Invoices = () => {
           <form onSubmit={handlePayment}>
             <DialogHeader>
               <DialogTitle>Registrar Abono / Complemento de Pago</DialogTitle>
-              <DialogDescription>
-                Factura: <strong>{selectedInvoice?.invoice_number}</strong> | 
-                Total: {formatCurrency(selectedInvoice?.total || 0)} |
-                Pagado: {formatCurrency(selectedInvoice?.paid_amount || 0)} |
-                <span className="text-primary font-semibold"> Saldo: {formatCurrency((selectedInvoice?.total || 0) - (selectedInvoice?.paid_amount || 0))}</span>
+              <DialogDescription className="space-y-1">
+                <div>
+                  Factura: <strong>{selectedInvoice?.invoice_number}</strong> | 
+                  Total: {formatCurrency(selectedInvoice?.total || 0)} |
+                  Pagado: {formatCurrency(selectedInvoice?.paid_amount || 0)} |
+                  <span className="text-primary font-semibold"> Saldo: {formatCurrency((selectedInvoice?.total || 0) - (selectedInvoice?.paid_amount || 0))}</span>
+                </div>
+                <div className="text-xs">
+                  <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                    Parcialidad #{paymentForm.num_parcialidad}
+                  </span>
+                  {selectedInvoice && payments.filter(p => p.invoice_id === selectedInvoice.id).length > 0 && (
+                    <span className="ml-2 text-slate-500">
+                      ({payments.filter(p => p.invoice_id === selectedInvoice.id).length} pago(s) previo(s))
+                    </span>
+                  )}
+                </div>
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
