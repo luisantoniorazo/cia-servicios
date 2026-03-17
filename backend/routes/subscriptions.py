@@ -60,9 +60,9 @@ SUBSCRIPTION_PLANS = {
 # Billing cycles
 BILLING_CYCLES = {
     "monthly": {"months": 1, "label": "Mensual", "discount": 0},
-    "quarterly": {"months": 3, "label": "Trimestral", "discount": 0.05},  # 5% desc
-    "semiannual": {"months": 6, "label": "Semestral", "discount": 0.10},  # 10% desc
-    "annual": {"months": 12, "label": "Anual", "discount": 0.15}  # 15% desc
+    "quarterly": {"months": 3, "label": "Trimestral", "discount": 0},
+    "semiannual": {"months": 6, "label": "Semestral", "discount": 0},
+    "annual": {"months": 12, "label": "Anual", "discount": 0}
 }
 
 # ============== MODELS ==============

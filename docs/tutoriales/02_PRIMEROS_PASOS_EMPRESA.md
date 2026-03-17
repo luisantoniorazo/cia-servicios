@@ -245,10 +245,11 @@ Gestiona tu plan y realiza pagos de renovación.
 | **Plan Base** | $2,500 MXN | Todos los módulos (sin CFDI) |
 | **Plan con Facturación** | $3,000 MXN | Todo + timbrado CFDI ilimitado |
 
-### Descuentos por Período
-- **Trimestral**: 5% descuento
-- **Semestral**: 10% descuento
-- **Anual**: 15% descuento
+### Períodos de Facturación
+- **Mensual**: Pago cada mes
+- **Trimestral**: Pago cada 3 meses
+- **Semestral**: Pago cada 6 meses
+- **Anual**: Pago cada 12 meses
 
 ### Formas de Pago
 
