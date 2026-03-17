@@ -33,6 +33,7 @@ from routes.clients import router as clients_router, init_clients_routes
 from routes.projects import router as projects_router, init_projects_routes
 from routes.quotes import router as quotes_router, init_quotes_routes
 from routes.invoices import router as invoices_router, init_invoices_routes
+from routes.users import router as users_router, init_users_routes
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -9997,6 +9998,7 @@ init_clients_routes(db, module_log_activity, module_create_notification)
 init_projects_routes(db, module_log_activity)
 init_quotes_routes(db, module_log_activity)
 init_invoices_routes(db, module_log_activity)
+init_users_routes(db, module_log_activity)
 init_subscription_routes(db, security, JWT_SECRET, JWT_ALGORITHM)
 
 # Include modular routers (replacing basic CRUD routes, keeping special routes in api_router)
@@ -10004,6 +10006,7 @@ app.include_router(clients_router, prefix="/api")
 app.include_router(projects_router, prefix="/api")
 app.include_router(quotes_router, prefix="/api")
 app.include_router(invoices_router, prefix="/api")
+app.include_router(users_router, prefix="/api")
 app.include_router(subscriptions_router)  # Subscriptions at /api/subscriptions
 
 # Stripe webhook endpoint (must be outside api_router for proper path)
