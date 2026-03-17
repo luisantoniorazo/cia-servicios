@@ -8,6 +8,7 @@ from .projects import router as projects_router, init_projects_routes
 from .quotes import router as quotes_router, init_quotes_routes
 from .invoices import router as invoices_router, init_invoices_routes
 from .users import router as users_router, init_users_routes
+from .dashboard import router as dashboard_router, init_dashboard_routes
 
 __all__ = [
     "subscriptions_router", "init_subscription_routes", "handle_stripe_webhook",
@@ -15,5 +16,6 @@ __all__ = [
     "projects_router", "init_projects_routes", 
     "quotes_router", "init_quotes_routes",
     "invoices_router", "init_invoices_routes",
-    "users_router", "init_users_routes"
+    "users_router", "init_users_routes",
+    "dashboard_router", "init_dashboard_routes"
 ]

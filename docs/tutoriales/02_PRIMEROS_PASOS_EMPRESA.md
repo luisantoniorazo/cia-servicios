@@ -1,5 +1,7 @@
 # Primeros Pasos para Empresas - CIA SERVICIOS
 
+## Guía Visual con Capturas de Pantalla
+
 Bienvenido a **CIA SERVICIOS - Control Integral**. Esta guía te ayudará a configurar tu empresa y comenzar a usar la plataforma.
 
 ---
@@ -7,12 +9,15 @@ Bienvenido a **CIA SERVICIOS - Control Integral**. Esta guía te ayudará a conf
 ## Índice
 
 1. [Acceso a tu Portal](#1-acceso-a-tu-portal)
-2. [Configuración Inicial de la Empresa](#2-configuración-inicial-de-la-empresa)
-3. [Gestión de Usuarios](#3-gestión-de-usuarios)
-4. [Módulos Principales](#4-módulos-principales)
-5. [Tu Suscripción](#5-tu-suscripción)
-6. [Configuración de Facturación Electrónica](#6-configuración-de-facturación-electrónica)
-7. [Soporte y Ayuda](#7-soporte-y-ayuda)
+2. [Dashboard Estratégico](#2-dashboard-estratégico)
+3. [Gestión de Clientes (CRM)](#3-gestión-de-clientes-crm)
+4. [Cotizaciones](#4-cotizaciones)
+5. [Control de Facturación](#5-control-de-facturación)
+6. [Gestión de Proyectos](#6-gestión-de-proyectos)
+7. [Inteligencia IA](#7-inteligencia-ia)
+8. [Soporte Técnico](#8-soporte-técnico)
+9. [Tu Suscripción](#9-tu-suscripción)
+10. [Primeros Pasos Recomendados](#10-primeros-pasos-recomendados)
 
 ---
 
@@ -26,286 +31,291 @@ https://[dominio]/empresa/[slug-de-tu-empresa]/login
 
 El **slug** es un identificador único basado en el nombre de tu empresa (ejemplo: `mi-empresa-sa-de-cv`).
 
-### Primer Inicio de Sesión
+### Pantalla de Login
+
+![Login](screenshots/01_login.jpg)
+
+**Instrucciones:**
 1. Ingresa con el email de administrador que te proporcionaron
 2. Usa la contraseña temporal que recibiste
 3. **Importante:** Te recomendamos cambiar la contraseña después del primer acceso
-
-### Recuperar Contraseña
-Si olvidaste tu contraseña:
-1. Haz clic en "¿Olvidaste tu contraseña?"
-2. Ingresa tu email registrado
-3. Recibirás instrucciones por correo
+4. Si olvidaste tu contraseña, haz clic en "¿Olvidaste tu contraseña?"
 
 ---
 
-## 2. Configuración Inicial de la Empresa
+## 2. Dashboard Estratégico
 
-### Acceso
-Ve a **Configuración > Empresa** en el menú lateral.
+Al iniciar sesión, serás dirigido al Dashboard Estratégico, tu centro de control.
 
-### Datos Fiscales
-Completa la información fiscal de tu empresa:
-- **Razón Social:** Nombre legal completo
-- **RFC:** Registro Federal de Contribuyentes (con homoclave)
-- **Dirección Fiscal:** Domicilio completo
-- **Régimen Fiscal:** Selecciona según tu régimen ante el SAT
-- **Código Postal:** CP fiscal
+![Dashboard](screenshots/02_dashboard.jpg)
 
-### Datos de Contacto
-- **Teléfono Principal:** Número de contacto
-- **Email de la Empresa:** Para notificaciones generales
-- **Sitio Web:** (opcional)
+### Indicadores Principales (KPIs)
 
-### Logo y Branding
-1. Sube tu logo en formato PNG o JPG
-2. Tamaño recomendado: 200x200 px mínimo
-3. El logo aparecerá en cotizaciones, facturas y documentos
+| Indicador | Descripción |
+|-----------|-------------|
+| **Proyectos Activos** | Número de proyectos en curso |
+| **Facturación Total** | Monto total facturado y cobrado |
+| **Clientes Activos** | Total de clientes en tu cartera |
+| **Tasa de Conversión** | Porcentaje de cotizaciones autorizadas |
+
+### Widgets Inferiores
+- **Facturación vs Cobranza**: Gráfico de barras comparativo de los últimos 12 meses
+- **Pipeline de Cotizaciones**: Estado actual de tu embudo de ventas
 
 ---
 
-## 3. Gestión de Usuarios
+## 3. Gestión de Clientes (CRM)
 
-### Roles Disponibles
-| Rol | Permisos |
-|-----|----------|
-| **Administrador** | Acceso total, gestión de usuarios y configuración |
-| **Gerente** | Acceso a todos los módulos operativos |
-| **Vendedor** | Clientes, cotizaciones, proyectos |
-| **Operador** | Solo módulos asignados |
+El módulo CRM te permite gestionar tu cartera de clientes y prospectos.
 
-### Crear un Nuevo Usuario
-1. Ve a **Configuración > Empresa**
-2. Sección "Gestión de Usuarios"
-3. Haz clic en **"Agregar Usuario"**
-4. Completa:
-   - Nombre completo
-   - Email (será su usuario)
-   - Contraseña temporal
-   - Rol
-   - Permisos de módulos (opcional)
-5. Haz clic en **"Crear Usuario"**
+![CRM - Clientes](screenshots/03_clientes.jpg)
 
-### Permisos por Módulo
-Puedes restringir el acceso de cada usuario a módulos específicos:
-- Reportes de Campo
-- Indicadores/KPIs
-- Inteligencia IA
-- Soporte/Tickets
-- Clientes/CRM
-- Cotizaciones
-- Facturación
-- etc.
+### Funcionalidades
+
+**Directorio Comercial:**
+- Lista completa de todos tus contactos
+- Filtros por tipo: Todos, Prospectos, Clientes
+- Búsqueda por nombre, email, teléfono o RFC
+
+**Información por Contacto:**
+- Empresa y nombre de contacto
+- Email y teléfono
+- Tipo (Cliente/Prospecto)
+- Probabilidad de cierre
+
+**Acciones Disponibles:**
+- Crear nuevo cliente
+- Editar información
+- Ver estado de cuenta
+- Programar seguimientos (llamadas, visitas, reuniones)
 
 ---
 
-## 4. Módulos Principales
+## 4. Cotizaciones
 
-### Dashboard
-Vista general con:
-- Proyectos activos
-- Cotizaciones pendientes
-- Facturación del mes
-- KPIs principales
+Gestiona tu pipeline comercial con cotizaciones profesionales.
 
-### Clientes (CRM)
-Gestiona tu cartera de clientes:
-1. **Agregar Cliente:**
-   - Nombre/Razón Social
-   - RFC (para facturación)
-   - Datos de contacto
-   - Dirección
+![Cotizaciones](screenshots/04_cotizaciones.jpg)
 
-2. **Funciones:**
-   - Ver historial de cotizaciones
-   - Ver facturas emitidas
-   - Estado de cuenta
+### Pipeline de Ventas
 
-### Cotizaciones
-Crea y envía cotizaciones profesionales:
-1. Haz clic en **"Nueva Cotización"**
+| Estado | Descripción |
+|--------|-------------|
+| **Prospecto** | Cotización inicial en proceso |
+| **Negociación** | En revisión con el cliente |
+| **Autorizada** | Cliente aprobó la cotización |
+| **Facturada** | Ya se convirtió en factura |
+| **Negada** | Cliente rechazó la propuesta |
+
+### Crear Nueva Cotización
+1. Haz clic en **"+ Nueva Cotización"** (botón azul superior)
 2. Selecciona el cliente
-3. Agrega productos/servicios con:
-   - Descripción
-   - Cantidad
-   - Precio unitario
-   - Descuentos (opcional)
-4. El sistema calcula subtotal, IVA y total
-5. **Acciones:**
-   - Vista previa PDF
-   - Enviar por email
-   - Convertir a factura
-   - Duplicar
+3. Agrega productos/servicios con precios
+4. El sistema calcula subtotal, IVA y total automáticamente
+5. Genera PDF para enviar al cliente
 
-### Facturación
-Gestiona tus facturas:
-1. **Nueva Factura:**
-   - Crear desde cero
-   - Convertir desde cotización
-2. **Estados:**
-   - Borrador
-   - Emitida (sin CFDI)
-   - Timbrada (CFDI)
-   - Pagada
-   - Vencida
-   - Cancelada
-
-3. **Registrar Pagos:**
-   - Parciales o totales
-   - Múltiples métodos de pago
-
-### Proyectos
-Gestiona proyectos y obras:
-- Crear proyectos con fechas y presupuesto
-- Asignar a clientes
-- Vincular cotizaciones y facturas
-- Seguimiento de avance
-
-### Reportes de Campo
-Para trabajo en sitio:
-- Registro de visitas
-- Evidencia fotográfica
-- Firmas digitales
-- Historial de actividades
+### Convertir a Factura
+Una vez que la cotización esté autorizada, puedes convertirla a factura con un solo clic desde el menú de acciones.
 
 ---
 
-## 5. Tu Suscripción
+## 5. Control de Facturación
 
-### Acceso
-Ve a **Configuración > Mi Suscripción** en el menú lateral (solo administradores).
+Gestiona facturas, pagos y cobranza de manera eficiente.
 
-### Ver Estado
-Verás información sobre:
-- **Plan Actual:** Base o con Facturación Electrónica
-- **Estado:** Activa, Pendiente, Suspendida
-- **Fecha de Vencimiento:** Cuándo termina el período actual
-- **Días Restantes:** Cuenta regresiva
+![Facturación](screenshots/05_facturacion.jpg)
+
+### Resumen Superior
+- **Facturado**: Total de facturas emitidas
+- **Cobrado**: Monto total recibido
+- **Por Cobrar**: Saldo pendiente de clientes
+- **Vencidas**: Facturas que pasaron su fecha de vencimiento
+
+### Pestañas de Filtro
+- **Todas**: Vista completa
+- **Pendientes**: Facturas sin pago
+- **Parciales**: Con abonos parciales
+- **Pagadas**: Completamente liquidadas
+- **Vencidas**: Requieren seguimiento urgente
+- **Próx. Vencer**: Para gestión proactiva
+
+### Acciones por Factura
+- Registrar abonos (pagos parciales o totales)
+- Timbrar CFDI (si tienes plan con facturación)
+- Subir factura SAT (XML/PDF externo)
+- Ver estado de cuenta del cliente
+
+---
+
+## 6. Gestión de Proyectos
+
+Control y seguimiento de obras, servicios y proyectos.
+
+![Proyectos](screenshots/06_proyectos.jpg)
+
+### Vistas Disponibles
+- **Vista Lista**: Tabla con información resumida (predeterminada)
+- **Vista Gantt**: Diagrama de tiempos visual (clic en botón "Gantt")
+
+### Información por Proyecto
+- Nombre y ubicación
+- Cliente asociado
+- Monto total
+- Porcentaje de avance (barra visual)
+- Fecha compromiso
+- Estado: En Cotización, Autorizado, Activo, Completado, Cancelado
+
+### Crear Nuevo Proyecto
+1. Clic en **"+ Nuevo Proyecto"**
+2. Define nombre, cliente, ubicación y presupuesto
+3. Establece fechas de inicio y compromiso
+4. Agrega tareas con tiempos y costos estimados
+
+---
+
+## 7. Inteligencia IA
+
+Asistente empresarial con inteligencia artificial para análisis y recomendaciones.
+
+![Inteligencia IA](screenshots/07_ia.jpg)
+
+### Consultas Rápidas
+- **Análisis Financiero**: Insights sobre facturación y cobranza
+- **Estado de Proyectos**: Resumen y recomendaciones
+- **Pipeline Comercial**: Análisis de cotizaciones
+- **Recomendaciones**: Sugerencias para mejorar tu negocio
+
+### Funcionalidades
+- Chat conversacional en español
+- Carga de archivos (PDF, Excel, imágenes) para análisis
+- Guardar y retomar conversaciones anteriores
+- Historial de consultas
+
+### Ejemplo de Uso
+Pregunta: *"¿Cuál es el estado de mi cobranza este mes?"*
+Respuesta: La IA analizará tus datos y te dará un resumen con recomendaciones.
+
+---
+
+## 8. Soporte Técnico
+
+Sistema de tickets para reportar problemas o solicitar ayuda.
+
+![Soporte](screenshots/08_soporte.jpg)
+
+### Dashboard de Tickets
+- **Total Tickets**: Todas tus solicitudes
+- **Abiertos**: Pendientes de atención
+- **En Progreso**: Siendo trabajados por soporte
+- **Resueltos**: Completados
+
+### Crear Nuevo Ticket
+1. Clic en **"+ Nuevo Ticket"**
+2. Ingresa título descriptivo
+3. Selecciona categoría (General, Técnico, Facturación, etc.)
+4. Define prioridad
+5. Describe el problema detalladamente
+6. Adjunta capturas de pantalla si es necesario
+
+### Tiempos de Respuesta
+| Prioridad | Tiempo Máximo |
+|-----------|---------------|
+| **Alta** | 4 horas |
+| **Media** | 24 horas |
+| **Baja** | 48 horas |
+
+---
+
+## 9. Tu Suscripción
+
+Gestiona tu plan y realiza pagos de renovación.
+
+![Mi Suscripción](screenshots/09_mi_suscripcion.jpg)
+
+### Estado de Suscripción
+- **Plan Actual**: Plan Base o Plan con Facturación Electrónica
+- **Estado**: Activa, Pendiente o Suspendida
+- **Fecha de Vencimiento**: Cuándo termina tu período actual
+- **Días Restantes**: Cuenta regresiva
 
 ### Planes Disponibles
 
-| Plan | Precio | Características |
-|------|--------|-----------------|
-| **Plan Base** | $2,500/mes | Todos los módulos, sin timbrado CFDI |
-| **Plan con Facturación** | $3,000/mes | Todo + timbrado CFDI ilimitado |
+| Plan | Precio Mensual | Incluye |
+|------|----------------|---------|
+| **Plan Base** | $2,500 MXN | Todos los módulos (sin CFDI) |
+| **Plan con Facturación** | $3,000 MXN | Todo + timbrado CFDI ilimitado |
 
-### Períodos de Pago
-- **Mensual:** Precio base
-- **Trimestral:** 5% descuento
-- **Semestral:** 10% descuento  
-- **Anual:** 15% descuento
+### Descuentos por Período
+- **Trimestral**: 5% descuento
+- **Semestral**: 10% descuento
+- **Anual**: 15% descuento
 
-### Realizar un Pago
+### Formas de Pago
 
-#### Opción 1: Pago con Tarjeta
-1. Encuentra tu factura pendiente
+**Opción 1: Pago con Tarjeta**
+1. Localiza tu factura pendiente
 2. Haz clic en **"Pagar con Tarjeta"**
 3. Serás redirigido a Stripe (plataforma segura)
 4. Ingresa los datos de tu tarjeta
-5. El pago se procesa automáticamente
-6. Tu suscripción se activa inmediatamente
+5. Tu suscripción se activa inmediatamente
 
-#### Opción 2: Transferencia Bancaria
+**Opción 2: Transferencia Bancaria**
 1. Haz clic en **"Transferencia Bancaria"**
-2. Verás los datos de la cuenta:
-   - Banco
-   - Titular
-   - Número de cuenta
-   - CLABE
-   - Referencia a usar
+2. Copia los datos de la cuenta bancaria
 3. Realiza la transferencia desde tu banco
-4. **Importante:** Envía tu comprobante a soporte
-5. El equipo verificará y activará tu suscripción
-
-### Solicitar Nueva Factura
-Si no tienes factura pendiente y deseas renovar:
-1. Haz clic en **"Solicitar Renovación"**
-2. Selecciona el plan deseado
-3. Elige el período de facturación
-4. Verás el resumen con descuentos aplicados
-5. Confirma la solicitud
-6. Recibirás la factura para proceder con el pago
+4. Envía tu comprobante al soporte
+5. Tu suscripción se activa al verificar el pago
 
 ---
 
-## 6. Configuración de Facturación Electrónica
+## 10. Primeros Pasos Recomendados
 
-### Opciones Disponibles
-Dependiendo de tu plan, tienes tres opciones:
+### Checklist de Inicio
 
-#### A) Facturación Incluida (Plan con Facturación)
-- CIA SERVICIOS maneja el timbrado
-- No necesitas configurar nada
-- El sistema timbra automáticamente
+- [ ] **Iniciar sesión** con tus credenciales
+- [ ] **Cambiar contraseña** por una segura
+- [ ] **Completar datos fiscales** de tu empresa (Configuración > Empresa)
+- [ ] **Subir tu logo** (aparecerá en cotizaciones y facturas)
+- [ ] **Crear usuarios** para tu equipo (si aplica)
+- [ ] **Registrar primeros clientes** en el CRM
+- [ ] **Crear primera cotización** de prueba
+- [ ] **Verificar tu suscripción** y fechas de pago
 
-#### B) Tu Propia Cuenta Facturama
-Si tienes cuenta propia con Facturama:
-1. Ve a **Configuración > Fiscal / CFDI**
-2. Ingresa tus credenciales:
-   - API Key
-   - Secret Key
-3. Selecciona el modo (Sandbox/Production)
-4. Guarda la configuración
-5. El sistema usará tu cuenta para timbrar
+### Consejos Pro
 
-#### C) Subir CFDI Manualmente
-Si usas otro PAC o sistema:
-1. Al crear una factura, déjala como "Borrador"
-2. Genera el CFDI en tu sistema externo
-3. En la factura, haz clic en **"Subir CFDI"**
-4. Sube el archivo XML y PDF
-5. La factura se marcará como timbrada
+> **💡 Tip 1**: Usa la Inteligencia IA para obtener análisis rápidos de tu negocio.
 
-### Configuración Fiscal
-Ve a **Configuración > Fiscal / CFDI**:
-- **RFC:** Asegúrate de que coincida con tu CSD
-- **Régimen Fiscal:** Debe coincidir con el SAT
-- **Certificado CSD:** Se configura vía Facturama
-- **Uso de CFDI por defecto:** Selecciona el más común (G03, etc.)
+> **💡 Tip 2**: Configura seguimientos en el CRM para no olvidar llamadas importantes.
+
+> **💡 Tip 3**: Revisa el dashboard diariamente para mantener el control de tu operación.
+
+> **💡 Tip 4**: Activa las notificaciones para recibir alertas de facturas vencidas.
 
 ---
 
-## 7. Soporte y Ayuda
+## Navegación del Sistema
 
-### Portal de Tickets
-Para cualquier duda o problema:
-1. Ve a **Soporte** en el menú lateral
-2. Haz clic en **"Nuevo Ticket"**
-3. Describe tu problema o consulta
-4. Puedes adjuntar archivos/capturas
-5. Recibirás respuesta por email y en el portal
+### Menú Lateral (Sidebar)
+El menú lateral te permite acceder a todos los módulos:
+- Dashboard
+- Proyectos
+- CRM
+- Cotizaciones
+- Facturación
+- Compras
+- Proveedores
+- Documentos
+- Reportes de Campo
+- Indicadores
+- Inteligencia IA
+- Soporte
+- Recordatorios
+- **Configuración** (solo admins)
+- **Mi Suscripción** (solo admins)
 
-### Prioridades
-| Prioridad | Tiempo de Respuesta |
-|-----------|-------------------|
-| Alta | 4 horas |
-| Media | 24 horas |
-| Baja | 48 horas |
-
-### Contacto Directo
-- **Email:** soporte@cia-servicios.com
-- **Horario:** Lunes a Viernes, 9:00 - 18:00
-
-### Notificaciones
-El sistema te avisará sobre:
-- Tickets respondidos
-- Suscripción próxima a vencer
-- Facturas pendientes de pago
-- Alertas importantes
-
-Revisa la campanita (🔔) en la barra superior para ver tus notificaciones.
-
----
-
-## Resumen de Primeros Pasos
-
-1. ✅ Inicia sesión con tus credenciales
-2. ✅ Completa los datos fiscales de tu empresa
-3. ✅ Sube tu logo
-4. ✅ Crea usuarios para tu equipo
-5. ✅ Registra tus primeros clientes
-6. ✅ Crea tu primera cotización
-7. ✅ Verifica tu suscripción
+### Barra Superior
+- **Campana de notificaciones**: Alertas y recordatorios
+- **Perfil de usuario**: Configuración personal y cerrar sesión
 
 ---
 
@@ -323,6 +333,18 @@ Sí, usamos encriptación SSL y backups diarios de la base de datos.
 ### ¿Qué pasa si vence mi suscripción?
 Tendrás un período de gracia de 5 días. Después, el acceso se suspenderá hasta regularizar el pago. Tus datos permanecen seguros.
 
+### ¿Cómo contacto a soporte?
+- Desde el módulo de **Soporte** (crear ticket)
+- Email: soporte@cia-servicios.com
+
+---
+
+## Contacto
+
+**CIA SERVICIOS - Control Integral**
+- Email: soporte@cia-servicios.com
+- Horario: Lunes a Viernes, 9:00 - 18:00
+
 ---
 
 *¡Bienvenido a CIA SERVICIOS!*
@@ -331,4 +353,4 @@ Tendrás un período de gracia de 5 días. Después, el acceso se suspenderá ha
 ---
 
 *Última actualización: Marzo 2026*
-*CIA SERVICIOS - Control Integral*
+*Versión del documento: 2.0*

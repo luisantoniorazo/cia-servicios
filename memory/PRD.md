@@ -2,7 +2,7 @@
 
 ## Información General
 - **Nombre**: CIA SERVICIOS - Control Estratégico de Servicios y Proyectos
-- **Versión**: 3.4.0
+- **Versión**: 3.5.0
 - **Última Actualización**: Marzo 2026
 - **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2 + Facturama + Stripe
 
@@ -28,6 +28,12 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - **Sidebar filtrado por permisos de módulo** ✨
 - **Facturación Electrónica (CFDI 4.0)** ✨ NEW v3.3.0
 - **Mi Suscripción - Vista y pago de suscripción** ✨ NEW v3.4.0
+
+### Documentación y Tutoriales ✨ NEW v3.5.0
+- **Presentación interactiva** - `/tutoriales/PRESENTACION_CLIENTES.html`
+- **Guía de configuración** - `/docs/tutoriales/01_GUIA_CONFIGURACION.md`
+- **Primeros pasos empresa** - `/docs/tutoriales/02_PRIMEROS_PASOS_EMPRESA.md`
+- **Guía de producción** - `/docs/GUIA_PRODUCCION.md`
 
 ## Módulos Implementados ✅
 
@@ -281,12 +287,13 @@ Company Admin (CIA Servicios Demo):
 - [ ] Exportación a Excel
 - [x] Restricción de acceso basada en permisos (frontend) ✅ DONE
 - [x] Estadísticas de ingresos en dashboard Super Admin ✅ NEW
-- [ ] Refactorización completa de server.py (plan documentado en REFACTORING_PLAN.md)
-- [ ] Integración con PAC (Facturama) para CFDI 4.0
+- [x] Refactorización backend - 7 módulos activos, 65 endpoints ✅ EN PROGRESO
+- [ ] Integración con PAC (Facturama) para CFDI 4.0 - Calls API pendientes
+- [x] Tutorial interactivo para clientes ✅ DONE v3.5.0
 
 ### P2 - Mejoras
-- [ ] Integración de pagos (Stripe) para renovaciones
-- [ ] Facturación electrónica CFDI
+- [x] Integración de pagos (Stripe) para renovaciones ✅ SCAFFOLDING DONE
+- [ ] Facturación electrónica CFDI - Framework listo, API calls pendientes
 - [ ] App móvil
 - [ ] Mejoras al Monitor del Sistema (auto-reparación)
 - [ ] Búsqueda AI en documentos

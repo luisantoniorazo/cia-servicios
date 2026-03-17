@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CIA SERVICIOS - Tutorial de Primeros Pasos</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            min-height: 100vh;
+            color: white;
+        }
+
+        .presentation {
+            max-width: 100%;
+            margin: 0 auto;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .slide {
+            display: none;
+            padding: 40px;
+            min-height: 100vh;
+            animation: fadeIn 0.5s ease-in-out;
+        }
+
+        .slide.active {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateX(50px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .slide-title {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            background: linear-gradient(90deg, #3b82f6, #10b981);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            text-align: center;
+        }
+
+        .slide-subtitle {
+            font-size: 1.2rem;
+            color: #94a3b8;
+            margin-bottom: 30px;
+            text-align: center;
+            max-width: 800px;
+        }
+
+        .slide-image {
+            max-width: 90%;
+            max-height: 60vh;
+            border-radius: 12px;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+            border: 2px solid #334155;
+        }
+
+        .slide-content {
+            background: #1e293b;
+            padding: 30px;
+            border-radius: 16px;
+            max-width: 900px;
+            margin-top: 20px;
+            border: 1px solid #334155;
+        }
+
+        .slide-content h3 {
+            color: #3b82f6;
+            margin-bottom: 15px;
+            font-size: 1.3rem;
+        }
+
+        .slide-content ul {
+            list-style: none;
+            padding-left: 0;
+        }
+
+        .slide-content li {
+            padding: 8px 0;
+            padding-left: 25px;
+            position: relative;
+            color: #cbd5e1;
+        }
+
+        .slide-content li::before {
+            content: "✓";
+            position: absolute;
+            left: 0;
+            color: #10b981;
+            font-weight: bold;
+        }
+
+        .navigation {
+            position: fixed;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+            background: rgba(30, 41, 59, 0.95);
+            padding: 15px 30px;
+            border-radius: 50px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            border: 1px solid #334155;
+            z-index: 1000;
+        }
+
+        .nav-btn {
+            background: #3b82f6;
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 1rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        .nav-btn:hover {
+            background: #2563eb;
+            transform: translateY(-2px);
+        }
+
+        .nav-btn:disabled {
+            background: #475569;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .progress {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 4px;
+            background: linear-gradient(90deg, #3b82f6, #10b981);
+            transition: width 0.3s ease;
+            z-index: 1000;
+        }
+
+        .slide-number {
+            color: #64748b;
+            font-size: 0.9rem;
+            padding: 0 20px;
+            display: flex;
+            align-items: center;
+        }
+
+        .logo-container {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+
+        .logo {
+            width: 80px;
+            height: 80px;
+            background: linear-gradient(135deg, #3b82f6, #1e40af);
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            font-weight: bold;
+        }
+
+        .welcome-slide .slide-title {
+            font-size: 3.5rem;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+            max-width: 1000px;
+        }
+
+        .feature-card {
+            background: #1e293b;
+            padding: 25px;
+            border-radius: 12px;
+            border: 1px solid #334155;
+            transition: all 0.3s ease;
+        }
+
+        .feature-card:hover {
+            border-color: #3b82f6;
+            transform: translateY(-5px);
+        }
+
+        .feature-card h4 {
+            color: #3b82f6;
+            margin-bottom: 10px;
+            font-size: 1.1rem;
+        }
+
+        .feature-card p {
+            color: #94a3b8;
+            font-size: 0.95rem;
+        }
+
+        .tips-box {
+            background: linear-gradient(135deg, #065f46 0%, #064e3b 100%);
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+
+        .tips-box h4 {
+            color: #34d399;
+            margin-bottom: 10px;
+        }
+
+        .tips-box p {
+            color: #a7f3d0;
+        }
+
+        @media (max-width: 768px) {
+            .slide-title {
+                font-size: 1.8rem;
+            }
+            .welcome-slide .slide-title {
+                font-size: 2.2rem;
+            }
+            .slide-image {
+                max-width: 100%;
+            }
+            .navigation {
+                padding: 10px 15px;
+            }
+            .nav-btn {
+                padding: 10px 15px;
+                font-size: 0.9rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="progress" id="progress"></div>
+    
+    <div class="presentation" id="presentation">
+        
+        <!-- Slide 1: Welcome -->
+        <div class="slide welcome-slide active">
+            <div class="logo-container">
+                <div class="logo">CIA</div>
+            </div>
+            <h1 class="slide-title">Bienvenido a CIA SERVICIOS</h1>
+            <p class="slide-subtitle">
+                Control Integral Administrativo<br>
+                Tu plataforma para gestionar proyectos, cotizaciones, facturación y más.
+            </p>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <h4>📊 Dashboard Estratégico</h4>
+                    <p>Visualiza KPIs, facturación y estado de proyectos en tiempo real.</p>
+                </div>
+                <div class="feature-card">
+                    <h4>👥 CRM Comercial</h4>
+                    <p>Gestiona clientes, prospectos y seguimientos de manera eficiente.</p>
+                </div>
+                <div class="feature-card">
+                    <h4>📄 Cotizaciones</h4>
+                    <p>Crea y envía cotizaciones profesionales en PDF.</p>
+                </div>
+                <div class="feature-card">
+                    <h4>💰 Facturación</h4>
+                    <p>Control completo de facturas, pagos y cobranza.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 2: Login -->
+        <div class="slide">
+            <h1 class="slide-title">1. Inicio de Sesión</h1>
+            <p class="slide-subtitle">Accede a tu portal empresarial con tus credenciales</p>
+            <img src="screenshots/01_login.jpg" alt="Pantalla de Login" class="slide-image">
+            <div class="slide-content">
+                <h3>¿Cómo acceder?</h3>
+                <ul>
+                    <li>Tu URL única será: https://[dominio]/empresa/[tu-empresa]/login</li>
+                    <li>Ingresa el email que te proporcionó tu administrador</li>
+                    <li>Usa la contraseña temporal y cámbiala después del primer acceso</li>
+                    <li>Si olvidaste tu contraseña, usa el enlace "¿Olvidaste tu contraseña?"</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Slide 3: Dashboard -->
+        <div class="slide">
+            <h1 class="slide-title">2. Dashboard Estratégico</h1>
+            <p class="slide-subtitle">Tu centro de control con información clave del negocio</p>
+            <img src="screenshots/02_dashboard.jpg" alt="Dashboard" class="slide-image">
+            <div class="slide-content">
+                <h3>Información Disponible</h3>
+                <ul>
+                    <li><strong>Proyectos Activos:</strong> Número de proyectos en curso</li>
+                    <li><strong>Facturación Total:</strong> Monto total facturado vs cobrado</li>
+                    <li><strong>Clientes Activos:</strong> Tu cartera de clientes</li>
+                    <li><strong>Pipeline Comercial:</strong> Valor de cotizaciones en proceso</li>
+                    <li><strong>Gráficos:</strong> Facturación vs Cobranza de los últimos 12 meses</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Slide 4: CRM -->
+        <div class="slide">
+            <h1 class="slide-title">3. CRM Comercial</h1>
+            <p class="slide-subtitle">Gestiona tu cartera de clientes y prospectos</p>
+            <img src="screenshots/03_clientes.jpg" alt="CRM - Clientes" class="slide-image">
+            <div class="slide-content">
+                <h3>Funcionalidades</h3>
+                <ul>
+                    <li><strong>Directorio Comercial:</strong> Lista completa de contactos</li>
+                    <li><strong>Filtros:</strong> Por tipo (Cliente/Prospecto) y probabilidad</li>
+                    <li><strong>Información:</strong> Nombre, contacto, email, teléfono</li>
+                    <li><strong>Seguimientos:</strong> Programa llamadas, visitas y reuniones</li>
+                    <li><strong>Estado de Cuenta:</strong> Ve el historial de facturación por cliente</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Slide 5: Cotizaciones -->
+        <div class="slide">
+            <h1 class="slide-title">4. Cotizaciones</h1>
+            <p class="slide-subtitle">Crea y administra tu pipeline comercial</p>
+            <img src="screenshots/04_cotizaciones.jpg" alt="Cotizaciones" class="slide-image">
+            <div class="slide-content">
+                <h3>Pipeline de Ventas</h3>
+                <ul>
+                    <li><strong>Estados:</strong> Prospecto → Negociación → Autorizada → Facturada</li>
+                    <li><strong>Nueva Cotización:</strong> Botón azul superior derecho</li>
+                    <li><strong>PDF Profesional:</strong> Genera documentos con tu logo</li>
+                    <li><strong>Convertir a Factura:</strong> Una vez autorizada, convierte con un clic</li>
+                    <li><strong>Búsqueda:</strong> Por folio, título, cliente o estado</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Slide 6: Facturación -->
+        <div class="slide">
+            <h1 class="slide-title">5. Control de Facturación</h1>
+            <p class="slide-subtitle">Gestiona facturas, pagos y cobranza</p>
+            <img src="screenshots/05_facturacion.jpg" alt="Facturación" class="slide-image">
+            <div class="slide-content">
+                <h3>Características</h3>
+                <ul>
+                    <li><strong>Resumen:</strong> Facturado, Cobrado, Por Cobrar, Vencidas</li>
+                    <li><strong>Tabs:</strong> Todas, Pendientes, Parciales, Pagadas, Vencidas</li>
+                    <li><strong>Abonos:</strong> Registra pagos parciales o totales</li>
+                    <li><strong>CFDI:</strong> Timbra o sube facturas del SAT</li>
+                    <li><strong>Alertas:</strong> Identifica facturas próximas a vencer</li>
+                </ul>
+                <div class="tips-box">
+                    <h4>💡 Tip</h4>
+                    <p>Usa la tab "Próx. Vencer" para dar seguimiento proactivo a la cobranza.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 7: Proyectos -->
+        <div class="slide">
+            <h1 class="slide-title">6. Gestión de Proyectos</h1>
+            <p class="slide-subtitle">Control y seguimiento de obras y servicios</p>
+            <img src="screenshots/06_proyectos.jpg" alt="Proyectos" class="slide-image">
+            <div class="slide-content">
+                <h3>Herramientas</h3>
+                <ul>
+                    <li><strong>Vista Lista:</strong> Tabla con información resumida</li>
+                    <li><strong>Vista Gantt:</strong> Diagrama de tiempos (botón superior)</li>
+                    <li><strong>Avance:</strong> Porcentaje de progreso visual</li>
+                    <li><strong>Estados:</strong> En Cotización, Autorizado, Activo, Completado</li>
+                    <li><strong>Tareas:</strong> Crea sub-tareas con tiempo y costo estimado</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Slide 8: Inteligencia IA -->
+        <div class="slide">
+            <h1 class="slide-title">7. Inteligencia Empresarial</h1>
+            <p class="slide-subtitle">Asistente con IA para análisis y recomendaciones</p>
+            <img src="screenshots/07_ia.jpg" alt="Inteligencia IA" class="slide-image">
+            <div class="slide-content">
+                <h3>Capacidades</h3>
+                <ul>
+                    <li><strong>Análisis Financiero:</strong> Insights sobre tu facturación y cobranza</li>
+                    <li><strong>Estado de Proyectos:</strong> Resumen y recomendaciones</li>
+                    <li><strong>Pipeline Comercial:</strong> Análisis de cotizaciones</li>
+                    <li><strong>Carga de Archivos:</strong> Sube documentos para análisis</li>
+                    <li><strong>Historial:</strong> Guarda y retoma conversaciones</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Slide 9: Soporte -->
+        <div class="slide">
+            <h1 class="slide-title">8. Soporte Técnico</h1>
+            <p class="slide-subtitle">Sistema de tickets para resolver dudas y problemas</p>
+            <img src="screenshots/08_soporte.jpg" alt="Soporte" class="slide-image">
+            <div class="slide-content">
+                <h3>¿Cómo funciona?</h3>
+                <ul>
+                    <li><strong>Nuevo Ticket:</strong> Crea una solicitud de ayuda</li>
+                    <li><strong>Categorías:</strong> General, Técnico, Facturación, etc.</li>
+                    <li><strong>Prioridades:</strong> Alta (4h), Media (24h), Baja (48h)</li>
+                    <li><strong>Seguimiento:</strong> Revisa el estado de tus tickets</li>
+                    <li><strong>Adjuntos:</strong> Puedes incluir capturas de pantalla</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Slide 10: Mi Suscripción -->
+        <div class="slide">
+            <h1 class="slide-title">9. Mi Suscripción</h1>
+            <p class="slide-subtitle">Gestiona tu plan y realiza pagos</p>
+            <img src="screenshots/09_mi_suscripcion.jpg" alt="Mi Suscripción" class="slide-image">
+            <div class="slide-content">
+                <h3>Información</h3>
+                <ul>
+                    <li><strong>Plan Actual:</strong> Plan Base o con Facturación Electrónica</li>
+                    <li><strong>Estado:</strong> Activa, Pendiente o Suspendida</li>
+                    <li><strong>Vencimiento:</strong> Fecha y días restantes</li>
+                    <li><strong>Pago con Tarjeta:</strong> Paga en línea de forma segura (Stripe)</li>
+                    <li><strong>Transferencia:</strong> Ve los datos bancarios para depósito</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Slide 11: Final -->
+        <div class="slide welcome-slide">
+            <div class="logo-container">
+                <div class="logo">✓</div>
+            </div>
+            <h1 class="slide-title">¡Listo para Comenzar!</h1>
+            <p class="slide-subtitle">
+                Ya conoces las funciones principales de CIA SERVICIOS.<br>
+                Explora cada módulo y descubre todas las herramientas disponibles.
+            </p>
+            <div class="feature-grid">
+                <div class="feature-card">
+                    <h4>📧 Soporte</h4>
+                    <p>¿Tienes dudas? Crea un ticket desde el módulo de Soporte.</p>
+                </div>
+                <div class="feature-card">
+                    <h4>📖 Documentación</h4>
+                    <p>Consulta la guía completa en PDF para más detalles.</p>
+                </div>
+                <div class="feature-card">
+                    <h4>🔔 Notificaciones</h4>
+                    <p>Revisa la campanita para alertas y recordatorios.</p>
+                </div>
+                <div class="feature-card">
+                    <h4>⚙️ Configuración</h4>
+                    <p>Personaliza tu perfil y preferencias desde el menú lateral.</p>
+                </div>
+            </div>
+            <div class="tips-box" style="margin-top: 30px; max-width: 600px;">
+                <h4>🚀 Próximos Pasos</h4>
+                <p>1. Completa los datos fiscales de tu empresa<br>
+                   2. Sube tu logo<br>
+                   3. Crea tus primeros clientes<br>
+                   4. Genera tu primera cotización</p>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="navigation">
+        <button class="nav-btn" id="prevBtn" onclick="changeSlide(-1)">← Anterior</button>
+        <span class="slide-number"><span id="currentSlide">1</span> / <span id="totalSlides">11</span></span>
+        <button class="nav-btn" id="nextBtn" onclick="changeSlide(1)">Siguiente →</button>
+    </div>
+
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const totalSlides = slides.length;
+        
+        document.getElementById('totalSlides').textContent = totalSlides;
+
+        function showSlide(n) {
+            slides.forEach(slide => slide.classList.remove('active'));
+            
+            if (n >= totalSlides) currentSlide = 0;
+            if (n < 0) currentSlide = totalSlides - 1;
+            
+            slides[currentSlide].classList.add('active');
+            
+            document.getElementById('currentSlide').textContent = currentSlide + 1;
+            document.getElementById('prevBtn').disabled = currentSlide === 0;
+            document.getElementById('nextBtn').disabled = currentSlide === totalSlides - 1;
+            
+            // Update progress bar
+            const progress = ((currentSlide + 1) / totalSlides) * 100;
+            document.getElementById('progress').style.width = progress + '%';
+        }
+
+        function changeSlide(n) {
+            currentSlide += n;
+            showSlide(currentSlide);
+        }
+
+        // Keyboard navigation
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'ArrowRight' || e.key === ' ') {
+                changeSlide(1);
+            } else if (e.key === 'ArrowLeft') {
+                changeSlide(-1);
+            }
+        });
+
+        // Initialize
+        showSlide(currentSlide);
+    </script>
+</body>
+</html>

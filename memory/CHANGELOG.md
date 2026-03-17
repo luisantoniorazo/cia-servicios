@@ -1,5 +1,38 @@
 # CIA SERVICIOS - Changelog
 
+
+## [3.5.0] - 2026-03-17
+
+### Added - Tutorial Interactivo para Clientes
+- **Presentación HTML interactiva** (`/tutoriales/PRESENTACION_CLIENTES.html`)
+  - 11 diapositivas con navegación por teclado y botones
+  - Barra de progreso visual
+  - Diseño profesional con tema oscuro
+- **9 capturas de pantalla** de las funciones principales
+  - Login, Dashboard, CRM, Cotizaciones, Facturación
+  - Proyectos, Inteligencia IA, Soporte, Mi Suscripción
+- **Documento Markdown actualizado** con imágenes para conversión a PDF
+- Archivos accesibles desde `/tutoriales/` en el frontend
+
+### Added - Refactorización Backend (Fase 2)
+- **Nuevo módulo `dashboard.py`** con 6 endpoints:
+  - `/dashboard/stats` - Estadísticas generales
+  - `/dashboard/project-progress` - Progreso de proyectos
+  - `/dashboard/monthly-revenue` - Ingresos mensuales
+  - `/dashboard/quote-pipeline` - Pipeline de cotizaciones
+  - `/dashboard/overdue-invoices` - Facturas vencidas
+  - `/dashboard/pending-followups` - Seguimientos pendientes
+- **7 módulos activos** en producción con 65 endpoints modularizados:
+  - clients.py, projects.py, quotes.py, invoices.py
+  - subscriptions.py, users.py, dashboard.py
+
+### Technical
+- Actualizado `/backend/routes/__init__.py` para exportar dashboard_router
+- Actualizado `/backend/REFACTORING_PLAN.md` con estado actual
+- Tutoriales disponibles en `/app/frontend/public/tutoriales/`
+
+---
+
 ## [3.4.0] - 2026-03-17
 
 ### Added - Sistema de Facturación de Suscripciones
