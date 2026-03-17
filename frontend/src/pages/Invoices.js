@@ -985,6 +985,11 @@ export const Invoices = () => {
                                   CFDI Timbrado
                                 </Badge>
                               )}
+                              {invoice.cfdi_status === "cancellation_pending" && (
+                                <Badge variant="outline" className="text-xs bg-amber-50 text-amber-700 border-amber-300 animate-pulse">
+                                  Cancelación Pendiente
+                                </Badge>
+                              )}
                               {invoice.cfdi_status === "cancelled" && (
                                 <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-300">
                                   CFDI Cancelado
@@ -1033,6 +1038,20 @@ export const Invoices = () => {
                                     <DropdownMenuItem onClick={() => handleCancelCFDI(invoice.id)} className="text-red-600">
                                       <X className="mr-2 h-4 w-4" />
                                       Cancelar CFDI
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                  </>
+                                )}
+                                
+                                {invoice.cfdi_status === "cancellation_pending" && (
+                                  <>
+                                    <DropdownMenuItem disabled>
+                                      <Loader2 className="mr-2 h-4 w-4 text-amber-500 animate-spin" />
+                                      Cancelación en proceso...
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => handleDownloadXML(invoice.id)}>
+                                      <FileCode className="mr-2 h-4 w-4 text-orange-500" />
+                                      Descargar XML
                                     </DropdownMenuItem>
                                     <DropdownMenuSeparator />
                                   </>

@@ -4293,6 +4293,174 @@ async def auto_repair_companies_without_admin():
             fixed += 1
     return fixed
 
+# ============== CFDI CANCELLATION STATUS CHECKER BOT ==============
+async def check_pending_cfdi_cancellations():
+    """
+    Bot que verifica el estado de cancelaciones pendientes de CFDI.
+    Se ejecuta cada hora para verificar si los receptores han aceptado las cancelaciones.
+    """
+    import httpx
+    
+    logger.info("🔄 Verificando cancelaciones de CFDI pendientes...")
+    
+    # Get all CFDIs with cancellation pending
+    pending_cfdis = await db.cfdis.find(
+        {"status": "cancellation_pending"},
+        {"_id": 0}
+    ).to_list(100)
+    
+    if not pending_cfdis:
+        logger.info("✅ No hay cancelaciones pendientes de CFDI")
+        return {"checked": 0, "cancelled": 0, "rejected": 0, "pending": 0}
+    
+    logger.info(f"📋 Encontrados {len(pending_cfdis)} CFDI(s) pendientes de cancelación")
+    
+    # Get Facturama master config
+    master_config = await db.facturama_config.find_one({"is_active": True}, {"_id": 0})
+    
+    results = {"checked": 0, "cancelled": 0, "rejected": 0, "pending": 0}
+    
+    for cfdi in pending_cfdis:
+        try:
+            results["checked"] += 1
+            
+            # Determine which credentials to use
+            company_id = cfdi.get("company_id")
+            company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+            
+            if not company:
+                continue
+            
+            if company.get("billing_mode") == "master" and master_config:
+                api_user = master_config["api_user"]
+                api_password = master_config["api_password"]
+                environment = master_config["environment"]
+            else:
+                csd = await db.csd_certificates.find_one(
+                    {"company_id": company_id, "is_active": True}, 
+                    {"_id": 0}
+                )
+                if not csd:
+                    continue
+                api_user = csd.get("pac_user")
+                api_password = csd.get("pac_password")
+                environment = "production"
+            
+            if not api_user or not api_password:
+                continue
+            
+            # Query Facturama for CFDI status
+            base_url = "https://apisandbox.facturama.mx" if environment == "sandbox" else "https://api.facturama.mx"
+            
+            async with httpx.AsyncClient() as client_http:
+                # Get CFDI status from Facturama
+                response = await client_http.get(
+                    f"{base_url}/cfdi/{cfdi['facturama_id']}",
+                    auth=(api_user, api_password),
+                    timeout=30.0
+                )
+                
+                if response.status_code == 200:
+                    cfdi_data = response.json()
+                    status = cfdi_data.get("Status", "").lower()
+                    
+                    if status in ["cancelado", "cancelled", "canceled"]:
+                        # Cancellation was accepted
+                        await db.cfdis.update_one(
+                            {"id": cfdi["id"]},
+                            {"$set": {
+                                "status": "cancelled",
+                                "cancelled_at": datetime.now(timezone.utc).isoformat(),
+                                "cancellation_verified_at": datetime.now(timezone.utc).isoformat()
+                            }}
+                        )
+                        # Update invoice
+                        await db.invoices.update_one(
+                            {"cfdi_id": cfdi["id"]},
+                            {"$set": {
+                                "cfdi_status": "cancelled",
+                                "status": "cancelled",
+                                "updated_at": datetime.now(timezone.utc).isoformat()
+                            }}
+                        )
+                        results["cancelled"] += 1
+                        logger.info(f"✅ CFDI {cfdi['uuid']} cancelado confirmado")
+                        
+                        # Create notification for the company
+                        await create_notification(
+                            company_id=company_id,
+                            title="CFDI Cancelado",
+                            message=f"El CFDI {cfdi['uuid'][:8]}... ha sido cancelado exitosamente",
+                            notification_type="success"
+                        )
+                        
+                    elif status in ["vigente", "active", "valid"]:
+                        # Cancellation was rejected or reverted
+                        await db.cfdis.update_one(
+                            {"id": cfdi["id"]},
+                            {"$set": {
+                                "status": "stamped",  # Revert to stamped
+                                "cancellation_rejected_at": datetime.now(timezone.utc).isoformat()
+                            }}
+                        )
+                        await db.invoices.update_one(
+                            {"cfdi_id": cfdi["id"]},
+                            {"$set": {
+                                "cfdi_status": "stamped",
+                                "updated_at": datetime.now(timezone.utc).isoformat()
+                            }}
+                        )
+                        results["rejected"] += 1
+                        logger.info(f"❌ CFDI {cfdi['uuid']} cancelación rechazada o revertida")
+                        
+                        # Create notification
+                        await create_notification(
+                            company_id=company_id,
+                            title="Cancelación de CFDI Rechazada",
+                            message=f"La cancelación del CFDI {cfdi['uuid'][:8]}... fue rechazada por el receptor",
+                            notification_type="warning"
+                        )
+                    else:
+                        # Still pending
+                        results["pending"] += 1
+                        logger.info(f"⏳ CFDI {cfdi['uuid']} aún pendiente de cancelación")
+                        
+                elif response.status_code == 404:
+                    # CFDI not found - probably already cancelled and removed
+                    await db.cfdis.update_one(
+                        {"id": cfdi["id"]},
+                        {"$set": {
+                            "status": "cancelled",
+                            "cancelled_at": datetime.now(timezone.utc).isoformat()
+                        }}
+                    )
+                    await db.invoices.update_one(
+                        {"cfdi_id": cfdi["id"]},
+                        {"$set": {
+                            "cfdi_status": "cancelled",
+                            "status": "cancelled",
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        }}
+                    )
+                    results["cancelled"] += 1
+                    
+        except Exception as e:
+            logger.error(f"Error verificando CFDI {cfdi.get('uuid', 'unknown')}: {str(e)}")
+    
+    # Log summary
+    logger.info(f"📊 Verificación completada: {results['checked']} revisados, {results['cancelled']} cancelados, {results['rejected']} rechazados, {results['pending']} pendientes")
+    
+    # Save report
+    report = {
+        "id": str(uuid.uuid4()),
+        "type": "cfdi_cancellation_check",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "results": results
+    }
+    await db.scheduled_diagnostics.insert_one(report)
+    
+    return results
+
 async def run_scheduled_diagnostics():
     """Run daily scheduled diagnostics with auto-repair"""
     logger.info("🔄 Iniciando diagnóstico programado...")
@@ -4408,6 +4576,40 @@ async def get_scheduler_status(current_user: dict = Depends(require_super_admin)
     return {
         "running": scheduler.running,
         "jobs": next_runs
+    }
+
+@api_router.post("/super-admin/cfdi/check-cancellations")
+async def manual_check_cfdi_cancellations(current_user: dict = Depends(require_super_admin)):
+    """Manually trigger CFDI cancellation status check"""
+    results = await check_pending_cfdi_cancellations()
+    return {
+        "message": "Verificación de cancelaciones completada",
+        "results": results
+    }
+
+@api_router.get("/super-admin/cfdi/pending-cancellations")
+async def get_pending_cfdi_cancellations(current_user: dict = Depends(require_super_admin)):
+    """Get list of CFDIs pending cancellation"""
+    pending = await db.cfdis.find(
+        {"status": "cancellation_pending"},
+        {"_id": 0, "pac_response": 0}
+    ).to_list(100)
+    
+    # Enrich with invoice and company info
+    enriched = []
+    for cfdi in pending:
+        invoice = await db.invoices.find_one({"cfdi_id": cfdi["id"]}, {"_id": 0, "invoice_number": 1, "total": 1})
+        company = await db.companies.find_one({"id": cfdi["company_id"]}, {"_id": 0, "business_name": 1})
+        enriched.append({
+            **cfdi,
+            "invoice_number": invoice.get("invoice_number") if invoice else None,
+            "invoice_total": invoice.get("total") if invoice else None,
+            "company_name": company.get("business_name") if company else None
+        })
+    
+    return {
+        "count": len(enriched),
+        "pending_cancellations": enriched
     }
 
 # ============== FACTURAMA CONFIGURATION (SUPER ADMIN) ==============
@@ -6022,7 +6224,7 @@ async def cancel_cfdi(
     cancellation_reason: str = "02",  # 02 = Comprobantes emitidos con errores con relación
     current_user: dict = Depends(get_current_user)
 ):
-    """Cancel a stamped CFDI"""
+    """Cancel a stamped CFDI - initiates cancellation process"""
     invoice = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
     if not invoice:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
@@ -6030,12 +6232,14 @@ async def cancel_cfdi(
     if current_user.get("company_id") != invoice.get("company_id"):
         raise HTTPException(status_code=403, detail="Acceso denegado")
     
-    if invoice.get("cfdi_status") != "stamped":
+    if invoice.get("cfdi_status") not in ["stamped"]:
+        if invoice.get("cfdi_status") == "cancellation_pending":
+            raise HTTPException(status_code=400, detail="Esta factura ya está en proceso de cancelación")
         raise HTTPException(status_code=400, detail="Esta factura no está timbrada o ya fue cancelada")
     
     cfdi = await db.cfdis.find_one({"id": invoice.get("cfdi_id")}, {"_id": 0})
     if not cfdi or not cfdi.get("facturama_id"):
-        # If manually uploaded, just mark as cancelled
+        # If manually uploaded, just mark as cancelled directly
         await db.invoices.update_one(
             {"id": invoice_id},
             {"$set": {"cfdi_status": "cancelled", "updated_at": datetime.now(timezone.utc).isoformat()}}
@@ -6074,26 +6278,60 @@ async def cancel_cfdi(
                 timeout=60.0
             )
             
+            response_data = {}
+            try:
+                response_data = response.json()
+            except:
+                pass
+            
             if response.status_code in [200, 201, 204]:
-                # Update records
-                await db.invoices.update_one(
-                    {"id": invoice_id},
-                    {"$set": {
-                        "cfdi_status": "cancelled",
-                        "status": "cancelled",
-                        "updated_at": datetime.now(timezone.utc).isoformat()
-                    }}
-                )
-                await db.cfdis.update_one(
-                    {"id": cfdi["id"]},
-                    {"$set": {
-                        "status": "cancelled",
-                        "cancelled_at": datetime.now(timezone.utc).isoformat(),
-                        "cancellation_reason": cancellation_reason
-                    }}
-                )
+                # Check if cancellation is immediate or pending
+                cancellation_status = response_data.get("Status", "").lower() if isinstance(response_data, dict) else ""
                 
-                return {"success": True, "message": "CFDI cancelado exitosamente"}
+                # In sandbox, cancellation is usually immediate
+                # In production, it may require receiver acceptance
+                if cancellation_status in ["cancelado", "cancelled", "canceled"] or environment == "sandbox":
+                    # Immediate cancellation
+                    await db.invoices.update_one(
+                        {"id": invoice_id},
+                        {"$set": {
+                            "cfdi_status": "cancelled",
+                            "status": "cancelled",
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        }}
+                    )
+                    await db.cfdis.update_one(
+                        {"id": cfdi["id"]},
+                        {"$set": {
+                            "status": "cancelled",
+                            "cancelled_at": datetime.now(timezone.utc).isoformat(),
+                            "cancellation_reason": cancellation_reason
+                        }}
+                    )
+                    return {"success": True, "message": "CFDI cancelado exitosamente", "status": "cancelled"}
+                else:
+                    # Cancellation pending receiver acceptance
+                    await db.invoices.update_one(
+                        {"id": invoice_id},
+                        {"$set": {
+                            "cfdi_status": "cancellation_pending",
+                            "updated_at": datetime.now(timezone.utc).isoformat()
+                        }}
+                    )
+                    await db.cfdis.update_one(
+                        {"id": cfdi["id"]},
+                        {"$set": {
+                            "status": "cancellation_pending",
+                            "cancellation_requested_at": datetime.now(timezone.utc).isoformat(),
+                            "cancellation_reason": cancellation_reason,
+                            "cancellation_response": response_data
+                        }}
+                    )
+                    return {
+                        "success": True, 
+                        "message": "Solicitud de cancelación enviada. El receptor debe aceptar la cancelación. El sistema verificará el estado automáticamente.",
+                        "status": "cancellation_pending"
+                    }
             else:
                 error_msg = response.text
                 try:
@@ -9740,8 +9978,18 @@ async def startup_event():
         name="Diagnóstico Diario",
         replace_existing=True
     )
+    
+    # Schedule CFDI cancellation checker every hour
+    scheduler.add_job(
+        check_pending_cfdi_cancellations,
+        CronTrigger(minute=0),  # Every hour at minute 0
+        id="cfdi_cancellation_checker",
+        name="Verificador de Cancelaciones CFDI",
+        replace_existing=True
+    )
+    
     scheduler.start()
-    logger.info("✅ Scheduler iniciado - Diagnósticos diarios programados a las 2:00 AM")
+    logger.info("✅ Scheduler iniciado - Diagnósticos diarios a las 2:00 AM, Verificación de cancelaciones CFDI cada hora")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():
