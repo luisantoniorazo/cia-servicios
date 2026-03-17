@@ -167,6 +167,8 @@ export const Sidebar = ({ isOpen, onToggle }) => {
               
               {menuItems
                 .filter((item) => {
+                  // Recordatorios siempre visible para todos los usuarios
+                  if (item.moduleId === "reminders") return true;
                   // If user has module_permissions, filter by them
                   // If null/undefined, show all modules (admin default)
                   if (!user?.module_permissions) return true;
