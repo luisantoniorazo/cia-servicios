@@ -5828,9 +5828,26 @@ async def convert_quote_to_invoice(quote_id: str, due_days: int = 30, current_us
 
 class ManualCFDIUpload(BaseModel):
     """Para subir CFDI manualmente (cuando no tienen facturación incluida)"""
-    uuid: str  # UUID del CFDI
-    xml_content: Optional[str] = None  # XML en base64
-    pdf_content: Optional[str] = None  # PDF en base64
+    xml_content: str  # XML en base64 - OBLIGATORIO
+    pdf_content: str  # PDF en base64 - OBLIGATORIO
+
+def extract_uuid_from_xml(xml_base64: str) -> Optional[str]:
+    """Extrae el UUID del TimbreFiscalDigital del XML"""
+    import base64
+    import re
+    try:
+        xml_content = base64.b64decode(xml_base64).decode('utf-8')
+        # Buscar UUID en el TimbreFiscalDigital
+        uuid_match = re.search(r'UUID="([a-fA-F0-9\-]{36})"', xml_content, re.IGNORECASE)
+        if uuid_match:
+            return uuid_match.group(1).upper()
+        # Buscar en formato alternativo
+        uuid_match = re.search(r'<tfd:TimbreFiscalDigital[^>]*UUID="([^"]+)"', xml_content, re.IGNORECASE)
+        if uuid_match:
+            return uuid_match.group(1).upper()
+        return None
+    except Exception:
+        return None
 
 @api_router.post("/invoices/{invoice_id}/upload-cfdi")
 async def upload_manual_cfdi(
@@ -5838,7 +5855,10 @@ async def upload_manual_cfdi(
     data: ManualCFDIUpload,
     current_user: dict = Depends(get_current_user)
 ):
-    """Upload manually stamped CFDI (for companies without billing included)"""
+    """Upload manually stamped CFDI (for companies without billing included)
+    
+    Requiere XML y PDF obligatoriamente. El UUID se extrae automáticamente del XML.
+    """
     invoice = await db.invoices.find_one({"id": invoice_id}, {"_id": 0})
     if not invoice:
         raise HTTPException(status_code=404, detail="Factura no encontrada")
@@ -5851,12 +5871,32 @@ async def upload_manual_cfdi(
     if company and company.get("billing_mode") == "master":
         raise HTTPException(status_code=400, detail="Esta empresa tiene facturación incluida. Use el botón Timbrar.")
     
+    # Validar que se enviaron los archivos
+    if not data.xml_content or not data.xml_content.strip():
+        raise HTTPException(status_code=400, detail="El archivo XML es obligatorio")
+    
+    if not data.pdf_content or not data.pdf_content.strip():
+        raise HTTPException(status_code=400, detail="El archivo PDF es obligatorio")
+    
+    # Extraer UUID del XML
+    cfdi_uuid = extract_uuid_from_xml(data.xml_content)
+    if not cfdi_uuid:
+        raise HTTPException(
+            status_code=400, 
+            detail="No se pudo extraer el UUID del XML. Verifique que sea un CFDI válido con TimbreFiscalDigital."
+        )
+    
+    # Verificar que no exista ya un CFDI con ese UUID
+    existing_cfdi = await db.cfdis.find_one({"uuid": cfdi_uuid}, {"_id": 0})
+    if existing_cfdi:
+        raise HTTPException(status_code=400, detail=f"Ya existe un CFDI con el UUID {cfdi_uuid}")
+    
     # Create CFDI record
     cfdi_dict = {
         "id": str(uuid.uuid4()),
         "company_id": invoice["company_id"],
         "invoice_id": invoice_id,
-        "uuid": data.uuid,
+        "uuid": cfdi_uuid,
         "xml_content": data.xml_content,
         "pdf_content": data.pdf_content,
         "status": "stamped",
@@ -5873,7 +5913,7 @@ async def upload_manual_cfdi(
         {"id": invoice_id},
         {"$set": {
             "cfdi_id": cfdi_dict["id"],
-            "cfdi_uuid": data.uuid,
+            "cfdi_uuid": cfdi_uuid,
             "cfdi_status": "stamped",
             "updated_at": datetime.now(timezone.utc).isoformat()
         }}
@@ -5882,7 +5922,7 @@ async def upload_manual_cfdi(
     return {
         "message": "CFDI vinculado correctamente",
         "cfdi_id": cfdi_dict["id"],
-        "uuid": data.uuid
+        "uuid": cfdi_uuid
     }
 
 @api_router.post("/invoices/{invoice_id}/stamp")

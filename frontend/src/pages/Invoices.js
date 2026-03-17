@@ -129,7 +129,6 @@ export const Invoices = () => {
   const [billingStatus, setBillingStatus] = useState(null);
   const [stamping, setStamping] = useState(false);
   const [cfdiForm, setCfdiForm] = useState({
-    uuid: "",
     xml_file: null,
     pdf_file: null,
   });
@@ -701,35 +700,33 @@ export const Invoices = () => {
 
   const openCfdiDialog = (invoice) => {
     setSelectedInvoice(invoice);
-    setCfdiForm({ uuid: "", xml_file: null, pdf_file: null });
+    setCfdiForm({ xml_file: null, pdf_file: null });
     setCfdiDialogOpen(true);
   };
 
   const handleUploadManualCFDI = async (e) => {
     e.preventDefault();
-    if (!cfdiForm.uuid) {
-      toast.error("El UUID es requerido");
+    
+    // Validar que ambos archivos estén presentes
+    if (!cfdiForm.xml_file) {
+      toast.error("El archivo XML es obligatorio");
+      return;
+    }
+    if (!cfdiForm.pdf_file) {
+      toast.error("El archivo PDF es obligatorio");
       return;
     }
     
     try {
-      let xmlContent = null;
-      let pdfContent = null;
-      
-      if (cfdiForm.xml_file) {
-        xmlContent = await fileToBase64(cfdiForm.xml_file);
-      }
-      if (cfdiForm.pdf_file) {
-        pdfContent = await fileToBase64(cfdiForm.pdf_file);
-      }
+      const xmlContent = await fileToBase64(cfdiForm.xml_file);
+      const pdfContent = await fileToBase64(cfdiForm.pdf_file);
       
       await api.post(`/invoices/${selectedInvoice.id}/upload-cfdi`, {
-        uuid: cfdiForm.uuid,
         xml_content: xmlContent,
         pdf_content: pdfContent,
       });
       
-      toast.success("CFDI vinculado correctamente");
+      toast.success("CFDI vinculado correctamente. UUID extraído del XML.");
       setCfdiDialogOpen(false);
       fetchData();
     } catch (error) {
@@ -1992,38 +1989,34 @@ export const Invoices = () => {
                 Subir CFDI Manual
               </DialogTitle>
               <DialogDescription>
-                Sube el CFDI generado externamente para vincularlo a esta factura
+                Sube el CFDI generado externamente para vincularlo a esta factura.
+                El UUID se extraerá automáticamente del XML.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="cfdi_uuid">UUID del CFDI *</Label>
-                <Input
-                  id="cfdi_uuid"
-                  value={cfdiForm.uuid}
-                  onChange={(e) => setCfdiForm({ ...cfdiForm, uuid: e.target.value.toUpperCase() })}
-                  placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Archivo XML (opcional)</Label>
+                <Label>Archivo XML *</Label>
                 <Input
                   type="file"
                   accept=".xml"
+                  required
                   onChange={(e) => setCfdiForm({ ...cfdiForm, xml_file: e.target.files?.[0] })}
                 />
+                <p className="text-xs text-muted-foreground">
+                  El XML debe contener el TimbreFiscalDigital con el UUID
+                </p>
               </div>
               <div className="space-y-2">
-                <Label>Archivo PDF (opcional)</Label>
+                <Label>Archivo PDF *</Label>
                 <Input
                   type="file"
                   accept=".pdf"
+                  required
                   onChange={(e) => setCfdiForm({ ...cfdiForm, pdf_file: e.target.files?.[0] })}
                 />
               </div>
-              <p className="text-xs text-muted-foreground">
-                * El UUID es obligatorio. Los archivos XML y PDF son opcionales pero recomendados para respaldo.
+              <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded">
+                ⚠️ Ambos archivos son obligatorios. El UUID se extraerá automáticamente del XML.
               </p>
             </div>
             <DialogFooter>
