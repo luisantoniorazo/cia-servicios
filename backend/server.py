@@ -497,6 +497,77 @@ class Payment(PaymentBase):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+# Credit Note Models (Notas de Crédito) - CFDI Tipo "E" Egreso
+class CreditNoteStatus(str, Enum):
+    DRAFT = "draft"
+    APPLIED = "applied"
+    CANCELLED = "cancelled"
+
+class CreditNoteItem(BaseModel):
+    description: str
+    quantity: float = 1
+    unit: str = "pza"
+    unit_price: float = 0.0
+    total: float = 0.0
+    clave_prod_serv: Optional[str] = None
+    clave_unidad: Optional[str] = None
+
+class CreditNoteBase(BaseModel):
+    company_id: str
+    client_id: str
+    invoice_id: str  # Factura relacionada
+    credit_note_number: str
+    issue_date: datetime
+    concept: str
+    items: List[CreditNoteItem] = []
+    subtotal: float = 0.0
+    tax: float = 0.0
+    total: float = 0.0
+    reason: str  # Motivo de la nota de crédito
+    status: CreditNoteStatus = CreditNoteStatus.DRAFT
+    # Datos SAT para CFDI Egreso
+    sat_tipo_relacion: str = "01"  # 01 = Nota de crédito de los documentos relacionados
+    sat_uuid_relacionado: Optional[str] = None  # UUID de la factura original
+    # CFDI de la nota de crédito (cuando se timbre)
+    cfdi_uuid: Optional[str] = None
+    cfdi_xml: Optional[str] = None
+    cfdi_pdf: Optional[str] = None
+    cfdi_status: Optional[str] = None
+
+class CreditNoteCreate(CreditNoteBase):
+    pass
+
+class CreditNote(CreditNoteBase):
+    model_config = ConfigDict(extra="ignore")
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    created_by: Optional[str] = None
+    applied_at: Optional[datetime] = None
+    applied_by: Optional[str] = None
+
+# SAT Tipos de Relación para Notas de Crédito
+SAT_TIPOS_RELACION = [
+    {"clave": "01", "descripcion": "Nota de crédito de los documentos relacionados"},
+    {"clave": "02", "descripcion": "Nota de débito de los documentos relacionados"},
+    {"clave": "03", "descripcion": "Devolución de mercancía sobre facturas o traslados previos"},
+    {"clave": "04", "descripcion": "Sustitución de los CFDI previos"},
+    {"clave": "05", "descripcion": "Traslados de mercancías facturados previamente"},
+    {"clave": "06", "descripcion": "Factura generada por los traslados previos"},
+    {"clave": "07", "descripcion": "CFDI por aplicación de anticipo"},
+]
+
+# Motivos comunes para Notas de Crédito
+MOTIVOS_NOTA_CREDITO = [
+    "Descuento por pronto pago",
+    "Bonificación comercial",
+    "Devolución de mercancía",
+    "Error en facturación",
+    "Ajuste de precio",
+    "Cancelación parcial de servicios",
+    "Descuento por volumen",
+    "Otro",
+]
+
 # Project Task Models
 class ProjectTaskBase(BaseModel):
     project_id: str
@@ -4616,127 +4687,515 @@ async def get_client_statement(client_id: str, current_user: dict = Depends(get_
         "overdue_invoices": overdue_invoices
     }
 
-def generate_statement_pdf(client: dict, company: dict, invoices: list, payments: list, summary: dict) -> bytes:
-    """Generate PDF for client account statement"""
+# ============== CREDIT NOTE ENDPOINTS ==============
+@api_router.post("/credit-notes")
+async def create_credit_note(note_data: CreditNoteCreate, current_user: dict = Depends(get_current_user)):
+    """Create a new credit note"""
+    # Verify invoice exists
+    invoice = await db.invoices.find_one({"id": note_data.invoice_id}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    note_dict = note_data.model_dump()
+    note_dict["id"] = str(uuid.uuid4())
+    note_dict["created_at"] = datetime.now(timezone.utc).isoformat()
+    note_dict["created_by"] = current_user.get("sub")
+    
+    if note_dict.get("issue_date"):
+        note_dict["issue_date"] = note_dict["issue_date"].isoformat() if isinstance(note_dict["issue_date"], datetime) else note_dict["issue_date"]
+    
+    # Get UUID of original invoice if it's stamped
+    if invoice.get("sat_invoice_uuid"):
+        note_dict["sat_uuid_relacionado"] = invoice["sat_invoice_uuid"]
+    
+    await db.credit_notes.insert_one(note_dict)
+    
+    # If status is "applied", update the invoice paid_amount
+    if note_data.status == CreditNoteStatus.APPLIED:
+        new_paid = invoice.get("paid_amount", 0) + note_data.total
+        new_status = "paid" if new_paid >= invoice.get("total", 0) else "partial"
+        await db.invoices.update_one(
+            {"id": note_data.invoice_id},
+            {"$set": {"paid_amount": new_paid, "status": new_status, "updated_at": datetime.now(timezone.utc).isoformat()}}
+        )
+    
+    return {"id": note_dict["id"], "message": "Nota de crédito creada exitosamente"}
+
+@api_router.get("/credit-notes")
+async def list_credit_notes(
+    company_id: str,
+    invoice_id: Optional[str] = None,
+    client_id: Optional[str] = None,
+    status: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """List credit notes for a company"""
+    query = {"company_id": company_id}
+    if invoice_id:
+        query["invoice_id"] = invoice_id
+    if client_id:
+        query["client_id"] = client_id
+    if status:
+        query["status"] = status
+    
+    notes = await db.credit_notes.find(query, {"_id": 0}).sort("created_at", -1).to_list(1000)
+    return notes
+
+@api_router.get("/credit-notes/{note_id}")
+async def get_credit_note(note_id: str, current_user: dict = Depends(get_current_user)):
+    """Get a specific credit note"""
+    note = await db.credit_notes.find_one({"id": note_id}, {"_id": 0})
+    if not note:
+        raise HTTPException(status_code=404, detail="Nota de crédito no encontrada")
+    return note
+
+@api_router.put("/credit-notes/{note_id}/apply")
+async def apply_credit_note(note_id: str, current_user: dict = Depends(get_current_user)):
+    """Apply a credit note to its related invoice"""
+    note = await db.credit_notes.find_one({"id": note_id}, {"_id": 0})
+    if not note:
+        raise HTTPException(status_code=404, detail="Nota de crédito no encontrada")
+    
+    if note.get("status") == "applied":
+        raise HTTPException(status_code=400, detail="Esta nota de crédito ya fue aplicada")
+    
+    invoice = await db.invoices.find_one({"id": note["invoice_id"]}, {"_id": 0})
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura relacionada no encontrada")
+    
+    # Update invoice paid amount
+    new_paid = invoice.get("paid_amount", 0) + note.get("total", 0)
+    new_status = "paid" if new_paid >= invoice.get("total", 0) else "partial"
+    
+    await db.invoices.update_one(
+        {"id": note["invoice_id"]},
+        {"$set": {"paid_amount": new_paid, "status": new_status, "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    # Update credit note status
+    await db.credit_notes.update_one(
+        {"id": note_id},
+        {"$set": {
+            "status": "applied",
+            "applied_at": datetime.now(timezone.utc).isoformat(),
+            "applied_by": current_user.get("sub")
+        }}
+    )
+    
+    return {"message": "Nota de crédito aplicada exitosamente"}
+
+@api_router.delete("/credit-notes/{note_id}")
+async def cancel_credit_note(note_id: str, current_user: dict = Depends(get_current_user)):
+    """Cancel a credit note"""
+    note = await db.credit_notes.find_one({"id": note_id}, {"_id": 0})
+    if not note:
+        raise HTTPException(status_code=404, detail="Nota de crédito no encontrada")
+    
+    if note.get("status") == "applied":
+        # Revert the payment from the invoice
+        invoice = await db.invoices.find_one({"id": note["invoice_id"]}, {"_id": 0})
+        if invoice:
+            new_paid = max(0, invoice.get("paid_amount", 0) - note.get("total", 0))
+            new_status = "pending" if new_paid == 0 else "partial" if new_paid < invoice.get("total", 0) else "paid"
+            await db.invoices.update_one(
+                {"id": note["invoice_id"]},
+                {"$set": {"paid_amount": new_paid, "status": new_status, "updated_at": datetime.now(timezone.utc).isoformat()}}
+            )
+    
+    await db.credit_notes.update_one(
+        {"id": note_id},
+        {"$set": {"status": "cancelled", "updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    
+    return {"message": "Nota de crédito cancelada"}
+
+@api_router.get("/sat/tipos-relacion")
+async def get_sat_tipos_relacion():
+    """Get SAT tipos de relación for credit notes"""
+    return SAT_TIPOS_RELACION
+
+@api_router.get("/sat/motivos-nota-credito")
+async def get_motivos_nota_credito():
+    """Get common reasons for credit notes"""
+    return MOTIVOS_NOTA_CREDITO
+
+# ============== EMAIL DOCUMENT SENDING ==============
+class SendDocumentEmailRequest(BaseModel):
+    company_id: str
+    document_type: str  # invoice, quote, credit_note
+    document_id: str
+    recipient_email: str
+    recipient_name: Optional[str] = None
+
+@api_router.post("/send-document-email")
+async def send_document_email(request: SendDocumentEmailRequest, current_user: dict = Depends(get_current_user)):
+    """Send document notification email to client"""
+    import smtplib
+    from email.mime.text import MIMEText
+    from email.mime.multipart import MIMEMultipart
+    
+    # Get company and email config
+    company = await db.companies.find_one({"id": request.company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    # Get email configuration from super admin settings
+    email_config = await db.server_config.find_one({"type": "email_settings"}, {"_id": 0})
+    
+    # Determine which email account to use
+    email_account = None
+    if email_config:
+        # Use collections email for invoices/credit notes
+        if request.document_type in ["invoice", "credit_note"]:
+            email_account = email_config.get("collections_email")
+        else:
+            email_account = email_config.get("general_email")
+    
+    if not email_account or not email_account.get("email") or not email_account.get("password"):
+        # Log but don't fail - email is optional
+        return {"success": False, "message": "Configuración de correo no disponible"}
+    
+    # Prepare email content based on document type
+    doc_type_names = {
+        "invoice": "Factura",
+        "quote": "Cotización",
+        "credit_note": "Nota de Crédito"
+    }
+    doc_type_name = doc_type_names.get(request.document_type, "Documento")
+    
+    subject = f"{doc_type_name} de {company.get('business_name', 'CIA SERVICIOS')}"
+    
+    html_body = f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #004e92, #000428); padding: 30px; text-align: center;">
+            <h1 style="color: white; margin: 0;">{company.get('business_name', 'CIA SERVICIOS')}</h1>
+        </div>
+        <div style="padding: 30px; background: #f8fafc;">
+            <p style="color: #475569;">Estimado(a) <strong>{request.recipient_name or 'Cliente'}</strong>,</p>
+            <p style="color: #475569;">
+                Le enviamos la siguiente {doc_type_name.lower()}:
+            </p>
+            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0; text-align: center;">
+                <p style="font-size: 24px; font-weight: bold; color: #004e92; margin: 0;">
+                    {doc_type_name}
+                </p>
+                <p style="color: #64748b; margin: 10px 0 0 0;">
+                    Folio: <strong>{request.document_id}</strong>
+                </p>
+            </div>
+            <p style="color: #475569;">
+                Para ver el detalle completo, por favor ingrese a nuestro portal o contacte a nuestro equipo.
+            </p>
+            <p style="color: #475569; margin-top: 20px;">
+                Atentamente,<br/>
+                <strong>{company.get('business_name', 'CIA SERVICIOS')}</strong>
+            </p>
+        </div>
+        <div style="padding: 20px; text-align: center; background: #1e293b;">
+            <p style="color: #94a3b8; margin: 0; font-size: 12px;">
+                Este es un correo automático generado por CIA SERVICIOS.<br/>
+                {company.get('email', '')} | {company.get('phone', '')}
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+    
+    try:
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = email_account.get("email")
+        msg["To"] = request.recipient_email
+        
+        part = MIMEText(html_body, "html")
+        msg.attach(part)
+        
+        smtp_host = email_account.get("smtp_host", "smtp.gmail.com")
+        smtp_port = email_account.get("smtp_port", 587)
+        use_ssl = email_account.get("use_ssl", False)
+        use_tls = email_account.get("use_tls", True)
+        
+        if use_ssl:
+            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30)
+        else:
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
+            if use_tls:
+                server.starttls()
+        
+        server.login(email_account.get("email"), email_account.get("password"))
+        server.sendmail(email_account.get("email"), request.recipient_email, msg.as_string())
+        server.quit()
+        
+        return {"success": True, "message": f"Correo enviado a {request.recipient_email}"}
+    except Exception as e:
+        # Log error but don't fail the main operation
+        print(f"Error sending email: {e}")
+        return {"success": False, "message": f"Error al enviar correo: {str(e)}"}
+
+def generate_statement_pdf(client: dict, company: dict, invoices: list, payments: list, summary: dict, credit_notes: list = None) -> bytes:
+    """Generate professional PDF for client account statement"""
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch, leftMargin=0.5*inch, rightMargin=0.5*inch)
     styles = getSampleStyleSheet()
     
-    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=16, textColor=colors.HexColor('#004e92'), alignment=TA_LEFT)
+    # Custom styles
+    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#004e92'), alignment=TA_CENTER, spaceAfter=20)
+    subtitle_style = ParagraphStyle('Subtitle', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#64748b'), alignment=TA_CENTER)
+    section_style = ParagraphStyle('Section', parent=styles['Heading3'], fontSize=11, textColor=colors.HexColor('#1e293b'), spaceBefore=15, spaceAfter=8)
     
     elements = []
     
-    # Header with logo
+    # Header with company info
     add_company_header_to_pdf(elements, company, styles, title_style)
     
-    # Title
-    elements.append(Paragraph("ESTADO DE CUENTA", styles['Heading2']))
-    elements.append(Paragraph(f"Fecha: {datetime.now().strftime('%d/%m/%Y')}", styles['Normal']))
-    elements.append(Spacer(1, 0.2*inch))
+    # Document Title
+    elements.append(Paragraph("ESTADO DE CUENTA", title_style))
+    elements.append(Paragraph(f"Fecha de emisión: {datetime.now().strftime('%d de %B de %Y').replace('January', 'Enero').replace('February', 'Febrero').replace('March', 'Marzo').replace('April', 'Abril').replace('May', 'Mayo').replace('June', 'Junio').replace('July', 'Julio').replace('August', 'Agosto').replace('September', 'Septiembre').replace('October', 'Octubre').replace('November', 'Noviembre').replace('December', 'Diciembre')}", subtitle_style))
+    elements.append(Spacer(1, 0.3*inch))
     
-    # Client info
-    client_data = [
-        ['CLIENTE:', client.get('name', 'N/A')],
-        ['RFC:', client.get('rfc', 'N/A')],
-        ['Email:', client.get('email', 'N/A')],
-        ['Teléfono:', client.get('phone', 'N/A')],
-    ]
-    client_table = Table(client_data, colWidths=[1.5*inch, 4*inch])
+    # Client info box
+    client_info = f"""
+    <b>CLIENTE:</b> {client.get('name', 'N/A')}<br/>
+    <b>RFC:</b> {client.get('rfc', 'N/A')}<br/>
+    <b>Email:</b> {client.get('email', 'N/A')}<br/>
+    <b>Teléfono:</b> {client.get('phone', 'N/A')}
+    """
+    client_para = Paragraph(client_info, ParagraphStyle('ClientInfo', parent=styles['Normal'], fontSize=10, leading=14))
+    
+    client_table = Table([[client_para]], colWidths=[4*inch])
     client_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f8fafc')),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#e2e8f0')),
+        ('PADDING', (0, 0), (-1, -1), 12),
     ]))
     elements.append(client_table)
     elements.append(Spacer(1, 0.3*inch))
     
-    # Summary
-    elements.append(Paragraph("<b>RESUMEN</b>", styles['Heading3']))
+    # Summary box - Professional styling
+    elements.append(Paragraph("RESUMEN DE CUENTA", section_style))
     summary_data = [
-        ['Total Facturado:', f"${summary.get('total_invoiced', 0):,.2f}"],
-        ['Total Pagado:', f"${summary.get('total_paid', 0):,.2f}"],
-        ['Saldo Pendiente:', f"${summary.get('balance', 0):,.2f}"],
+        ['Total Facturado:', f"${summary.get('total_invoiced', 0):,.2f} MXN"],
+        ['Total Pagado:', f"${summary.get('total_paid', 0):,.2f} MXN"],
     ]
-    if summary.get('overdue_count', 0) > 0:
-        summary_data.append(['Facturas Vencidas:', f"{summary.get('overdue_count')} (${summary.get('overdue_amount', 0):,.2f})"])
     
-    summary_table = Table(summary_data, colWidths=[2*inch, 2*inch])
+    # Balance row with special styling
+    balance = summary.get('balance', 0)
+    balance_color = colors.HexColor('#dc2626') if balance > 0 else colors.HexColor('#16a34a')
+    
+    summary_table = Table(summary_data, colWidths=[2.5*inch, 2.5*inch])
     summary_table.setStyle(TableStyle([
         ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
         ('FONTSIZE', (0, 0), (-1, -1), 11),
         ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#e6f0fa')),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 8),
     ]))
     elements.append(summary_table)
+    
+    # Balance total box
+    balance_data = [['SALDO PENDIENTE:', f"${balance:,.2f} MXN"]]
+    balance_table = Table(balance_data, colWidths=[2.5*inch, 2.5*inch])
+    balance_table.setStyle(TableStyle([
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 12),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#fef2f2') if balance > 0 else colors.HexColor('#f0fdf4')),
+        ('TEXTCOLOR', (1, 0), (1, -1), balance_color),
+        ('BOX', (0, 0), (-1, -1), 1, balance_color),
+        ('PADDING', (0, 0), (-1, -1), 10),
+    ]))
+    elements.append(balance_table)
+    
+    if summary.get('overdue_count', 0) > 0:
+        elements.append(Spacer(1, 0.1*inch))
+        overdue_para = Paragraph(
+            f"<font color='#dc2626'><b>⚠ Atención:</b> {summary.get('overdue_count')} factura(s) vencida(s) por ${summary.get('overdue_amount', 0):,.2f} MXN</font>",
+            styles['Normal']
+        )
+        elements.append(overdue_para)
+    
     elements.append(Spacer(1, 0.3*inch))
     
-    # Invoices table
-    if invoices:
-        elements.append(Paragraph("<b>FACTURAS</b>", styles['Heading3']))
-        inv_data = [['Folio', 'Fecha', 'Concepto', 'Total', 'Pagado', 'Saldo', 'Estado']]
-        for inv in invoices:
-            created = inv.get('created_at', '')
-            if isinstance(created, datetime):
-                created = created.strftime('%d/%m/%Y')
-            elif isinstance(created, str):
-                created = created[:10]
+    # Translation map for invoice status
+    status_translations = {
+        'pending': 'Pendiente',
+        'partial': 'Pago Parcial',
+        'paid': 'Pagada',
+        'overdue': 'Vencida',
+        'cancelled': 'Cancelada',
+    }
+    
+    # Filter invoices: only show those with pending balance (not fully paid)
+    pending_invoices = [inv for inv in invoices if inv.get('status') != 'paid' and inv.get('status') != 'cancelled' and (inv.get('total', 0) - inv.get('paid_amount', 0)) > 0]
+    
+    # Invoices table - only pending ones
+    if pending_invoices:
+        elements.append(Paragraph("FACTURAS CON SALDO PENDIENTE", section_style))
+        inv_data = [['Folio', 'Fecha', 'Concepto', 'Total', 'Pagado', 'Saldo', 'Estado', 'Vence']]
+        
+        for inv in pending_invoices:
+            # Format invoice date
+            inv_date = inv.get('invoice_date') or inv.get('created_at', '')
+            if isinstance(inv_date, datetime):
+                inv_date = inv_date.strftime('%d/%m/%Y')
+            elif isinstance(inv_date, str):
+                try:
+                    inv_date = datetime.fromisoformat(inv_date.replace('Z', '+00:00')).strftime('%d/%m/%Y')
+                except:
+                    inv_date = inv_date[:10]
+            
+            # Format due date
+            due_date = inv.get('due_date', '')
+            if isinstance(due_date, datetime):
+                due_date = due_date.strftime('%d/%m/%Y')
+            elif isinstance(due_date, str) and due_date:
+                try:
+                    due_date = datetime.fromisoformat(due_date.replace('Z', '+00:00')).strftime('%d/%m/%Y')
+                except:
+                    due_date = due_date[:10] if due_date else '-'
+            else:
+                due_date = '-'
+            
+            saldo = inv.get('total', 0) - inv.get('paid_amount', 0)
+            status_es = status_translations.get(inv.get('status', ''), inv.get('status', '').title())
             
             inv_data.append([
                 inv.get('invoice_number', ''),
-                created,
-                inv.get('concept', '')[:20] + '...' if len(inv.get('concept', '')) > 20 else inv.get('concept', ''),
+                inv_date,
+                (inv.get('concept', '') or '')[:18] + '...' if len(inv.get('concept', '') or '') > 18 else (inv.get('concept', '') or '-'),
                 f"${inv.get('total', 0):,.2f}",
                 f"${inv.get('paid_amount', 0):,.2f}",
-                f"${inv.get('total', 0) - inv.get('paid_amount', 0):,.2f}",
-                inv.get('status', '').upper()
+                f"${saldo:,.2f}",
+                status_es,
+                due_date
             ])
         
-        inv_table = Table(inv_data, colWidths=[0.9*inch, 0.8*inch, 1.5*inch, 0.9*inch, 0.9*inch, 0.9*inch, 0.7*inch])
+        inv_table = Table(inv_data, colWidths=[0.8*inch, 0.7*inch, 1.3*inch, 0.85*inch, 0.85*inch, 0.85*inch, 0.75*inch, 0.7*inch])
         inv_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#004e92')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ('ALIGN', (3, 0), (-1, -1), 'RIGHT'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('FONTSIZE', (0, 0), (-1, 0), 8),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('ALIGN', (3, 0), (5, -1), 'RIGHT'),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8fafc')]),
         ]))
         elements.append(inv_table)
+        elements.append(Spacer(1, 0.25*inch))
+    else:
+        elements.append(Paragraph("✓ No hay facturas con saldo pendiente", ParagraphStyle('NoData', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#16a34a'))))
         elements.append(Spacer(1, 0.2*inch))
     
+    # Filter payments: only show payments that still have unapplied amount
+    # For simplicity, we show recent payments (those that contributed to paid invoices)
+    recent_payments = [p for p in payments if p.get('amount', 0) > 0][:10]  # Last 10 payments
+    
     # Payments table
-    if payments:
-        elements.append(Paragraph("<b>PAGOS RECIBIDOS</b>", styles['Heading3']))
-        pay_data = [['Fecha', 'Método', 'Referencia', 'Monto']]
-        for p in payments:
+    if recent_payments:
+        elements.append(Paragraph("PAGOS RECIBIDOS (ÚLTIMOS)", section_style))
+        
+        method_translations = {
+            'transferencia': 'Transferencia',
+            'efectivo': 'Efectivo',
+            'cheque': 'Cheque',
+            'tarjeta': 'Tarjeta',
+        }
+        
+        pay_data = [['Fecha', 'Método', 'Referencia', 'Factura', 'Monto']]
+        for p in recent_payments:
             pay_date = p.get('payment_date', '')
             if isinstance(pay_date, datetime):
                 pay_date = pay_date.strftime('%d/%m/%Y')
             elif isinstance(pay_date, str):
-                pay_date = pay_date[:10]
+                try:
+                    pay_date = datetime.fromisoformat(pay_date.replace('Z', '+00:00')).strftime('%d/%m/%Y')
+                except:
+                    pay_date = pay_date[:10]
+            
+            method_es = method_translations.get(p.get('payment_method', ''), p.get('payment_method', ''))
+            
+            # Get invoice number
+            invoice_num = '-'
+            if p.get('invoice_id'):
+                inv = next((i for i in invoices if i.get('id') == p.get('invoice_id')), None)
+                if inv:
+                    invoice_num = inv.get('invoice_number', '-')
             
             pay_data.append([
                 pay_date,
-                p.get('payment_method', ''),
-                p.get('reference', '-'),
+                method_es,
+                p.get('reference', '-') or '-',
+                invoice_num,
                 f"${p.get('amount', 0):,.2f}"
             ])
         
-        pay_table = Table(pay_data, colWidths=[1.2*inch, 1.5*inch, 2*inch, 1.5*inch])
+        pay_table = Table(pay_data, colWidths=[1*inch, 1.2*inch, 1.5*inch, 1*inch, 1.2*inch])
         pay_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2e7d32')),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#16a34a')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('ALIGN', (4, 0), (4, -1), 'RIGHT'),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f0fdf4')]),
         ]))
         elements.append(pay_table)
+        elements.append(Spacer(1, 0.2*inch))
+    
+    # Credit Notes if any
+    if credit_notes:
+        applied_notes = [n for n in credit_notes if n.get('status') == 'applied']
+        if applied_notes:
+            elements.append(Paragraph("NOTAS DE CRÉDITO APLICADAS", section_style))
+            nc_data = [['Folio', 'Fecha', 'Concepto', 'Monto']]
+            for nc in applied_notes:
+                nc_date = nc.get('issue_date') or nc.get('created_at', '')
+                if isinstance(nc_date, datetime):
+                    nc_date = nc_date.strftime('%d/%m/%Y')
+                elif isinstance(nc_date, str):
+                    try:
+                        nc_date = datetime.fromisoformat(nc_date.replace('Z', '+00:00')).strftime('%d/%m/%Y')
+                    except:
+                        nc_date = nc_date[:10]
+                
+                nc_data.append([
+                    nc.get('credit_note_number', ''),
+                    nc_date,
+                    (nc.get('concept', '') or '')[:25],
+                    f"${nc.get('total', 0):,.2f}"
+                ])
+            
+            nc_table = Table(nc_data, colWidths=[1.2*inch, 1*inch, 2.5*inch, 1.2*inch])
+            nc_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#7c3aed')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 8),
+                ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+                ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ]))
+            elements.append(nc_table)
+            elements.append(Spacer(1, 0.2*inch))
     
     # Footer
-    elements.append(Spacer(1, 0.5*inch))
-    elements.append(Paragraph(f"Documento generado el {datetime.now().strftime('%d/%m/%Y %H:%M')}", styles['Normal']))
+    elements.append(Spacer(1, 0.3*inch))
+    footer_text = f"""
+    <font size="8" color="#64748b">
+    Este documento es un estado de cuenta informativo generado el {datetime.now().strftime('%d/%m/%Y %H:%M')}.<br/>
+    Para cualquier aclaración, favor de contactarnos.
+    </font>
+    """
+    elements.append(Paragraph(footer_text, ParagraphStyle('Footer', parent=styles['Normal'], alignment=TA_CENTER)))
     
     doc.build(elements)
     return buffer.getvalue()
@@ -4754,19 +5213,21 @@ async def get_client_statement_pdf(client_id: str, current_user: dict = Depends(
     company = await db.companies.find_one({"id": client.get("company_id")}, {"_id": 0})
     invoices = await db.invoices.find({"client_id": client_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     payments = await db.payments.find({"client_id": client_id}, {"_id": 0}).sort("payment_date", -1).to_list(1000)
+    credit_notes = await db.credit_notes.find({"client_id": client_id}, {"_id": 0}).sort("created_at", -1).to_list(1000)
     
     total_invoiced = sum(inv.get("total", 0) for inv in invoices)
     total_paid = sum(p.get("amount", 0) for p in payments)
+    total_credit_notes = sum(nc.get("total", 0) for nc in credit_notes if nc.get("status") == "applied")
     
     summary = {
         "total_invoiced": total_invoiced,
-        "total_paid": total_paid,
-        "balance": total_invoiced - total_paid,
+        "total_paid": total_paid + total_credit_notes,
+        "balance": total_invoiced - total_paid - total_credit_notes,
         "overdue_count": 0,
         "overdue_amount": 0
     }
     
-    pdf_bytes = generate_statement_pdf(client, company or {}, invoices, payments, summary)
+    pdf_bytes = generate_statement_pdf(client, company or {}, invoices, payments, summary, credit_notes)
     pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
     
     client_name_slug = client.get("name", "cliente").replace(" ", "_")[:20]

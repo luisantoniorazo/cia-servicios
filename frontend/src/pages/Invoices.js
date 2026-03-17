@@ -116,10 +116,13 @@ export const Invoices = () => {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [satDialogOpen, setSatDialogOpen] = useState(false);
   const [statementDialogOpen, setStatementDialogOpen] = useState(false);
+  const [creditNoteDialogOpen, setCreditNoteDialogOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [selectedClient, setSelectedClient] = useState(null);
   const [clientStatement, setClientStatement] = useState(null);
   const [activeTab, setActiveTab] = useState("all");
+  const [creditNotes, setCreditNotes] = useState([]);
+  const [motivosNC, setMotivosNC] = useState([]);
   
   const [formData, setFormData] = useState({
     client_id: "",
@@ -162,6 +165,20 @@ export const Invoices = () => {
     sat_file: null,
   });
   
+  const [creditNoteForm, setCreditNoteForm] = useState({
+    invoice_id: "",
+    credit_note_number: "",
+    issue_date: new Date().toISOString().split("T")[0],
+    concept: "",
+    reason: "",
+    items: [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0, clave_prod_serv: "", clave_unidad: "" }],
+    subtotal: 0,
+    tax: 0,
+    total: 0,
+    sat_tipo_relacion: "01",
+    status: "applied",
+  });
+  
   const [searchFilter, setSearchFilter] = useState("");
 
   // Filter invoices based on search
@@ -190,18 +207,22 @@ export const Invoices = () => {
 
   const fetchData = async () => {
     try {
-      const [invoicesRes, clientsRes, projectsRes, paymentsRes, overdueRes] = await Promise.all([
+      const [invoicesRes, clientsRes, projectsRes, paymentsRes, overdueRes, creditNotesRes, motivosRes] = await Promise.all([
         api.get(`/invoices?company_id=${company.id}`),
         api.get(`/clients?company_id=${company.id}`),
         api.get(`/projects?company_id=${company.id}`),
         api.get(`/payments?company_id=${company.id}`),
         api.get(`/invoices/overdue?company_id=${company.id}`),
+        api.get(`/credit-notes?company_id=${company.id}`),
+        api.get(`/sat/motivos-nota-credito`),
       ]);
       setInvoices(invoicesRes.data);
       setClients(clientsRes.data);
       setProjects(projectsRes.data);
       setPayments(paymentsRes.data);
       setOverdueData(overdueRes.data);
+      setCreditNotes(creditNotesRes.data);
+      setMotivosNC(motivosRes.data);
     } catch (error) {
       toast.error("Error al cargar datos");
     } finally {
@@ -246,7 +267,7 @@ export const Invoices = () => {
       const { subtotal, tax, total } = calculateTotals(formData.items);
       const concept = formData.items.map(i => i.description).filter(Boolean).join(", ") || "Factura";
       
-      await api.post("/invoices", {
+      const response = await api.post("/invoices", {
         company_id: company.id,
         ...formData,
         concept,
@@ -260,8 +281,126 @@ export const Invoices = () => {
       setDialogOpen(false);
       resetForm();
       fetchData();
+      
+      // Send email notification
+      const client = clients.find(c => c.id === formData.client_id);
+      if (client?.email) {
+        try {
+          await api.post("/send-document-email", {
+            company_id: company.id,
+            document_type: "invoice",
+            document_id: response.data.id,
+            recipient_email: client.email,
+            recipient_name: client.name,
+          });
+        } catch (emailError) {
+          console.log("Email notification failed:", emailError);
+        }
+      }
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Error al registrar factura"));
+    }
+  };
+
+  // Credit Note Functions
+  const handleCreditNoteItemChange = (index, field, value) => {
+    const newItems = [...creditNoteForm.items];
+    newItems[index][field] = value;
+    if (field === "quantity" || field === "unit_price") {
+      newItems[index].total = newItems[index].quantity * newItems[index].unit_price;
+    }
+    const { subtotal, tax, total } = calculateTotals(newItems);
+    setCreditNoteForm({ ...creditNoteForm, items: newItems, subtotal, tax, total });
+  };
+
+  const addCreditNoteItem = () => {
+    setCreditNoteForm({
+      ...creditNoteForm,
+      items: [...creditNoteForm.items, { description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0, clave_prod_serv: "", clave_unidad: "" }],
+    });
+  };
+
+  const removeCreditNoteItem = (index) => {
+    if (creditNoteForm.items.length === 1) return;
+    const newItems = creditNoteForm.items.filter((_, i) => i !== index);
+    const { subtotal, tax, total } = calculateTotals(newItems);
+    setCreditNoteForm({ ...creditNoteForm, items: newItems, subtotal, tax, total });
+  };
+
+  const openCreditNoteDialog = (invoice) => {
+    setSelectedInvoice(invoice);
+    const ncNumber = `NC-${new Date().getFullYear()}-${String(creditNotes.length + 1).padStart(3, '0')}`;
+    const saldoPendiente = (invoice.total || 0) - (invoice.paid_amount || 0);
+    
+    setCreditNoteForm({
+      invoice_id: invoice.id,
+      credit_note_number: ncNumber,
+      issue_date: new Date().toISOString().split("T")[0],
+      concept: `Nota de crédito para factura ${invoice.invoice_number}`,
+      reason: "",
+      items: [{ 
+        description: invoice.concept || "Ajuste según factura original", 
+        quantity: 1, 
+        unit: "pza", 
+        unit_price: saldoPendiente, 
+        total: saldoPendiente, 
+        clave_prod_serv: "", 
+        clave_unidad: "ACT" 
+      }],
+      subtotal: saldoPendiente / 1.16,
+      tax: (saldoPendiente / 1.16) * 0.16,
+      total: saldoPendiente,
+      sat_tipo_relacion: "01",
+      status: "applied",
+    });
+    setCreditNoteDialogOpen(true);
+  };
+
+  const handleCreditNoteSubmit = async (e) => {
+    e.preventDefault();
+    if (!selectedInvoice) return;
+    
+    try {
+      const client = clients.find(c => c.id === selectedInvoice.client_id);
+      const concept = creditNoteForm.items.map(i => i.description).filter(Boolean).join(", ") || "Nota de crédito";
+      
+      await api.post("/credit-notes", {
+        company_id: company.id,
+        client_id: selectedInvoice.client_id,
+        invoice_id: selectedInvoice.id,
+        credit_note_number: creditNoteForm.credit_note_number,
+        issue_date: creditNoteForm.issue_date,
+        concept,
+        reason: creditNoteForm.reason,
+        items: creditNoteForm.items,
+        subtotal: creditNoteForm.subtotal,
+        tax: creditNoteForm.tax,
+        total: creditNoteForm.total,
+        sat_tipo_relacion: creditNoteForm.sat_tipo_relacion,
+        sat_uuid_relacionado: selectedInvoice.sat_invoice_uuid || null,
+        status: creditNoteForm.status,
+      });
+      
+      toast.success("Nota de crédito registrada y aplicada");
+      setCreditNoteDialogOpen(false);
+      fetchData();
+      
+      // Send email notification
+      if (client?.email) {
+        try {
+          await api.post("/send-document-email", {
+            company_id: company.id,
+            document_type: "credit_note",
+            document_id: creditNoteForm.credit_note_number,
+            recipient_email: client.email,
+            recipient_name: client.name,
+          });
+        } catch (emailError) {
+          console.log("Email notification failed:", emailError);
+        }
+      }
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Error al registrar nota de crédito"));
     }
   };
 
@@ -642,6 +781,12 @@ export const Invoices = () => {
           <TabsTrigger value="upcoming" className="text-amber-600">
             Próx. Vencer ({overdueData.upcoming?.length || 0})
           </TabsTrigger>
+          <TabsTrigger value="credit_notes" className="text-violet-600 text-xs sm:text-sm">
+            N. Crédito ({creditNotes.length})
+          </TabsTrigger>
+          <TabsTrigger value="payments" className="text-emerald-600 text-xs sm:text-sm">
+            Pagos ({payments.length})
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value={activeTab} className="mt-4">
@@ -765,6 +910,10 @@ export const Invoices = () => {
                                   <CreditCard className="mr-2 h-4 w-4 text-emerald-500" />
                                   Registrar Abono
                                 </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => openCreditNoteDialog(invoice)}>
+                                  <FileText className="mr-2 h-4 w-4 text-violet-500" />
+                                  Nota de Crédito
+                                </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => openSatDialog(invoice)}>
                                   <Upload className="mr-2 h-4 w-4 text-orange-500" />
                                   Subir Factura SAT
@@ -786,6 +935,133 @@ export const Invoices = () => {
                           </TableCell>
                         </TableRow>
                       ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Credit Notes Tab */}
+        <TabsContent value="credit_notes" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-violet-700">
+                <FileText className="h-5 w-5" />
+                Notas de Crédito
+              </CardTitle>
+              <CardDescription>Historial de notas de crédito emitidas</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Folio NC</TableHead>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>Factura Rel.</TableHead>
+                      <TableHead>Cliente</TableHead>
+                      <TableHead>Concepto</TableHead>
+                      <TableHead className="text-right">Monto</TableHead>
+                      <TableHead>Estado</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {creditNotes.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                          No hay notas de crédito registradas
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      creditNotes.map((nc) => {
+                        const client = clients.find(c => c.id === nc.client_id);
+                        const invoice = invoices.find(i => i.id === nc.invoice_id);
+                        return (
+                          <TableRow key={nc.id}>
+                            <TableCell className="font-medium text-violet-700">{nc.credit_note_number}</TableCell>
+                            <TableCell>{formatDate(nc.issue_date || nc.created_at)}</TableCell>
+                            <TableCell>{invoice?.invoice_number || '-'}</TableCell>
+                            <TableCell>{client?.name || '-'}</TableCell>
+                            <TableCell className="max-w-xs truncate">{nc.concept}</TableCell>
+                            <TableCell className="text-right font-medium">{formatCurrency(nc.total)}</TableCell>
+                            <TableCell>
+                              <Badge variant={nc.status === 'applied' ? 'default' : nc.status === 'cancelled' ? 'destructive' : 'secondary'}>
+                                {nc.status === 'applied' ? 'Aplicada' : nc.status === 'cancelled' ? 'Cancelada' : 'Borrador'}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Payments (Complementos de Pago) Tab */}
+        <TabsContent value="payments" className="mt-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-emerald-700">
+                <CreditCard className="h-5 w-5" />
+                Complementos de Pago
+              </CardTitle>
+              <CardDescription>Historial de pagos/abonos recibidos (listos para timbrar como complemento de pago)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>Factura</TableHead>
+                      <TableHead>Cliente</TableHead>
+                      <TableHead>Forma Pago SAT</TableHead>
+                      <TableHead>Parcialidad</TableHead>
+                      <TableHead className="text-right">Monto</TableHead>
+                      <TableHead>Referencia</TableHead>
+                      <TableHead>UUID Complemento</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {payments.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                          No hay pagos registrados
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      payments.map((payment) => {
+                        const invoice = invoices.find(i => i.id === payment.invoice_id);
+                        const client = clients.find(c => c.id === payment.client_id);
+                        const formaPago = SAT_FORMAS_PAGO.find(f => f.value === payment.sat_forma_pago);
+                        return (
+                          <TableRow key={payment.id}>
+                            <TableCell>{formatDate(payment.payment_date)}</TableCell>
+                            <TableCell className="font-medium">{invoice?.invoice_number || '-'}</TableCell>
+                            <TableCell>{client?.name || '-'}</TableCell>
+                            <TableCell className="text-xs">{formaPago?.label || payment.sat_forma_pago || '-'}</TableCell>
+                            <TableCell className="text-center">
+                              <Badge variant="outline">#{payment.num_parcialidad || 1}</Badge>
+                            </TableCell>
+                            <TableCell className="text-right font-medium text-emerald-600">
+                              {formatCurrency(payment.amount)}
+                            </TableCell>
+                            <TableCell className="text-xs text-muted-foreground">{payment.reference || '-'}</TableCell>
+                            <TableCell>
+                              {payment.cfdi_complemento_uuid ? (
+                                <Badge variant="default" className="text-xs">Timbrado</Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-xs">Pendiente</Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })
                     )}
                   </TableBody>
                 </Table>
@@ -1335,22 +1611,29 @@ export const Invoices = () => {
                 </Card>
               )}
 
-              {/* Invoices List */}
+              {/* Invoices List - Only show invoices with pending balance */}
               <div>
-                <h4 className="font-semibold mb-2">Facturas</h4>
+                <h4 className="font-semibold mb-2">Facturas con Saldo Pendiente</h4>
                 <div className="border rounded-sm max-h-40 overflow-y-auto">
-                  {clientStatement.invoices.map((inv) => (
+                  {clientStatement.invoices
+                    .filter(inv => inv.status !== 'paid' && inv.status !== 'cancelled' && (inv.total - inv.paid_amount) > 0)
+                    .map((inv) => (
                     <div key={inv.id} className="p-2 border-b last:border-b-0 flex items-center justify-between text-sm">
                       <div>
                         <span className="font-mono">{inv.invoice_number}</span>
-                        <span className="text-muted-foreground ml-2">{inv.concept}</span>
+                        <span className="text-muted-foreground ml-2 truncate max-w-[150px]">{inv.concept}</span>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span>{formatCurrency(inv.total)}</span>
+                        <span>{formatCurrency(inv.total - inv.paid_amount)}</span>
                         <Badge className={getStatusColor(inv.status)}>{getStatusLabel(inv.status)}</Badge>
                       </div>
                     </div>
                   ))}
+                  {clientStatement.invoices.filter(inv => inv.status !== 'paid' && inv.status !== 'cancelled' && (inv.total - inv.paid_amount) > 0).length === 0 && (
+                    <div className="p-4 text-center text-sm text-emerald-600">
+                      ✓ No hay facturas con saldo pendiente
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1387,6 +1670,205 @@ export const Invoices = () => {
             )}
             <Button variant="outline" onClick={() => setStatementDialogOpen(false)}>Cerrar</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Credit Note Dialog */}
+      <Dialog open={creditNoteDialogOpen} onOpenChange={setCreditNoteDialogOpen}>
+        <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
+          <form onSubmit={handleCreditNoteSubmit}>
+            <DialogHeader>
+              <DialogTitle className="text-violet-700">Nueva Nota de Crédito</DialogTitle>
+              <DialogDescription>
+                CFDI tipo "E" (Egreso) - Factura relacionada: <strong>{selectedInvoice?.invoice_number}</strong>
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              {/* Header Info */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="grid gap-1">
+                  <Label className="text-xs">Folio Nota de Crédito</Label>
+                  <Input
+                    value={creditNoteForm.credit_note_number}
+                    onChange={(e) => setCreditNoteForm({ ...creditNoteForm, credit_note_number: e.target.value })}
+                    className="h-9"
+                    required
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <Label className="text-xs">Fecha de Emisión *</Label>
+                  <Input
+                    type="date"
+                    value={creditNoteForm.issue_date}
+                    onChange={(e) => setCreditNoteForm({ ...creditNoteForm, issue_date: e.target.value })}
+                    className="h-9"
+                    required
+                  />
+                </div>
+                <div className="grid gap-1">
+                  <Label className="text-xs">Tipo Relación SAT</Label>
+                  <Select
+                    value={creditNoteForm.sat_tipo_relacion}
+                    onValueChange={(value) => setCreditNoteForm({ ...creditNoteForm, sat_tipo_relacion: value })}
+                  >
+                    <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="01">01 - Nota de crédito</SelectItem>
+                      <SelectItem value="03">03 - Devolución de mercancía</SelectItem>
+                      <SelectItem value="04">04 - Sustitución de CFDI</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Related Invoice Info */}
+              {selectedInvoice && (
+                <div className="p-3 bg-slate-50 rounded-lg border">
+                  <p className="text-xs font-medium text-slate-600 mb-2">Factura Relacionada</p>
+                  <div className="grid grid-cols-4 gap-2 text-xs">
+                    <div><span className="text-slate-400">Folio:</span> <span className="font-medium">{selectedInvoice.invoice_number}</span></div>
+                    <div><span className="text-slate-400">Total:</span> <span className="font-medium">{formatCurrency(selectedInvoice.total)}</span></div>
+                    <div><span className="text-slate-400">Pagado:</span> <span className="font-medium">{formatCurrency(selectedInvoice.paid_amount)}</span></div>
+                    <div><span className="text-slate-400">Saldo:</span> <span className="font-medium text-amber-600">{formatCurrency((selectedInvoice.total || 0) - (selectedInvoice.paid_amount || 0))}</span></div>
+                  </div>
+                  {selectedInvoice.sat_invoice_uuid && (
+                    <p className="text-xs mt-2 text-slate-500">
+                      UUID: <span className="font-mono">{selectedInvoice.sat_invoice_uuid}</span>
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Reason */}
+              <div className="grid gap-1">
+                <Label className="text-xs">Motivo de la Nota de Crédito *</Label>
+                <Select
+                  value={creditNoteForm.reason}
+                  onValueChange={(value) => setCreditNoteForm({ ...creditNoteForm, reason: value })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleccionar motivo" /></SelectTrigger>
+                  <SelectContent>
+                    {motivosNC.map((motivo, idx) => (
+                      <SelectItem key={idx} value={motivo}>{motivo}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Items */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-medium">Conceptos</Label>
+                  <Button type="button" variant="outline" size="sm" onClick={addCreditNoteItem}>
+                    <PlusCircle className="mr-1 h-4 w-4" />
+                    Agregar
+                  </Button>
+                </div>
+                {creditNoteForm.items.map((item, index) => (
+                  <div key={index} className="p-3 bg-violet-50 rounded-lg space-y-2 border border-violet-200">
+                    <div className="grid grid-cols-12 gap-2 items-end">
+                      <div className="col-span-12 md:col-span-5">
+                        <Label className="text-xs">Descripción</Label>
+                        <Input
+                          value={item.description}
+                          onChange={(e) => handleCreditNoteItemChange(index, "description", e.target.value)}
+                          placeholder="Concepto del crédito"
+                          className="h-8"
+                        />
+                      </div>
+                      <div className="col-span-3 md:col-span-2">
+                        <Label className="text-xs">Cantidad</Label>
+                        <Input
+                          type="number"
+                          value={item.quantity}
+                          onChange={(e) => handleCreditNoteItemChange(index, "quantity", parseFloat(e.target.value) || 0)}
+                          className="h-8"
+                        />
+                      </div>
+                      <div className="col-span-3 md:col-span-2">
+                        <Label className="text-xs">P. Unitario</Label>
+                        <Input
+                          type="number"
+                          value={item.unit_price}
+                          onChange={(e) => handleCreditNoteItemChange(index, "unit_price", parseFloat(e.target.value) || 0)}
+                          className="h-8"
+                        />
+                      </div>
+                      <div className="col-span-4 md:col-span-2">
+                        <Label className="text-xs">Total</Label>
+                        <Input value={formatCurrency(item.quantity * item.unit_price)} disabled className="h-8 text-xs" />
+                      </div>
+                      <div className="col-span-2 md:col-span-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => removeCreditNoteItem(index)}
+                          disabled={creditNoteForm.items.length === 1}
+                          className="h-8 w-8"
+                        >
+                          <MinusCircle className="h-4 w-4 text-red-500" />
+                        </Button>
+                      </div>
+                    </div>
+                    {/* SAT Keys */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="grid gap-1">
+                        <Label className="text-xs text-violet-700">Clave SAT Producto</Label>
+                        <SATProductSearch
+                          value={item.clave_prod_serv || ""}
+                          onChange={(val) => handleCreditNoteItemChange(index, "clave_prod_serv", val)}
+                          placeholder="Buscar clave..."
+                        />
+                      </div>
+                      <div className="grid gap-1">
+                        <Label className="text-xs text-violet-700">Clave Unidad SAT</Label>
+                        <SATUnitSearch
+                          value={item.clave_unidad || ""}
+                          onChange={(val) => handleCreditNoteItemChange(index, "clave_unidad", val)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Totals */}
+              <div className="space-y-2 p-4 bg-violet-100 rounded-lg">
+                <div className="flex justify-between text-sm">
+                  <span>Subtotal:</span>
+                  <span className="font-medium">{formatCurrency(creditNoteForm.subtotal)}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span>IVA (16%):</span>
+                  <span className="font-medium">{formatCurrency(creditNoteForm.tax)}</span>
+                </div>
+                <Separator />
+                <div className="flex justify-between text-lg font-bold text-violet-700">
+                  <span>Total Nota de Crédito:</span>
+                  <span>{formatCurrency(creditNoteForm.total)}</span>
+                </div>
+              </div>
+
+              {/* Status */}
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="apply_immediately"
+                  checked={creditNoteForm.status === "applied"}
+                  onChange={(e) => setCreditNoteForm({ ...creditNoteForm, status: e.target.checked ? "applied" : "draft" })}
+                  className="h-4 w-4"
+                />
+                <Label htmlFor="apply_immediately" className="text-sm">
+                  Aplicar inmediatamente al saldo de la factura
+                </Label>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setCreditNoteDialogOpen(false)}>Cancelar</Button>
+              <Button type="submit" className="bg-violet-600 hover:bg-violet-700">Registrar Nota de Crédito</Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>
