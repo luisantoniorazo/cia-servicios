@@ -2,9 +2,9 @@
 
 ## Información General
 - **Nombre**: CIA SERVICIOS - Control Estratégico de Servicios y Proyectos
-- **Versión**: 3.2.0
+- **Versión**: 3.3.0
 - **Última Actualización**: Marzo 2026
-- **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2
+- **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2 + Facturama
 
 ## Problem Statement Original
 Aplicación empresarial de renta mensual que permita gestionar, monitorear y optimizar todos los procesos operativos, comerciales y estratégicos de una empresa mexicana de servicios y proyectos industriales. Sistema multi-tenant con Super Admin para gestión de suscripciones.
@@ -16,14 +16,16 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - Dashboard con estadísticas de empresas
 - URLs visibles de cada empresa
 - **Gestión de admins de empresa (editar datos, bloquear/desbloquear)** ✨
-- **Monitor del Sistema (diagnósticos)** ✨
-- **Configuración de Servidor de Bases de Datos** ✨ NEW
+- **Monitor del Sistema (25 pruebas diagnósticas)** ✨
+- **Configuración de Servidor de Bases de Datos** ✨
+- **Configuración de Facturama (PAC)** ✨ NEW v3.3.0
 
 ### Portal de Empresa (`/empresa/{slug}/login`)
 - Login por empresa
 - Todos los módulos de gestión
 - Gestión de usuarios y permisos
-- **Sidebar filtrado por permisos de módulo** ✨ NEW
+- **Sidebar filtrado por permisos de módulo** ✨
+- **Facturación Electrónica (CFDI 4.0)** ✨ NEW v3.3.0
 
 ## Módulos Implementados ✅
 
@@ -269,7 +271,44 @@ Company Admin (CIA Servicios Demo):
 - [ ] Exportación de reportes a PDF/CSV
 
 ## Changelog
-### v3.2.0 (Marzo 2026) - CURRENT SESSION
+### v3.3.0 (Marzo 2026) - FACTURACIÓN ELECTRÓNICA
+- ✨ **Sistema de Facturación Híbrido Facturama**
+  - Integración completa con Facturama PAC
+  - Dos modos de operación:
+    1. **Facturación Incluida**: Usa cuenta maestra (tú pagas)
+    2. **Facturación Propia**: Empresa configura su cuenta o sube CFDIs manuales
+  
+- ✨ **Super Admin - Configuración de Facturama**
+  - Nueva página `/admin-portal/facturama`
+  - Configurar credenciales API maestras
+  - Seleccionar ambiente (Sandbox/Producción)
+  - Activar/desactivar facturación por empresa
+  - Estadísticas de uso de timbres
+  
+- ✨ **Portal Empresa - Timbrado de Facturas**
+  - Botón "Timbrar CFDI" en facturas
+  - Botón "Subir CFDI Manual" (para empresas sin facturación incluida)
+  - Descarga de XML y PDF de CFDIs timbrados
+  - Cancelación de CFDIs
+  - Badge visual "CFDI Timbrado" en tabla de facturas
+  
+- 📦 **Nuevos Endpoints Backend**
+  - `GET/POST /super-admin/facturama/config` - Configuración maestra
+  - `POST /super-admin/facturama/test-connection` - Probar conexión
+  - `GET /super-admin/facturama/stats` - Estadísticas de uso
+  - `PATCH /super-admin/companies/{id}/billing` - Toggle facturación incluida
+  - `POST /invoices/{id}/stamp` - Timbrar factura
+  - `POST /invoices/{id}/upload-cfdi` - Subir CFDI manual
+  - `GET /invoices/{id}/cfdi/xml` - Descargar XML
+  - `GET /invoices/{id}/cfdi/pdf` - Descargar PDF CFDI
+  - `POST /invoices/{id}/cancel-cfdi` - Cancelar CFDI
+  - `GET /company/billing-status` - Estado de facturación de la empresa
+  
+- 📁 **Respaldo de Versión 1**
+  - Código guardado en `/app/versions/v1/`
+  - Script de restauración: `/app/versions/v1/RESTORE.sh`
+
+### v3.2.0 (Marzo 2026)
 - ✅ **Bug Fix: Creación de Tickets**
   - Corregido error de serialización ObjectId en MongoDB
   - Usuarios ahora pueden crear tickets correctamente

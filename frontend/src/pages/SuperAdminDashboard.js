@@ -72,6 +72,7 @@ import {
   Save,
   TicketIcon,
   Mail,
+  FileText,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 
@@ -585,6 +586,16 @@ export const SuperAdminDashboard = () => {
             >
               <TicketIcon className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
               Tickets
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              className="border-emerald-500 text-emerald-400 hover:bg-emerald-500/20 text-xs sm:text-sm" 
+              onClick={() => navigate("/admin-portal/facturama")}
+              data-testid="facturama-config-btn"
+            >
+              <FileText className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Facturama</span>
             </Button>
             <Button 
               variant="outline" 

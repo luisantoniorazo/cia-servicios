@@ -8,6 +8,7 @@ import "./App.css";
 import SuperAdminLogin from "./pages/SuperAdminLogin";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
 import SystemMonitor from "./pages/SystemMonitor";
+import FacturamaConfig from "./pages/FacturamaConfig";
 import TicketsAdmin from "./pages/TicketsAdmin";
 import CompanyLogin from "./pages/CompanyLogin";
 import { ForgotPassword, ResetPassword } from "./pages/PasswordReset";
@@ -177,6 +178,14 @@ function AppRoutes() {
         element={
           <SuperAdminRoute>
             <SystemMonitor />
+          </SuperAdminRoute>
+        }
+      />
+      <Route
+        path="/admin-portal/facturama"
+        element={
+          <SuperAdminRoute>
+            <FacturamaConfig />
           </SuperAdminRoute>
         }
       />

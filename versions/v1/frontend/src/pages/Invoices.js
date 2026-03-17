@@ -63,9 +63,6 @@ import {
   Eye,
   Search,
   X,
-  Stamp,
-  FileCode,
-  Loader2,
 } from "lucide-react";
 
 const PAYMENT_METHODS = [
@@ -119,20 +116,12 @@ export const Invoices = () => {
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [statementDialogOpen, setStatementDialogOpen] = useState(false);
   const [creditNoteDialogOpen, setCreditNoteDialogOpen] = useState(false);
-  const [cfdiDialogOpen, setCfdiDialogOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   const [selectedClient, setSelectedClient] = useState(null);
   const [clientStatement, setClientStatement] = useState(null);
   const [activeTab, setActiveTab] = useState("all");
   const [creditNotes, setCreditNotes] = useState([]);
   const [motivosNC, setMotivosNC] = useState([]);
-  const [billingStatus, setBillingStatus] = useState(null);
-  const [stamping, setStamping] = useState(false);
-  const [cfdiForm, setCfdiForm] = useState({
-    uuid: "",
-    xml_file: null,
-    pdf_file: null,
-  });
   
   const [formData, setFormData] = useState({
     client_id: "",
@@ -212,7 +201,7 @@ export const Invoices = () => {
 
   const fetchData = async () => {
     try {
-      const [invoicesRes, clientsRes, projectsRes, paymentsRes, overdueRes, creditNotesRes, motivosRes, billingRes] = await Promise.all([
+      const [invoicesRes, clientsRes, projectsRes, paymentsRes, overdueRes, creditNotesRes, motivosRes] = await Promise.all([
         api.get(`/invoices?company_id=${company.id}`),
         api.get(`/clients?company_id=${company.id}`),
         api.get(`/projects?company_id=${company.id}`),
@@ -220,7 +209,6 @@ export const Invoices = () => {
         api.get(`/invoices/overdue?company_id=${company.id}`),
         api.get(`/credit-notes?company_id=${company.id}`),
         api.get(`/sat/motivos-nota-credito`),
-        api.get(`/company/billing-status`).catch(() => ({ data: null })),
       ]);
       setInvoices(invoicesRes.data);
       setClients(clientsRes.data);
@@ -229,7 +217,6 @@ export const Invoices = () => {
       setOverdueData(overdueRes.data);
       setCreditNotes(creditNotesRes.data);
       setMotivosNC(motivosRes.data);
-      setBillingStatus(billingRes.data);
     } catch (error) {
       toast.error("Error al cargar datos");
     } finally {
@@ -624,119 +611,6 @@ export const Invoices = () => {
     overdue: overdueData.overdue?.length || 0,
   };
 
-  // ===== CFDI FUNCTIONS =====
-  const handleStampInvoice = async (invoiceId) => {
-    if (!billingStatus?.can_stamp) {
-      toast.error(billingStatus?.message || "No puedes timbrar facturas");
-      return;
-    }
-    
-    try {
-      setStamping(true);
-      const response = await api.post(`/invoices/${invoiceId}/stamp`);
-      if (response.data.success) {
-        toast.success("Factura timbrada exitosamente");
-        fetchData();
-      } else {
-        toast.error(response.data.message || "Error al timbrar");
-      }
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Error al timbrar factura"));
-    } finally {
-      setStamping(false);
-    }
-  };
-
-  const handleDownloadXML = async (invoiceId) => {
-    try {
-      const response = await api.get(`/invoices/${invoiceId}/cfdi/xml`);
-      if (response.data.content) {
-        const blob = new Blob([atob(response.data.content)], { type: 'application/xml' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = response.data.filename || 'cfdi.xml';
-        a.click();
-        window.URL.revokeObjectURL(url);
-      }
-    } catch (error) {
-      toast.error("Error al descargar XML");
-    }
-  };
-
-  const handleDownloadCFDIPDF = async (invoiceId) => {
-    try {
-      const response = await api.get(`/invoices/${invoiceId}/cfdi/pdf`);
-      if (response.data.content) {
-        const blob = new Blob([Uint8Array.from(atob(response.data.content), c => c.charCodeAt(0))], { type: 'application/pdf' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = response.data.filename || 'cfdi.pdf';
-        a.click();
-        window.URL.revokeObjectURL(url);
-      }
-    } catch (error) {
-      toast.error("Error al descargar PDF del CFDI");
-    }
-  };
-
-  const handleCancelCFDI = async (invoiceId) => {
-    if (!window.confirm("¿Estás seguro de cancelar este CFDI? Esta acción puede tener implicaciones fiscales.")) {
-      return;
-    }
-    
-    try {
-      const response = await api.post(`/invoices/${invoiceId}/cancel-cfdi`);
-      if (response.data.success) {
-        toast.success("CFDI cancelado");
-        fetchData();
-      } else {
-        toast.error(response.data.message || "Error al cancelar");
-      }
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Error al cancelar CFDI"));
-    }
-  };
-
-  const openCfdiDialog = (invoice) => {
-    setSelectedInvoice(invoice);
-    setCfdiForm({ uuid: "", xml_file: null, pdf_file: null });
-    setCfdiDialogOpen(true);
-  };
-
-  const handleUploadManualCFDI = async (e) => {
-    e.preventDefault();
-    if (!cfdiForm.uuid) {
-      toast.error("El UUID es requerido");
-      return;
-    }
-    
-    try {
-      let xmlContent = null;
-      let pdfContent = null;
-      
-      if (cfdiForm.xml_file) {
-        xmlContent = await fileToBase64(cfdiForm.xml_file);
-      }
-      if (cfdiForm.pdf_file) {
-        pdfContent = await fileToBase64(cfdiForm.pdf_file);
-      }
-      
-      await api.post(`/invoices/${selectedInvoice.id}/upload-cfdi`, {
-        uuid: cfdiForm.uuid,
-        xml_content: xmlContent,
-        pdf_content: pdfContent,
-      });
-      
-      toast.success("CFDI vinculado correctamente");
-      setCfdiDialogOpen(false);
-      fetchData();
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Error al subir CFDI"));
-    }
-  };
-
   const baseFilteredInvoices = activeTab === "all" 
     ? invoices 
     : activeTab === "overdue"
@@ -976,21 +850,9 @@ export const Invoices = () => {
                             ) : "-"}
                           </TableCell>
                           <TableCell>
-                            <div className="flex flex-col gap-1">
-                              <Badge className={getStatusColor(invoice.status)}>
-                                {getStatusLabel(invoice.status)}
-                              </Badge>
-                              {invoice.cfdi_status === "stamped" && (
-                                <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-300">
-                                  CFDI Timbrado
-                                </Badge>
-                              )}
-                              {invoice.cfdi_status === "cancelled" && (
-                                <Badge variant="outline" className="text-xs bg-red-50 text-red-700 border-red-300">
-                                  CFDI Cancelado
-                                </Badge>
-                              )}
-                            </div>
+                            <Badge className={getStatusColor(invoice.status)}>
+                              {getStatusLabel(invoice.status)}
+                            </Badge>
                           </TableCell>
                           <TableCell>
                             <DropdownMenu>
@@ -1004,40 +866,6 @@ export const Invoices = () => {
                                   <Download className="mr-2 h-4 w-4 text-blue-500" />
                                   Descargar PDF
                                 </DropdownMenuItem>
-                                
-                                {/* CFDI Options */}
-                                {invoice.cfdi_status !== "stamped" && billingStatus?.can_stamp && (
-                                  <DropdownMenuItem onClick={() => handleStampInvoice(invoice.id)} disabled={stamping}>
-                                    <Stamp className="mr-2 h-4 w-4 text-green-500" />
-                                    {stamping ? "Timbrando..." : "Timbrar CFDI"}
-                                  </DropdownMenuItem>
-                                )}
-                                
-                                {invoice.cfdi_status !== "stamped" && !billingStatus?.can_stamp && (
-                                  <DropdownMenuItem onClick={() => openCfdiDialog(invoice)}>
-                                    <Upload className="mr-2 h-4 w-4 text-orange-500" />
-                                    Subir CFDI Manual
-                                  </DropdownMenuItem>
-                                )}
-                                
-                                {invoice.cfdi_status === "stamped" && (
-                                  <>
-                                    <DropdownMenuItem onClick={() => handleDownloadXML(invoice.id)}>
-                                      <FileCode className="mr-2 h-4 w-4 text-orange-500" />
-                                      Descargar XML
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleDownloadCFDIPDF(invoice.id)}>
-                                      <Download className="mr-2 h-4 w-4 text-red-500" />
-                                      Descargar PDF CFDI
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleCancelCFDI(invoice.id)} className="text-red-600">
-                                      <X className="mr-2 h-4 w-4" />
-                                      Cancelar CFDI
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                  </>
-                                )}
-                                
                                 <DropdownMenuItem onClick={() => openPaymentDialog(invoice)}>
                                   <CreditCard className="mr-2 h-4 w-4 text-emerald-500" />
                                   Registrar Abono
@@ -1046,6 +874,13 @@ export const Invoices = () => {
                                   <FileText className="mr-2 h-4 w-4 text-violet-500" />
                                   Nota de Crédito
                                 </DropdownMenuItem>
+                                {/* XML download - will be enabled when Facturama is integrated */}
+                                {invoice.cfdi_xml && (
+                                  <DropdownMenuItem onClick={() => toast.info("Próximamente: Descargar XML con integración Facturama")}>
+                                    <Download className="mr-2 h-4 w-4 text-orange-500" />
+                                    Descargar XML
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem onClick={() => handleViewStatement(invoice.client_id)}>
                                   <User className="mr-2 h-4 w-4 text-purple-500" />
                                   Estado de Cuenta
@@ -1958,62 +1793,6 @@ export const Invoices = () => {
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setCreditNoteDialogOpen(false)}>Cancelar</Button>
               <Button type="submit" className="bg-violet-600 hover:bg-violet-700">Registrar Nota de Crédito</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* CFDI Manual Upload Dialog */}
-      <Dialog open={cfdiDialogOpen} onOpenChange={setCfdiDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
-          <form onSubmit={handleUploadManualCFDI}>
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <Upload className="h-5 w-5 text-orange-500" />
-                Subir CFDI Manual
-              </DialogTitle>
-              <DialogDescription>
-                Sube el CFDI generado externamente para vincularlo a esta factura
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="cfdi_uuid">UUID del CFDI *</Label>
-                <Input
-                  id="cfdi_uuid"
-                  value={cfdiForm.uuid}
-                  onChange={(e) => setCfdiForm({ ...cfdiForm, uuid: e.target.value.toUpperCase() })}
-                  placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Archivo XML (opcional)</Label>
-                <Input
-                  type="file"
-                  accept=".xml"
-                  onChange={(e) => setCfdiForm({ ...cfdiForm, xml_file: e.target.files?.[0] })}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Archivo PDF (opcional)</Label>
-                <Input
-                  type="file"
-                  accept=".pdf"
-                  onChange={(e) => setCfdiForm({ ...cfdiForm, pdf_file: e.target.files?.[0] })}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                * El UUID es obligatorio. Los archivos XML y PDF son opcionales pero recomendados para respaldo.
-              </p>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCfdiDialogOpen(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" className="bg-orange-600 hover:bg-orange-700">
-                Vincular CFDI
-              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
