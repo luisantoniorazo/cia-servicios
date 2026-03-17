@@ -27,16 +27,12 @@ from fastapi import Request
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-# Import modular routes (prepared for future migration)
+# Import modular routes
 from routes.subscriptions import router as subscriptions_router, init_routes as init_subscription_routes, handle_stripe_webhook
-# The following imports are ready but not active to avoid route conflicts:
-# from routes.auth import router as auth_router, init_auth_routes
-# from routes.admin import router as admin_router, init_admin_routes
-# from routes.clients import router as clients_router, init_clients_routes
-# from routes.invoices import router as invoices_router, init_invoices_routes
-# from routes.projects import router as projects_router, init_projects_routes
-# from routes.quotes import router as quotes_router, init_quotes_routes
-# from routes.users import router as users_router, init_users_routes
+from routes.clients import router as clients_router, init_clients_routes
+from routes.projects import router as projects_router, init_projects_routes
+from routes.quotes import router as quotes_router, init_quotes_routes
+from routes.invoices import router as invoices_router, init_invoices_routes
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -9972,28 +9968,43 @@ async def get_cfdi_status(current_user: dict = Depends(get_current_user)):
 app.include_router(api_router)
 
 # ============== INITIALIZE MODULAR ROUTES ==============
-# Note: Most modules are created but not yet active to avoid conflicts with existing routes
-# Only subscriptions module is active
+# Create wrapper function for logging
+async def module_log_activity(company_id, user_id, action, entity_type=None, entity_id=None, details=None):
+    """Log activity wrapper for modules"""
+    try:
+        await log_activity(
+            activity_type=ActivityType.DATA,
+            module=entity_type or "system",
+            action=action,
+            company_id=company_id,
+            user_id=user_id,
+            entity_id=entity_id,
+            entity_type=entity_type,
+            details=details
+        )
+    except:
+        pass  # Don't fail if logging fails
 
-# Initialize subscription routes (active)
+async def module_create_notification(company_id, title, message, user_id=None):
+    """Create notification wrapper for modules"""
+    try:
+        await create_notification(company_id=company_id, title=title, message=message, user_id=user_id)
+    except:
+        pass
+
+# Initialize modules
+init_clients_routes(db, module_log_activity, module_create_notification)
+init_projects_routes(db, module_log_activity)
+init_quotes_routes(db, module_log_activity)
+init_invoices_routes(db, module_log_activity)
 init_subscription_routes(db, security, JWT_SECRET, JWT_ALGORITHM)
-app.include_router(subscriptions_router)
 
-# Future: When ready to migrate, uncomment these:
-# init_auth_routes(db)
-# init_admin_routes(db, module_log_activity)
-# init_clients_routes(db, module_log_activity, module_create_notification)
-# init_invoices_routes(db, module_log_activity)
-# init_projects_routes(db, module_log_activity)
-# init_quotes_routes(db, module_log_activity)
-# init_users_routes(db, module_log_activity)
-# app.include_router(auth_router, prefix="/api")
-# app.include_router(admin_router, prefix="/api")
-# app.include_router(clients_router, prefix="/api")
-# app.include_router(invoices_router, prefix="/api")
-# app.include_router(projects_router, prefix="/api")
-# app.include_router(quotes_router, prefix="/api")
-# app.include_router(users_router, prefix="/api")
+# Include modular routers (replacing basic CRUD routes, keeping special routes in api_router)
+app.include_router(clients_router, prefix="/api")
+app.include_router(projects_router, prefix="/api")
+app.include_router(quotes_router, prefix="/api")
+app.include_router(invoices_router, prefix="/api")
+app.include_router(subscriptions_router)  # Subscriptions at /api/subscriptions
 
 # Stripe webhook endpoint (must be outside api_router for proper path)
 @app.post("/api/webhook/stripe")

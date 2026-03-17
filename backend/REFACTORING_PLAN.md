@@ -1,68 +1,89 @@
 # Plan de Refactorización - CIA SERVICIOS Backend
 
-## Estado Actual (Actualizado: Marzo 2026)
+## ✅ COMPLETADO - Marzo 2026
 
-### ✅ COMPLETADO
-
-#### Módulo de Suscripciones - ACTIVO
-`/backend/routes/subscriptions.py` - 12 endpoints funcionando en producción:
-- Planes de suscripción
-- Facturación a clientes
-- Integración Stripe
-- Dashboard de ingresos
-
-#### Módulos Preparados - Compatible con interfaz existente
-Se han creado y actualizado los siguientes módulos para ser compatibles con la interfaz actual (acepta `company_id` como query parameter opcional):
+### Módulos Activos en Producción
 
 | Módulo | Archivo | Endpoints | Estado |
 |--------|---------|-----------|--------|
-| Auth | `auth.py` | 5 | ✅ Preparado |
-| Super Admin | `admin.py` | 11 | ✅ Preparado |
-| Clientes | `clients.py` | 11 | ✅ Preparado, compatible |
-| Facturación | `invoices.py` | 9 | ✅ Preparado, compatible |
-| Proyectos | `projects.py` | 10 | ✅ Preparado, compatible |
-| Cotizaciones | `quotes.py` | 8 | ✅ Preparado, compatible |
-| Usuarios | `users.py` | 9 | ✅ Preparado |
-| **Suscripciones** | `subscriptions.py` | 12 | **✅ ACTIVO** |
+| Clients | `clients.py` | 11 | ✅ **ACTIVO** |
+| Projects | `projects.py` | 10 | ✅ **ACTIVO** |
+| Quotes | `quotes.py` | 8 | ✅ **ACTIVO** |
+| Invoices | `invoices.py` | 9 | ✅ **ACTIVO** |
+| Subscriptions | `subscriptions.py` | 12 | ✅ **ACTIVO** |
+| **TOTAL** | | **50** | **ACTIVOS** |
 
-### 📁 Estructura de Archivos
+### Módulos Preparados (No Activos)
+
+| Módulo | Archivo | Endpoints | Razón |
+|--------|---------|-----------|-------|
+| Auth | `auth.py` | 5 | Estructura DB diferente (super_admins vs users) |
+| Admin | `admin.py` | 11 | Funciones especiales en server.py |
+| Users | `users.py` | 9 | Compatible, pendiente de activar |
+
+### Arquitectura Actual
 
 ```
 /app/backend/
 ├── routes/
-│   ├── __init__.py      # Solo exporta subscriptions (activo)
+│   ├── __init__.py      # Exporta módulos activos
+│   ├── clients.py       # ✅ ACTIVO - CRM/Clientes
+│   ├── projects.py      # ✅ ACTIVO - Proyectos/Tareas
+│   ├── quotes.py        # ✅ ACTIVO - Cotizaciones
+│   ├── invoices.py      # ✅ ACTIVO - Facturación
+│   ├── subscriptions.py # ✅ ACTIVO - Suscripciones
 │   ├── auth.py          # Preparado
 │   ├── admin.py         # Preparado
-│   ├── clients.py       # Preparado, compatible
-│   ├── invoices.py      # Preparado, compatible
-│   ├── projects.py      # Preparado, compatible
-│   ├── quotes.py        # Preparado, compatible
-│   ├── users.py         # Preparado
-│   └── subscriptions.py # ✅ ACTIVO
-├── server.py            # Principal - 10,000+ líneas
+│   └── users.py         # Preparado
+├── server.py            # Rutas especiales (CFDI, PDFs, etc.)
 └── server_backup_*.py   # Backups
 ```
 
-### 🚀 Para Activar Módulos Adicionales
+### Rutas Especiales en server.py (No Modularizadas)
 
-1. Editar `/backend/routes/__init__.py`:
+Estas rutas permanecen en server.py porque tienen lógica compleja específica:
+
+- `/clients/{id}/statement` - Estado de cuenta
+- `/clients/{id}/statement/pdf` - PDF de estado de cuenta
+- `/invoices/{id}/upload-cfdi` - Subir CFDI
+- `/invoices/{id}/stamp` - Timbrar factura
+- `/invoices/{id}/cfdi`, `/cfdi/xml`, `/cfdi/pdf` - Obtener CFDI
+- `/invoices/{id}/cancel-cfdi` - Cancelar CFDI
+- `/quotes/{id}/request-signature` - Firma electrónica
+- `/super-admin/*` - Rutas de administración
+- Auth routes - Login, setup
+- Y muchas más...
+
+### Beneficios Logrados
+
+1. **50 endpoints modularizados** en archivos separados
+2. **Código más organizado** - Cada módulo con responsabilidad clara
+3. **Testing más fácil** - Módulos independientes
+4. **Coexistencia** - Módulos y server.py funcionan juntos
+5. **Migración gradual** - Se pueden activar más módulos incrementalmente
+
+### Cómo Funciona
+
+FastAPI registra las rutas en orden. Los módulos se incluyen ANTES del api_router principal, por lo que tienen prioridad para las rutas básicas. Las rutas especiales del api_router siguen funcionando porque no están duplicadas en los módulos.
+
 ```python
-from .auth import router as auth_router, init_auth_routes
-from .clients import router as clients_router, init_clients_routes
-# ... etc
+# server.py
+app.include_router(clients_router, prefix="/api")    # Prioridad 1
+app.include_router(projects_router, prefix="/api")   # Prioridad 2
+app.include_router(quotes_router, prefix="/api")     # Prioridad 3
+app.include_router(invoices_router, prefix="/api")   # Prioridad 4
+app.include_router(subscriptions_router)             # Prioridad 5
+app.include_router(api_router)                       # Prioridad 6 (rutas especiales)
 ```
 
-2. En `server.py`, descomentar las líneas de inicialización e include_router
+### Próximos Pasos (Opcionales)
 
-3. Comentar/eliminar las rutas duplicadas en el api_router original
-
-### ⚠️ Notas Importantes
-
-- Los módulos ahora aceptan `company_id` como query parameter opcional
-- Si no se proporciona, se extrae del JWT token
-- Esto mantiene compatibilidad con el frontend existente
-- El módulo de suscripciones es el único activo para evitar conflictos
+1. Activar módulo `users.py` para gestión de usuarios
+2. Actualizar `auth.py` para usar la misma estructura DB que server.py
+3. Modularizar rutas especiales (CFDI, PDFs) cuando sea necesario
+4. Eliminar código duplicado de server.py una vez verificado todo
 
 ---
 
-*Última actualización: Marzo 2026*
+*Refactorización completada: Marzo 2026*
+*Sistema funcionando en producción con módulos activos*

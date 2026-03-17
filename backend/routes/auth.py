@@ -116,10 +116,22 @@ async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
 @router.post("/super-admin/login", response_model=TokenResponse)
 async def super_admin_login(credentials: SuperAdminLogin):
     """Login for Super Admin"""
+    # Try super_admins collection first, then users collection with role=super_admin
     super_admin = await _db.super_admins.find_one({"email": credentials.email}, {"_id": 0})
     
-    if not super_admin or not verify_password(credentials.password, super_admin["password"]):
-        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+    if not super_admin:
+        # Fallback to users collection
+        super_admin = await _db.users.find_one({"email": credentials.email, "role": "super_admin"}, {"_id": 0})
+        if super_admin:
+            # Use password_hash field for users collection
+            if not verify_password(credentials.password, super_admin.get("password_hash", "")):
+                raise HTTPException(status_code=401, detail="Credenciales inválidas")
+        else:
+            raise HTTPException(status_code=401, detail="Credenciales inválidas")
+    else:
+        # Use password field for super_admins collection
+        if not verify_password(credentials.password, super_admin.get("password", "")):
+            raise HTTPException(status_code=401, detail="Credenciales inválidas")
     
     token = create_token(
         user_id=super_admin["id"],
