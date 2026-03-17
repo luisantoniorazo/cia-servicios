@@ -529,6 +529,29 @@ Company Admin (CIA Servicios Demo):
   - Proveedores: Buscar por nombre, contacto, email, categoría
 - 🔧 Badge visual "Filtro activo" con botón X para limpiar
 
+### v3.4.0 (Marzo 2026)
+- ✨ Sistema completo de Facturación de Suscripciones
+- ✨ Dashboard de ingresos con estadísticas y gráficos
+- ✨ Configuración de métodos de pago (Stripe + Transferencia)
+- ✨ Portal del cliente para ver y pagar suscripción
+- ✨ Integración con Stripe para pagos con tarjeta
+- 📁 **REFACTORIZACIÓN**: Creación de módulos de rutas en `/backend/routes/`
+  - auth.py (5 endpoints)
+  - admin.py (11 endpoints)
+  - clients.py (11 endpoints)
+  - invoices.py (9 endpoints)
+  - projects.py (10 endpoints)
+  - quotes.py (8 endpoints)
+  - users.py (9 endpoints)
+  - subscriptions.py (12 endpoints - ACTIVO)
+- 📄 Documentación: Guías de configuración y primeros pasos
+
+### v3.3.0 (Marzo 2026)
+- ✨ Sistema híbrido de facturación CFDI (Facturama)
+- ✨ Monitor del Sistema con 25 pruebas diagnósticas
+- ✨ Bot de verificación de cancelaciones CFDI
+- ✨ Módulo IA con carga de archivos y guardado de conversaciones
+
 ### v2.4.0 (Diciembre 2025)
 - ✨ Plazo de crédito en días para clientes en CRM
 - ✨ Logo de empresa incluido en documentos PDF
