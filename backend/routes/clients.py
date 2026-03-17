@@ -61,17 +61,21 @@ class FollowUpUpdate(BaseModel):
 
 # ============== ROUTES ==============
 @router.post("")
-async def create_client(client: ClientCreate, current_user: dict = Depends(get_current_user)):
+async def create_client(client: ClientCreate, company_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     """Create a new client"""
-    company_id = current_user.get("company_id")
-    if not company_id:
+    cid = company_id or current_user.get("company_id")
+    if not cid:
         raise HTTPException(status_code=400, detail="No company associated")
+    
+    # Verify user has access to this company
+    if current_user.get("company_id") != cid and current_user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Acceso denegado")
     
     now = datetime.now(timezone.utc)
     
     client_data = {
         "id": str(uuid.uuid4()),
-        "company_id": company_id,
+        "company_id": cid,
         **client.model_dump(),
         "created_at": now.isoformat(),
         "created_by": current_user.get("sub")
@@ -81,7 +85,7 @@ async def create_client(client: ClientCreate, current_user: dict = Depends(get_c
     
     if _log_activity:
         await _log_activity(
-            company_id=company_id,
+            company_id=cid,
             user_id=current_user.get("sub"),
             action="client_created",
             entity_type="client",
@@ -93,18 +97,26 @@ async def create_client(client: ClientCreate, current_user: dict = Depends(get_c
 
 @router.get("")
 async def list_clients(
+    company_id: Optional[str] = None,
     client_type: Optional[str] = None,
+    is_prospect: Optional[bool] = None,
     search: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """List clients for current company"""
-    company_id = current_user.get("company_id")
-    if not company_id:
+    cid = company_id or current_user.get("company_id")
+    if not cid:
         raise HTTPException(status_code=400, detail="No company associated")
     
-    query = {"company_id": company_id}
+    # Verify user has access
+    if current_user.get("company_id") != cid and current_user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    query = {"company_id": cid}
     if client_type:
         query["client_type"] = client_type
+    if is_prospect is not None:
+        query["is_prospect"] = is_prospect
     if search:
         query["$or"] = [
             {"name": {"$regex": search, "$options": "i"}},
@@ -112,7 +124,7 @@ async def list_clients(
             {"email": {"$regex": search, "$options": "i"}}
         ]
     
-    clients = await _db.clients.find(query, {"_id": 0}).sort("name", 1).to_list(500)
+    clients = await _db.clients.find(query, {"_id": 0}).sort("name", 1).to_list(1000)
     
     # Enrich with stats
     for client in clients:

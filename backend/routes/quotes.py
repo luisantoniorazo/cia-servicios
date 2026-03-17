@@ -83,11 +83,14 @@ async def get_next_quote_number(company_id: str) -> str:
 
 # ============== ROUTES ==============
 @router.post("")
-async def create_quote(quote: QuoteCreate, current_user: dict = Depends(get_current_user)):
+async def create_quote(quote: QuoteCreate, company_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     """Create a new quote"""
-    company_id = current_user.get("company_id")
-    if not company_id:
+    cid = company_id or current_user.get("company_id")
+    if not cid:
         raise HTTPException(status_code=400, detail="No company associated")
+    
+    if current_user.get("company_id") != cid and current_user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Acceso denegado")
     
     # Verify client
     client = await _db.clients.find_one({"id": quote.client_id, "company_id": company_id})
@@ -135,16 +138,20 @@ async def create_quote(quote: QuoteCreate, current_user: dict = Depends(get_curr
 
 @router.get("")
 async def list_quotes(
+    company_id: Optional[str] = None,
     stage: Optional[str] = None,
     client_id: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """List quotes"""
-    company_id = current_user.get("company_id")
-    if not company_id:
+    cid = company_id or current_user.get("company_id")
+    if not cid:
         raise HTTPException(status_code=400, detail="No company associated")
     
-    query = {"company_id": company_id}
+    if current_user.get("company_id") != cid and current_user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    query = {"company_id": cid}
     if stage:
         query["stage"] = stage
     if client_id:

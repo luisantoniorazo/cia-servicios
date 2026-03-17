@@ -57,11 +57,14 @@ class TaskUpdate(TaskCreate):
 
 # ============== ROUTES ==============
 @router.post("")
-async def create_project(project: ProjectCreate, current_user: dict = Depends(get_current_user)):
+async def create_project(project: ProjectCreate, company_id: Optional[str] = None, current_user: dict = Depends(get_current_user)):
     """Create a new project"""
-    company_id = current_user.get("company_id")
-    if not company_id:
+    cid = company_id or current_user.get("company_id")
+    if not cid:
         raise HTTPException(status_code=400, detail="No company associated")
+    
+    if current_user.get("company_id") != cid and current_user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Acceso denegado")
     
     now = datetime.now(timezone.utc)
     
@@ -95,16 +98,20 @@ async def create_project(project: ProjectCreate, current_user: dict = Depends(ge
 
 @router.get("")
 async def list_projects(
+    company_id: Optional[str] = None,
     status: Optional[str] = None,
     client_id: Optional[str] = None,
     current_user: dict = Depends(get_current_user)
 ):
     """List projects"""
-    company_id = current_user.get("company_id")
-    if not company_id:
+    cid = company_id or current_user.get("company_id")
+    if not cid:
         raise HTTPException(status_code=400, detail="No company associated")
     
-    query = {"company_id": company_id}
+    if current_user.get("company_id") != cid and current_user.get("role") != "super_admin":
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    query = {"company_id": cid}
     if status:
         query["status"] = status
     if client_id:
