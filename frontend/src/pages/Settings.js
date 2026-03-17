@@ -48,8 +48,11 @@ import {
   UserCheck,
   Edit,
   Key,
+  Bell,
+  Send,
 } from "lucide-react";
 import { Checkbox } from "../components/ui/checkbox";
+import { Textarea } from "../components/ui/textarea";
 
 const ROLES = [
   { value: "admin", label: "Administrador" },
@@ -79,9 +82,15 @@ export const Settings = () => {
   const [userDialogOpen, setUserDialogOpen] = useState(false);
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
   const [userDetailDialogOpen, setUserDetailDialogOpen] = useState(false);
+  const [broadcastDialogOpen, setBroadcastDialogOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState(null);
   const [selectedPermissions, setSelectedPermissions] = useState([]);
   const [showPassword, setShowPassword] = useState(false);
+  const [broadcastForm, setBroadcastForm] = useState({
+    title: "",
+    message: "",
+    notification_type: "info",
+  });
   const [companyForm, setCompanyForm] = useState({
     business_name: "",
     rfc: "",
@@ -289,6 +298,22 @@ export const Settings = () => {
     }
   };
 
+  const handleBroadcastNotification = async (e) => {
+    e.preventDefault();
+    if (!broadcastForm.title.trim() || !broadcastForm.message.trim()) {
+      toast.error("El título y mensaje son requeridos");
+      return;
+    }
+    try {
+      const response = await api.post("/admin/broadcast-notification", broadcastForm);
+      toast.success(response.data.message);
+      setBroadcastDialogOpen(false);
+      setBroadcastForm({ title: "", message: "", notification_type: "info" });
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Error al enviar notificación"));
+    }
+  };
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -439,14 +464,24 @@ export const Settings = () => {
                 </CardTitle>
                 <CardDescription>Gestiona los usuarios de tu empresa</CardDescription>
               </div>
-              <Button
-                variant="outline"
-                onClick={() => setUserDialogOpen(true)}
-                data-testid="add-user-btn"
-              >
-                <UserPlus className="mr-2 h-4 w-4" />
-                Nuevo Usuario
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setBroadcastDialogOpen(true)}
+                  data-testid="broadcast-btn"
+                >
+                  <Bell className="mr-2 h-4 w-4" />
+                  Notificar
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => setUserDialogOpen(true)}
+                  data-testid="add-user-btn"
+                >
+                  <UserPlus className="mr-2 h-4 w-4" />
+                  Nuevo Usuario
+                </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -543,6 +578,69 @@ export const Settings = () => {
           </p>
         </CardContent>
       </Card>
+
+      {/* Broadcast Notification Dialog */}
+      <Dialog open={broadcastDialogOpen} onOpenChange={setBroadcastDialogOpen}>
+        <DialogContent className="sm:max-w-[450px]">
+          <form onSubmit={handleBroadcastNotification}>
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Bell className="h-5 w-5 text-primary" />
+                Enviar Notificación Masiva
+              </DialogTitle>
+              <DialogDescription>
+                Envía un mensaje a todos los usuarios de tu empresa
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Título *</Label>
+                <Input
+                  value={broadcastForm.title}
+                  onChange={(e) => setBroadcastForm({ ...broadcastForm, title: e.target.value })}
+                  placeholder="Ej: Aviso importante"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Mensaje *</Label>
+                <Textarea
+                  value={broadcastForm.message}
+                  onChange={(e) => setBroadcastForm({ ...broadcastForm, message: e.target.value })}
+                  placeholder="Escribe el mensaje que deseas enviar..."
+                  rows={4}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Tipo</Label>
+                <Select
+                  value={broadcastForm.notification_type}
+                  onValueChange={(value) => setBroadcastForm({ ...broadcastForm, notification_type: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="info">Informativo</SelectItem>
+                    <SelectItem value="success">Éxito</SelectItem>
+                    <SelectItem value="warning">Advertencia</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => setBroadcastDialogOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="submit" className="btn-industrial">
+                <Send className="mr-2 h-4 w-4" />
+                Enviar a Todos
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
       {/* Create User Dialog */}
       <Dialog open={userDialogOpen} onOpenChange={setUserDialogOpen}>

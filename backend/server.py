@@ -1772,7 +1772,7 @@ async def test_mysql_connection(config: ServerConfigModel, current_user: dict = 
         conn.close()
         return {
             "success": True, 
-            "message": f"Conexión exitosa a MySQL",
+            "message": "Conexión exitosa a MySQL",
             "version": version[0] if version else "Unknown"
         }
     except Exception as e:
@@ -3117,7 +3117,7 @@ async def run_system_tests(current_user: dict = Depends(require_super_admin)):
                 message=f"{len(invalid_projects)} proyecto(s) corregidos automáticamente",
                 duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
                 auto_fixed=True,
-                fix_details=f"Progreso ajustado a rango 0-100"
+                fix_details="Progreso ajustado a rango 0-100"
             ).model_dump())
         else:
             tests.append(SystemTestResult(
@@ -3204,7 +3204,7 @@ async def run_system_tests(current_user: dict = Depends(require_super_admin)):
                 test_name="Admins de Empresas",
                 category="database",
                 status="passed",
-                message=f"Todas las empresas tienen admin asignado",
+                message="Todas las empresas tienen admin asignado",
                 duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
             ).model_dump())
     except Exception as e:
@@ -3552,7 +3552,8 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
     ticket_dict["created_at"] = ticket_dict["created_at"].isoformat()
     ticket_dict["updated_at"] = ticket_dict["updated_at"].isoformat()
     
-    await db.tickets.insert_one(ticket_dict)
+    # Insert a copy to avoid MongoDB adding _id to our response dict
+    await db.tickets.insert_one({**ticket_dict})
     
     return ticket_dict
 
@@ -5751,10 +5752,109 @@ EMERGENT_LLM_KEY = os.environ.get('EMERGENT_LLM_KEY', '')
 class AIMessage(BaseModel):
     message: str
     context: Optional[str] = None
+    files: Optional[List[dict]] = None  # List of file attachments
 
 class AIResponse(BaseModel):
     response: str
     model: str = "gpt-5.2"
+
+# AI Conversation models for history
+class AIConversationMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+    files: Optional[List[dict]] = None
+    model: Optional[str] = None
+    error: Optional[bool] = None
+
+class AIConversationCreate(BaseModel):
+    title: str
+    messages: List[dict]
+    conversation_id: Optional[str] = None
+
+class AIConversation(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    company_id: str
+    user_id: str
+    title: str
+    messages: List[dict] = []
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+# ============== AI CONVERSATION ENDPOINTS ==============
+@api_router.post("/ai/conversations")
+async def save_ai_conversation(data: AIConversationCreate, current_user: dict = Depends(get_current_user)):
+    """Save or update an AI conversation"""
+    company_id = current_user.get("company_id")
+    user_id = current_user.get("sub")
+    
+    if data.conversation_id:
+        # Update existing conversation
+        existing = await db.ai_conversations.find_one({"id": data.conversation_id, "user_id": user_id}, {"_id": 0})
+        if existing:
+            await db.ai_conversations.update_one(
+                {"id": data.conversation_id},
+                {"$set": {
+                    "title": data.title,
+                    "messages": data.messages,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }}
+            )
+            return {"id": data.conversation_id, "message": "Conversación actualizada"}
+    
+    # Create new conversation
+    conversation = AIConversation(
+        company_id=company_id,
+        user_id=user_id,
+        title=data.title,
+        messages=data.messages
+    )
+    
+    conv_dict = conversation.model_dump()
+    conv_dict["created_at"] = conv_dict["created_at"].isoformat()
+    conv_dict["updated_at"] = conv_dict["updated_at"].isoformat()
+    
+    await db.ai_conversations.insert_one({**conv_dict})
+    
+    return {"id": conversation.id, "message": "Conversación guardada"}
+
+@api_router.get("/ai/conversations")
+async def list_ai_conversations(current_user: dict = Depends(get_current_user)):
+    """List all AI conversations for the current user"""
+    user_id = current_user.get("sub")
+    
+    conversations = await db.ai_conversations.find(
+        {"user_id": user_id},
+        {"_id": 0, "messages": 0}  # Exclude messages for list performance
+    ).sort("updated_at", -1).to_list(100)
+    
+    return conversations
+
+@api_router.get("/ai/conversations/{conversation_id}")
+async def get_ai_conversation(conversation_id: str, current_user: dict = Depends(get_current_user)):
+    """Get a specific AI conversation with all messages"""
+    user_id = current_user.get("sub")
+    
+    conversation = await db.ai_conversations.find_one(
+        {"id": conversation_id, "user_id": user_id},
+        {"_id": 0}
+    )
+    
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversación no encontrada")
+    
+    return conversation
+
+@api_router.delete("/ai/conversations/{conversation_id}")
+async def delete_ai_conversation(conversation_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete an AI conversation"""
+    user_id = current_user.get("sub")
+    
+    result = await db.ai_conversations.delete_one({"id": conversation_id, "user_id": user_id})
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Conversación no encontrada")
+    
+    return {"message": "Conversación eliminada"}
 
 @api_router.post("/ai/chat", response_model=AIResponse)
 async def ai_chat(data: AIMessage, current_user: dict = Depends(get_current_user)):
@@ -5884,7 +5984,6 @@ Responde en español con datos concretos y recomendaciones accionables."""
 # ============== PDF GENERATION ==============
 def add_professional_header(elements: list, company: dict, doc_type: str, doc_number: str, doc_date: str):
     """Add professional executive header with logo and document info - CLEAN LAYOUT"""
-    from reportlab.platypus import Image as RLImage, HRFlowable
     
     # Color scheme for different document types
     color_schemes = {
@@ -6031,13 +6130,86 @@ def add_professional_header(elements: list, company: dict, doc_type: str, doc_nu
     elements.append(Spacer(1, 0.12*inch))
     elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor(scheme['secondary']), spaceAfter=0.15*inch))
 
-def add_company_header_to_pdf(elements: list, company: dict, styles, title_style):
-    """Legacy wrapper - redirects to professional header"""
-    add_professional_header(elements, company, 'quote', '', '')
+def add_company_header_to_pdf(elements: list, company: dict, styles, title_style, doc_type: str = 'statement'):
+    """Add company header for account statement - without document type title"""
+    from reportlab.platypus import Image as RLImage
+    
+    PRIMARY = '#1a365d'
+    TEXT_MUTED = '#4a5568'
+    
+    company_name_style = ParagraphStyle(
+        'CompanyName', 
+        fontSize=14, 
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor(PRIMARY),
+        leading=18,
+        spaceAfter=4
+    )
+    company_info_line_style = ParagraphStyle(
+        'CompanyInfoLine', 
+        fontSize=8, 
+        fontName='Helvetica',
+        textColor=colors.HexColor(TEXT_MUTED),
+        leading=11
+    )
+    
+    # Process logo
+    logo_file = company.get('logo_file')
+    logo_element = None
+    
+    if logo_file:
+        try:
+            logo_bytes = base64.b64decode(logo_file)
+            logo_buffer = BytesIO(logo_bytes)
+            logo_img = RLImage(logo_buffer)
+            aspect = logo_img.drawWidth / logo_img.drawHeight if logo_img.drawHeight > 0 else 1
+            logo_img.drawHeight = min(0.6*inch, logo_img.drawHeight)
+            logo_img.drawWidth = logo_img.drawHeight * aspect
+            logo_element = logo_img
+        except:
+            logo_element = None
+    
+    # Build header content
+    header_content = []
+    
+    if logo_element:
+        header_content.append([logo_element])
+        header_content.append([Spacer(1, 4)])
+    
+    header_content.append([Paragraph(company.get('business_name') or 'CIA SERVICIOS', company_name_style)])
+    
+    info_parts = []
+    if company.get('rfc'):
+        info_parts.append(f"RFC: {company.get('rfc')}")
+    if company.get('address'):
+        info_parts.append(company.get('address'))
+    
+    if info_parts:
+        header_content.append([Paragraph(" • ".join(info_parts), company_info_line_style)])
+    
+    contact_parts = []
+    if company.get('phone'):
+        contact_parts.append(f"Tel: {company.get('phone')}")
+    if company.get('email'):
+        contact_parts.append(company.get('email'))
+    
+    if contact_parts:
+        header_content.append([Paragraph(" • ".join(contact_parts), company_info_line_style)])
+    
+    header_table = Table(header_content, colWidths=[7*inch])
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 1),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+    ]))
+    
+    elements.append(header_table)
+    elements.append(Spacer(1, 0.15*inch))
 
 def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
     """Generate professional executive PDF for a quote with auto-adjusting cells"""
-    from reportlab.platypus import HRFlowable
     
     buffer = BytesIO()
     doc = SimpleDocTemplate(
@@ -6376,7 +6548,6 @@ async def download_invoice_pdf(invoice_id: str, current_user: dict = Depends(get
 
 def generate_purchase_order_pdf(po: dict, company: dict, supplier: dict) -> bytes:
     """Generate professional executive PDF for a purchase order with auto-adjusting cells"""
-    from reportlab.platypus import HRFlowable
     
     buffer = BytesIO()
     doc = SimpleDocTemplate(
@@ -6675,7 +6846,7 @@ async def upload_file(file_data: FileUpload, current_user: dict = Depends(get_cu
         content_bytes = base64.b64decode(file_data.content)
         if len(content_bytes) > 5 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="El archivo excede 5MB")
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=400, detail="Contenido de archivo inválido")
     
     # Create document record
@@ -6791,7 +6962,7 @@ async def add_company_note(company_id: str, note_data: CompanyNoteCreate, curren
     await db.company_notes.insert_one(note)
     
     await log_activity(
-        ActivityType.CREATE, "companies", f"Nota agregada a empresa",
+        ActivityType.CREATE, "companies", "Nota agregada a empresa",
         company_id=company_id, user_id=current_user.get("sub"),
         user_email=current_user.get("email"), entity_id=note["id"], entity_type="company_note"
     )
@@ -7010,7 +7181,7 @@ async def check_and_suspend_expired(current_user: dict = Depends(require_super_a
             )
         
         await log_activity(
-            ActivityType.SUBSCRIPTION, "companies", f"Empresa suspendida por vencimiento",
+            ActivityType.SUBSCRIPTION, "companies", "Empresa suspendida por vencimiento",
             company_id=company["id"], entity_id=company["id"], entity_type="company"
         )
     
@@ -7061,6 +7232,61 @@ async def mark_all_notifications_read(current_user: dict = Depends(get_current_u
         {"$set": {"read": True, "read_at": datetime.now(timezone.utc).isoformat()}}
     )
     return {"message": f"{result.modified_count} notificaciones marcadas como leídas"}
+
+# ============== BROADCAST NOTIFICATIONS (Admin Feature) ==============
+class BroadcastNotificationRequest(BaseModel):
+    title: str
+    message: str
+    notification_type: str = "info"  # info, warning, success
+
+@api_router.post("/admin/broadcast-notification")
+async def broadcast_notification(data: BroadcastNotificationRequest, current_user: dict = Depends(require_admin)):
+    """Send a notification to all users in the company (Admin only)"""
+    company_id = current_user.get("company_id")
+    sender_name = current_user.get("full_name", "Administrador")
+    
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No se encontró el ID de empresa")
+    
+    # Get all users in the company (excluding super admin)
+    users = await db.users.find(
+        {"company_id": company_id, "role": {"$ne": UserRole.SUPER_ADMIN}, "is_active": True},
+        {"_id": 0, "id": 1}
+    ).to_list(500)
+    
+    if len(users) == 0:
+        raise HTTPException(status_code=400, detail="No hay usuarios en la empresa para notificar")
+    
+    # Create notification for each user
+    notifications_created = 0
+    for user in users:
+        notification = {
+            "id": str(uuid.uuid4()),
+            "company_id": company_id,
+            "user_id": user["id"],
+            "title": data.title,
+            "message": f"{data.message}\n\n— {sender_name}",
+            "notification_type": data.notification_type,
+            "link": None,
+            "read": False,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.notifications.insert_one({**notification})
+        notifications_created += 1
+    
+    # Log activity
+    await log_activity(
+        ActivityType.CREATE,
+        "notifications",
+        f"Envió notificación masiva: {data.title}",
+        company_id=company_id,
+        user_id=current_user.get("sub"),
+        user_email=current_user.get("email"),
+        user_name=current_user.get("full_name"),
+        details={"recipients": notifications_created, "title": data.title}
+    )
+    
+    return {"message": f"Notificación enviada a {notifications_created} usuarios"}
 
 # ============== PASSWORD RESET ROUTES ==============
 class PasswordResetRequest(BaseModel):
@@ -7483,7 +7709,7 @@ async def request_quote_signature(quote_id: str, current_user: dict = Depends(ge
     await send_email_async("general", client["email"], f"[{company_name}] Cotización pendiente de firma", html_body)
     
     await log_activity(
-        ActivityType.EMAIL, "quotes", f"Solicitud de firma enviada",
+        ActivityType.EMAIL, "quotes", "Solicitud de firma enviada",
         company_id=company_id, user_id=current_user.get("sub"),
         user_email=current_user.get("email"), entity_id=quote_id, entity_type="quote"
     )
@@ -7572,7 +7798,7 @@ async def confirm_signature(data: SignatureConfirm):
     )
     
     await log_activity(
-        ActivityType.UPDATE, "quotes", f"Cotización firmada por cliente",
+        ActivityType.UPDATE, "quotes", "Cotización firmada por cliente",
         company_id=signature["company_id"], entity_id=signature["quote_id"], entity_type="quote",
         details={"signed_by": data.client_name}
     )

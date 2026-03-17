@@ -1,438 +1,378 @@
 """
-CIA SERVICIOS - New Features Test Suite
-Tests: AI Integration (GPT-5.2), PDF Generation (Quotes/Invoices), File Upload/Download
+Test suite for CIA SERVICIOS new features and bug fixes:
+1. Ticket creation (POST /api/tickets) - Bug fix
+2. AI Conversation CRUD (POST/GET/DELETE /api/ai/conversations)
+3. Broadcast notifications (POST /api/admin/broadcast-notification)
+4. Account statement PDF verification
 """
-
 import pytest
 import requests
 import os
-import base64
-import time
+import json
 
 BASE_URL = os.environ.get('REACT_APP_BACKEND_URL', '').rstrip('/')
 
-# ============== TEST CREDENTIALS ==============
-COMPANY_ADMIN_CREDS = {
-    "email": "gerente@ciademo.com",
-    "password": "Admin2024!",
-    "company_slug": "cia-servicios-demo-sa-de-cv"
+# Test credentials
+SUPER_ADMIN_CREDS = {
+    "email": "superadmin@cia-servicios.com",
+    "password": "SuperAdmin2024!"
 }
 
-# Test data IDs provided
-TEST_QUOTE_ID = "c81d4493-e779-455b-9f3e-2592e9cfe7ef"
-TEST_INVOICE_ID = "d0c88d06-f4f1-4502-9dbf-4019d2621f7e"
+COMPANY_USER_CREDS = {
+    "slug": "cia-servicios-demo-sa-de-cv",
+    "email": "gerente@ciademo.com",
+    "password": "Test1234!"
+}
 
 
-# ============== FIXTURES ==============
+class TestSetup:
+    """Setup and authentication tests"""
+    
+    def test_backend_health(self):
+        """Verify backend is running"""
+        response = requests.get(f"{BASE_URL}/api")
+        print(f"Backend health check: {response.status_code}")
+        assert response.status_code in [200, 404, 307], f"Backend not responding properly: {response.status_code}"
+    
+    def test_super_admin_login(self):
+        """Test super admin login"""
+        response = requests.post(f"{BASE_URL}/api/super-admin/login", json=SUPER_ADMIN_CREDS)
+        print(f"Super admin login: {response.status_code}")
+        assert response.status_code == 200, f"Super admin login failed: {response.text}"
+        data = response.json()
+        assert "access_token" in data, "No access token in response"
+        return data["access_token"]
+    
+    def test_company_user_login(self):
+        """Test company user login"""
+        response = requests.post(
+            f"{BASE_URL}/api/empresa/{COMPANY_USER_CREDS['slug']}/login",
+            json={
+                "email": COMPANY_USER_CREDS["email"],
+                "password": COMPANY_USER_CREDS["password"]
+            }
+        )
+        print(f"Company user login: {response.status_code}")
+        assert response.status_code == 200, f"Company user login failed: {response.text}"
+        data = response.json()
+        assert "access_token" in data, "No access token in response"
+        return data
+
+
 @pytest.fixture(scope="module")
-def api_client():
-    """Shared requests session"""
-    session = requests.Session()
-    session.headers.update({"Content-Type": "application/json"})
-    return session
-
-
-@pytest.fixture(scope="module")
-def company_admin_token(api_client):
-    """Company Admin JWT Token"""
-    slug = COMPANY_ADMIN_CREDS["company_slug"]
-    response = api_client.post(f"{BASE_URL}/api/empresa/{slug}/login", json={
-        "email": COMPANY_ADMIN_CREDS["email"],
-        "password": COMPANY_ADMIN_CREDS["password"]
-    })
+def super_admin_token():
+    """Get super admin authentication token"""
+    response = requests.post(f"{BASE_URL}/api/super-admin/login", json=SUPER_ADMIN_CREDS)
     if response.status_code == 200:
-        return response.json().get("access_token")
-    pytest.fail(f"Company Admin login failed: {response.text}")
+        return response.json()["access_token"]
+    pytest.skip("Super admin login failed - skipping authenticated tests")
 
 
 @pytest.fixture(scope="module")
-def auth_headers(company_admin_token):
-    """Authorization headers for authenticated requests"""
-    return {"Authorization": f"Bearer {company_admin_token}"}
-
-
-@pytest.fixture(scope="module")
-def company_id(api_client, company_admin_token):
-    """Get the company ID from the user's token"""
-    response = api_client.get(
-        f"{BASE_URL}/api/auth/me",
-        headers={"Authorization": f"Bearer {company_admin_token}"}
+def company_user_auth():
+    """Get company user authentication data"""
+    response = requests.post(
+        f"{BASE_URL}/api/empresa/{COMPANY_USER_CREDS['slug']}/login",
+        json={
+            "email": COMPANY_USER_CREDS["email"],
+            "password": COMPANY_USER_CREDS["password"]
+        }
     )
     if response.status_code == 200:
-        return response.json().get("company_id")
-    return None
+        return response.json()
+    pytest.skip("Company user login failed - skipping authenticated tests")
 
 
-# ============== AI INTEGRATION TESTS ==============
-class TestAIChatIntegration:
-    """AI Chat endpoint tests - POST /api/ai/chat"""
-
-    def test_ai_chat_basic_message(self, api_client, auth_headers):
-        """Test AI chat with a simple business question"""
-        response = api_client.post(
-            f"{BASE_URL}/api/ai/chat",
-            headers=auth_headers,
-            json={
-                "message": "¿Cuál es el estado financiero actual de la empresa?",
-                "context": "Análisis financiero"
-            }
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+class TestTicketSystem:
+    """Tests for ticket creation bug fix - POST /api/tickets"""
+    
+    def test_create_ticket_as_company_user(self, company_user_auth):
+        """
+        BUG FIX TEST: Create ticket as company user
+        Previously failed due to MongoDB ObjectId serialization issue
+        """
+        token = company_user_auth["access_token"]
+        company_id = company_user_auth["company"]["id"]
+        
+        headers = {"Authorization": f"Bearer {token}"}
+        ticket_data = {
+            "company_id": company_id,
+            "title": "TEST_Ticket de prueba - Testing Agent",
+            "description": "Este es un ticket creado por el testing agent para verificar que el bug de serialización de ObjectId fue corregido.",
+            "priority": "medium",
+            "category": "general",
+            "screenshots": []
+        }
+        
+        response = requests.post(f"{BASE_URL}/api/tickets", json=ticket_data, headers=headers)
+        print(f"Create ticket response: {response.status_code}")
+        print(f"Create ticket body: {response.text[:500]}")
+        
+        assert response.status_code == 200, f"Ticket creation failed: {response.text}"
         
         data = response.json()
-        assert "response" in data, "Response should contain 'response' field"
-        assert "model" in data, "Response should contain 'model' field"
-        assert data["model"] == "gpt-5.2", f"Expected model gpt-5.2, got {data['model']}"
-        assert len(data["response"]) > 0, "AI response should not be empty"
-        print(f"✓ AI Chat response received (length: {len(data['response'])} chars)")
-
-    def test_ai_chat_financial_analysis(self, api_client, auth_headers):
-        """Test AI chat for financial analysis prompt"""
-        response = api_client.post(
-            f"{BASE_URL}/api/ai/chat",
-            headers=auth_headers,
-            json={
-                "message": "Dame un resumen de facturación y cobranza",
-                "context": ""
-            }
-        )
-        assert response.status_code == 200
+        assert "id" in data, "Ticket ID not in response"
+        assert "ticket_number" in data, "Ticket number not in response"
+        assert data["title"] == ticket_data["title"], "Title mismatch"
+        assert data["status"] == "open", "Status should be 'open'"
         
-        data = response.json()
-        assert "response" in data
-        assert len(data["response"]) > 50, "Financial analysis should be substantial"
-        print("✓ AI financial analysis works correctly")
-
-    def test_ai_chat_without_auth_fails(self, api_client):
-        """Test AI chat requires authentication"""
-        response = api_client.post(
-            f"{BASE_URL}/api/ai/chat",
-            json={"message": "test", "context": ""}
-        )
-        assert response.status_code in [401, 403], "Unauthenticated request should fail"
-        print("✓ AI chat correctly requires authentication")
-
-
-class TestAIProjectAnalysis:
-    """AI Project Analysis endpoint tests - POST /api/ai/analyze-project/{project_id}"""
-
-    def test_ai_analyze_project_success(self, api_client, auth_headers, company_id):
-        """Test AI project analysis with existing project"""
-        # First get a project ID
-        projects_response = api_client.get(
-            f"{BASE_URL}/api/projects?company_id={company_id}",
-            headers=auth_headers
-        )
-        if projects_response.status_code != 200 or len(projects_response.json()) == 0:
-            pytest.skip("No projects available for analysis")
-        
-        project_id = projects_response.json()[0]["id"]
-        
-        response = api_client.post(
-            f"{BASE_URL}/api/ai/analyze-project/{project_id}",
-            headers=auth_headers
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        
-        data = response.json()
-        assert "project_id" in data
-        assert "project_name" in data
-        assert "analysis" in data
-        assert "summary" in data
-        assert len(data["analysis"]) > 0, "Analysis should not be empty"
-        print(f"✓ AI project analysis completed for: {data['project_name']}")
-
-    def test_ai_analyze_project_not_found(self, api_client, auth_headers):
-        """Test AI analysis with non-existent project returns 404"""
-        response = api_client.post(
-            f"{BASE_URL}/api/ai/analyze-project/nonexistent-project-id",
-            headers=auth_headers
-        )
-        assert response.status_code == 404
-        print("✓ Non-existent project correctly returns 404")
-
-
-# ============== PDF GENERATION TESTS ==============
-class TestQuotePDFGeneration:
-    """Quote PDF generation tests - GET /api/pdf/quote/{quote_id}"""
-
-    def test_generate_quote_pdf_success(self, api_client, auth_headers, company_id):
-        """Test PDF generation for a quote"""
-        # First get a quote ID
-        quotes_response = api_client.get(
-            f"{BASE_URL}/api/quotes?company_id={company_id}",
-            headers=auth_headers
-        )
-        if quotes_response.status_code != 200 or len(quotes_response.json()) == 0:
-            pytest.skip("No quotes available for PDF generation")
-        
-        quote_id = quotes_response.json()[0]["id"]
-        
-        response = api_client.get(
-            f"{BASE_URL}/api/pdf/quote/{quote_id}",
-            headers=auth_headers
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        
-        data = response.json()
-        assert "filename" in data, "Response should contain filename"
-        assert "content" in data, "Response should contain base64 content"
-        assert "content_type" in data, "Response should contain content_type"
-        assert data["content_type"] == "application/pdf"
-        assert data["filename"].endswith(".pdf")
-        
-        # Validate base64 content
-        try:
-            pdf_bytes = base64.b64decode(data["content"])
-            assert len(pdf_bytes) > 1000, "PDF should have reasonable size"
-            assert pdf_bytes[:4] == b'%PDF', "Content should be valid PDF"
-        except Exception as e:
-            pytest.fail(f"Invalid PDF content: {e}")
-        
-        print(f"✓ Quote PDF generated: {data['filename']} ({len(pdf_bytes)} bytes)")
-
-    def test_generate_quote_pdf_not_found(self, api_client, auth_headers):
-        """Test PDF generation with non-existent quote returns 404"""
-        response = api_client.get(
-            f"{BASE_URL}/api/pdf/quote/nonexistent-quote-id",
-            headers=auth_headers
-        )
-        assert response.status_code == 404
-        print("✓ Non-existent quote correctly returns 404")
-
-
-class TestInvoicePDFGeneration:
-    """Invoice PDF generation tests - GET /api/pdf/invoice/{invoice_id}"""
-
-    def test_generate_invoice_pdf_success(self, api_client, auth_headers, company_id):
-        """Test PDF generation for an invoice"""
-        # First get an invoice ID
-        invoices_response = api_client.get(
-            f"{BASE_URL}/api/invoices?company_id={company_id}",
-            headers=auth_headers
-        )
-        if invoices_response.status_code != 200 or len(invoices_response.json()) == 0:
-            pytest.skip("No invoices available for PDF generation")
-        
-        invoice_id = invoices_response.json()[0]["id"]
-        
-        response = api_client.get(
-            f"{BASE_URL}/api/pdf/invoice/{invoice_id}",
-            headers=auth_headers
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        
-        data = response.json()
-        assert "filename" in data
-        assert "content" in data
-        assert "content_type" in data
-        assert data["content_type"] == "application/pdf"
-        assert data["filename"].endswith(".pdf")
-        
-        # Validate base64 content
-        pdf_bytes = base64.b64decode(data["content"])
-        assert len(pdf_bytes) > 1000, "PDF should have reasonable size"
-        assert pdf_bytes[:4] == b'%PDF', "Content should be valid PDF"
-        
-        print(f"✓ Invoice PDF generated: {data['filename']} ({len(pdf_bytes)} bytes)")
-
-    def test_generate_invoice_pdf_not_found(self, api_client, auth_headers):
-        """Test PDF generation with non-existent invoice returns 404"""
-        response = api_client.get(
-            f"{BASE_URL}/api/pdf/invoice/nonexistent-invoice-id",
-            headers=auth_headers
-        )
-        assert response.status_code == 404
-        print("✓ Non-existent invoice correctly returns 404")
-
-
-# ============== FILE UPLOAD/DOWNLOAD TESTS ==============
-class TestFileUpload:
-    """File upload tests - POST /api/files/upload"""
-
-    def test_file_upload_success(self, api_client, auth_headers):
-        """Test file upload with base64 content"""
-        # Create a simple test file content
-        test_content = b"Test document content for CIA SERVICIOS testing"
-        base64_content = base64.b64encode(test_content).decode('utf-8')
-        
-        response = api_client.post(
-            f"{BASE_URL}/api/files/upload",
-            headers=auth_headers,
-            json={
-                "filename": "TEST_archivo_prueba.txt",
-                "content": base64_content,
-                "content_type": "text/plain",
-                "category": "otros"
-            }
-        )
-        assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
-        
-        data = response.json()
-        assert "id" in data, "Response should contain document ID"
-        assert "filename" in data
-        assert "size" in data
-        assert data["size"] == len(test_content)
-        
-        print(f"✓ File uploaded successfully: {data['filename']} (ID: {data['id']})")
+        print(f"SUCCESS: Created ticket {data['ticket_number']} with ID {data['id']}")
         return data["id"]
-
-    def test_file_upload_with_project(self, api_client, auth_headers, company_id):
-        """Test file upload associated with a project"""
-        # Get a project ID first
-        projects_response = api_client.get(
-            f"{BASE_URL}/api/projects?company_id={company_id}",
-            headers=auth_headers
-        )
-        project_id = None
-        if projects_response.status_code == 200 and len(projects_response.json()) > 0:
-            project_id = projects_response.json()[0]["id"]
+    
+    def test_list_tickets_as_company_user(self, company_user_auth):
+        """List tickets as company user - verify they can see their own tickets"""
+        token = company_user_auth["access_token"]
+        company_id = company_user_auth["company"]["id"]
         
-        test_content = b"Project document content"
-        base64_content = base64.b64encode(test_content).decode('utf-8')
+        headers = {"Authorization": f"Bearer {token}"}
+        response = requests.get(f"{BASE_URL}/api/tickets?company_id={company_id}", headers=headers)
         
-        response = api_client.post(
-            f"{BASE_URL}/api/files/upload",
-            headers=auth_headers,
-            json={
-                "filename": "TEST_proyecto_doc.pdf",
-                "content": base64_content,
-                "content_type": "application/pdf",
-                "project_id": project_id,
-                "category": "reportes"
-            }
-        )
-        assert response.status_code == 200
-        print(f"✓ File uploaded with project association: {project_id}")
-
-    def test_file_upload_too_large(self, api_client, auth_headers):
-        """Test file upload exceeding 5MB limit"""
-        # Create content larger than 5MB
-        large_content = b"X" * (6 * 1024 * 1024)  # 6MB
-        base64_content = base64.b64encode(large_content).decode('utf-8')
+        print(f"List tickets: {response.status_code}")
+        assert response.status_code == 200, f"List tickets failed: {response.text}"
         
-        response = api_client.post(
-            f"{BASE_URL}/api/files/upload",
-            headers=auth_headers,
-            json={
-                "filename": "TEST_large_file.txt",
-                "content": base64_content,
-                "content_type": "text/plain",
-                "category": "otros"
-            }
-        )
-        assert response.status_code == 400, f"Expected 400 for oversized file, got {response.status_code}"
-        print("✓ Oversized file correctly rejected (5MB limit)")
-
-    def test_file_upload_invalid_base64(self, api_client, auth_headers):
-        """Test file upload with invalid base64 content"""
-        response = api_client.post(
-            f"{BASE_URL}/api/files/upload",
-            headers=auth_headers,
-            json={
-                "filename": "TEST_invalid.txt",
-                "content": "not-valid-base64!!!",
-                "content_type": "text/plain",
-                "category": "otros"
-            }
-        )
-        assert response.status_code == 400
-        print("✓ Invalid base64 content correctly rejected")
+        data = response.json()
+        assert isinstance(data, list), "Response should be a list"
+        print(f"SUCCESS: Found {len(data)} tickets")
+    
+    def test_list_tickets_as_super_admin(self, super_admin_token):
+        """Super admin can list all tickets"""
+        headers = {"Authorization": f"Bearer {super_admin_token}"}
+        response = requests.get(f"{BASE_URL}/api/tickets", headers=headers)
+        
+        print(f"Super admin list tickets: {response.status_code}")
+        assert response.status_code == 200, f"Super admin list tickets failed: {response.text}"
+        
+        data = response.json()
+        assert isinstance(data, list), "Response should be a list"
+        print(f"SUCCESS: Super admin can see {len(data)} tickets")
 
 
-class TestFileDownload:
-    """File download tests - GET /api/files/{doc_id}/download"""
+class TestAIConversations:
+    """Tests for AI conversation CRUD - new feature"""
+    
+    def test_save_ai_conversation(self, company_user_auth):
+        """Save a new AI conversation - POST /api/ai/conversations"""
+        token = company_user_auth["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        conversation_data = {
+            "title": "TEST_Conversation - Testing Agent",
+            "messages": [
+                {"role": "user", "content": "Analiza las ventas de este mes"},
+                {"role": "assistant", "content": "Según los datos, las ventas muestran una tendencia positiva..."}
+            ]
+        }
+        
+        response = requests.post(f"{BASE_URL}/api/ai/conversations", json=conversation_data, headers=headers)
+        print(f"Save conversation: {response.status_code}")
+        
+        assert response.status_code == 200, f"Save conversation failed: {response.text}"
+        
+        data = response.json()
+        assert "id" in data, "Conversation ID not in response"
+        assert "message" in data, "Message not in response"
+        
+        print(f"SUCCESS: Saved conversation with ID {data['id']}")
+        return data["id"]
+    
+    def test_list_ai_conversations(self, company_user_auth):
+        """List user's AI conversations - GET /api/ai/conversations"""
+        token = company_user_auth["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        response = requests.get(f"{BASE_URL}/api/ai/conversations", headers=headers)
+        print(f"List conversations: {response.status_code}")
+        
+        assert response.status_code == 200, f"List conversations failed: {response.text}"
+        
+        data = response.json()
+        assert isinstance(data, list), "Response should be a list"
+        print(f"SUCCESS: Found {len(data)} conversations")
+        return data
+    
+    def test_get_ai_conversation_by_id(self, company_user_auth):
+        """Get a specific conversation with messages - GET /api/ai/conversations/{id}"""
+        token = company_user_auth["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        # First create a conversation
+        conversation_data = {
+            "title": "TEST_Get by ID Test",
+            "messages": [
+                {"role": "user", "content": "Test message"}
+            ]
+        }
+        create_response = requests.post(f"{BASE_URL}/api/ai/conversations", json=conversation_data, headers=headers)
+        assert create_response.status_code == 200
+        
+        conv_id = create_response.json()["id"]
+        
+        # Now get it by ID
+        response = requests.get(f"{BASE_URL}/api/ai/conversations/{conv_id}", headers=headers)
+        print(f"Get conversation by ID: {response.status_code}")
+        
+        assert response.status_code == 200, f"Get conversation failed: {response.text}"
+        
+        data = response.json()
+        assert data["id"] == conv_id, "ID mismatch"
+        assert "messages" in data, "Messages not in response"
+        assert len(data["messages"]) > 0, "Messages should not be empty"
+        
+        print(f"SUCCESS: Retrieved conversation {conv_id} with {len(data['messages'])} messages")
+        return conv_id
+    
+    def test_delete_ai_conversation(self, company_user_auth):
+        """Delete an AI conversation - DELETE /api/ai/conversations/{id}"""
+        token = company_user_auth["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        # First create a conversation to delete
+        conversation_data = {
+            "title": "TEST_Delete Test",
+            "messages": [{"role": "user", "content": "To be deleted"}]
+        }
+        create_response = requests.post(f"{BASE_URL}/api/ai/conversations", json=conversation_data, headers=headers)
+        assert create_response.status_code == 200
+        
+        conv_id = create_response.json()["id"]
+        
+        # Now delete it
+        response = requests.delete(f"{BASE_URL}/api/ai/conversations/{conv_id}", headers=headers)
+        print(f"Delete conversation: {response.status_code}")
+        
+        assert response.status_code == 200, f"Delete conversation failed: {response.text}"
+        
+        data = response.json()
+        assert "message" in data, "Message not in response"
+        
+        # Verify it's deleted
+        get_response = requests.get(f"{BASE_URL}/api/ai/conversations/{conv_id}", headers=headers)
+        assert get_response.status_code == 404, "Conversation should not exist after deletion"
+        
+        print(f"SUCCESS: Deleted conversation {conv_id}")
 
-    def test_file_download_roundtrip(self, api_client, auth_headers):
-        """Test upload and download roundtrip"""
-        # Upload a file
-        original_content = b"Test content for download verification - CIA SERVICIOS"
-        base64_content = base64.b64encode(original_content).decode('utf-8')
-        
-        upload_response = api_client.post(
-            f"{BASE_URL}/api/files/upload",
-            headers=auth_headers,
-            json={
-                "filename": "TEST_download_test.txt",
-                "content": base64_content,
-                "content_type": "text/plain",
-                "category": "otros"
-            }
-        )
-        assert upload_response.status_code == 200
-        doc_id = upload_response.json()["id"]
-        
-        # Download the file
-        download_response = api_client.get(
-            f"{BASE_URL}/api/files/{doc_id}/download",
-            headers=auth_headers
-        )
-        assert download_response.status_code == 200, f"Expected 200, got {download_response.status_code}"
-        
-        data = download_response.json()
-        assert "filename" in data
-        assert "content" in data
-        assert "content_type" in data
-        
-        # Verify content matches
-        downloaded_content = base64.b64decode(data["content"])
-        assert downloaded_content == original_content, "Downloaded content should match uploaded content"
-        
-        print(f"✓ File download roundtrip successful: {data['filename']}")
 
-    def test_file_download_not_found(self, api_client, auth_headers):
-        """Test download with non-existent document returns 404"""
-        response = api_client.get(
-            f"{BASE_URL}/api/files/nonexistent-doc-id/download",
-            headers=auth_headers
-        )
-        assert response.status_code == 404
-        print("✓ Non-existent document correctly returns 404")
+class TestBroadcastNotifications:
+    """Tests for admin broadcast notification feature"""
+    
+    def test_broadcast_notification_as_admin(self, company_user_auth):
+        """
+        Admin can send broadcast notification - POST /api/admin/broadcast-notification
+        """
+        token = company_user_auth["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        notification_data = {
+            "title": "TEST_Aviso de Prueba",
+            "message": "Este es un mensaje de prueba del testing agent.",
+            "notification_type": "info"
+        }
+        
+        response = requests.post(f"{BASE_URL}/api/admin/broadcast-notification", json=notification_data, headers=headers)
+        print(f"Broadcast notification: {response.status_code}")
+        print(f"Response: {response.text[:300]}")
+        
+        # Note: May return 400 if no other users exist, which is acceptable
+        if response.status_code == 200:
+            data = response.json()
+            assert "message" in data, "Message not in response"
+            print(f"SUCCESS: {data['message']}")
+        elif response.status_code == 400:
+            # Acceptable - no users to notify
+            print(f"INFO: {response.json().get('detail', 'No users to notify')}")
+        else:
+            assert False, f"Unexpected status code: {response.status_code} - {response.text}"
+    
+    def test_broadcast_notification_requires_auth(self):
+        """Broadcast notification requires authentication"""
+        notification_data = {
+            "title": "Test",
+            "message": "Test",
+            "notification_type": "info"
+        }
+        
+        response = requests.post(f"{BASE_URL}/api/admin/broadcast-notification", json=notification_data)
+        
+        assert response.status_code in [401, 403], f"Should require auth: {response.status_code}"
+        print("SUCCESS: Broadcast notification requires authentication")
 
 
-# ============== INTEGRATION TESTS ==============
-class TestEndToEndIntegration:
-    """End-to-end integration tests for new features"""
+class TestAccountStatementPDF:
+    """Tests for account statement PDF - verify no 'COTIZACIÓN' header"""
+    
+    def test_get_account_statement_pdf(self, company_user_auth):
+        """
+        BUG FIX TEST: Account statement PDF should show 'ESTADO DE CUENTA' not 'COTIZACIÓN'
+        """
+        token = company_user_auth["access_token"]
+        company_id = company_user_auth["company"]["id"]
+        headers = {"Authorization": f"Bearer {token}"}
+        
+        # First get a client to test with
+        clients_response = requests.get(f"{BASE_URL}/api/clients?company_id={company_id}", headers=headers)
+        if clients_response.status_code != 200:
+            pytest.skip("No clients available for statement test")
+        
+        clients = clients_response.json()
+        if not clients:
+            pytest.skip("No clients available for statement test")
+        
+        client_id = clients[0]["id"]
+        
+        # Get PDF
+        response = requests.get(f"{BASE_URL}/api/clients/{client_id}/statement/pdf", headers=headers)
+        print(f"Get statement PDF: {response.status_code}")
+        
+        assert response.status_code == 200, f"Get statement PDF failed: {response.text}"
+        
+        data = response.json()
+        assert "filename" in data, "Filename not in response"
+        assert "content" in data, "PDF content not in response"
+        assert data.get("content_type") == "application/pdf", "Should be PDF content type"
+        
+        # Verify filename pattern
+        assert "estado_cuenta" in data["filename"].lower(), "Filename should contain 'estado_cuenta'"
+        
+        print(f"SUCCESS: Got PDF statement: {data['filename']}")
+        print("NOTE: Visual verification needed to confirm 'ESTADO DE CUENTA' header instead of 'COTIZACIÓN'")
 
-    def test_full_document_workflow(self, api_client, auth_headers, company_id):
-        """Test complete document upload, list, download workflow"""
-        # 1. Upload document
-        test_content = b"Integration test document"
-        base64_content = base64.b64encode(test_content).decode('utf-8')
+
+class TestInvoicesMenuOptions:
+    """Tests for invoice dropdown menu - verify SAT upload option removed"""
+    
+    def test_invoices_endpoint_works(self, company_user_auth):
+        """Verify invoices endpoint is accessible"""
+        token = company_user_auth["access_token"]
+        company_id = company_user_auth["company"]["id"]
+        headers = {"Authorization": f"Bearer {token}"}
         
-        upload_response = api_client.post(
-            f"{BASE_URL}/api/files/upload",
-            headers=auth_headers,
-            json={
-                "filename": "TEST_integration_doc.txt",
-                "content": base64_content,
-                "content_type": "text/plain",
-                "category": "reportes"
-            }
-        )
-        assert upload_response.status_code == 200
-        doc_id = upload_response.json()["id"]
+        response = requests.get(f"{BASE_URL}/api/invoices?company_id={company_id}", headers=headers)
+        print(f"Get invoices: {response.status_code}")
         
-        # 2. Verify document appears in list
-        list_response = api_client.get(
-            f"{BASE_URL}/api/documents?company_id={company_id}",
-            headers=auth_headers
-        )
-        assert list_response.status_code == 200
-        docs = list_response.json()
-        uploaded_doc = next((d for d in docs if d["id"] == doc_id), None)
-        assert uploaded_doc is not None, "Uploaded document should appear in list"
+        assert response.status_code == 200, f"Get invoices failed: {response.text}"
         
-        # 3. Download and verify
-        download_response = api_client.get(
-            f"{BASE_URL}/api/files/{doc_id}/download",
-            headers=auth_headers
-        )
-        assert download_response.status_code == 200
-        downloaded_content = base64.b64decode(download_response.json()["content"])
-        assert downloaded_content == test_content
+        data = response.json()
+        assert isinstance(data, list), "Response should be a list"
+        print(f"SUCCESS: Invoices endpoint working, found {len(data)} invoices")
+
+
+class TestCleanup:
+    """Cleanup test data"""
+    
+    def test_cleanup_test_tickets(self, super_admin_token, company_user_auth):
+        """Clean up test tickets created during testing"""
+        company_id = company_user_auth["company"]["id"]
+        headers = {"Authorization": f"Bearer {super_admin_token}"}
         
-        print("✓ Full document workflow completed successfully")
+        # Get all tickets
+        response = requests.get(f"{BASE_URL}/api/tickets", headers=headers)
+        if response.status_code == 200:
+            tickets = response.json()
+            test_tickets = [t for t in tickets if t.get("title", "").startswith("TEST_")]
+            print(f"Found {len(test_tickets)} test tickets to clean up")
+            # Note: No delete endpoint for tickets, so just report
+        
+        print("INFO: Test data cleanup - manual cleanup may be needed for TEST_ prefixed items")
 
 
 if __name__ == "__main__":

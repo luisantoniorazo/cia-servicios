@@ -114,7 +114,6 @@ export const Invoices = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
-  const [satDialogOpen, setSatDialogOpen] = useState(false);
   const [statementDialogOpen, setStatementDialogOpen] = useState(false);
   const [creditNoteDialogOpen, setCreditNoteDialogOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
@@ -158,11 +157,6 @@ export const Invoices = () => {
     cuenta_beneficiaria: "",
     // Control de parcialidades
     num_parcialidad: "1",
-  });
-  
-  const [satForm, setSatForm] = useState({
-    sat_uuid: "",
-    sat_file: null,
   });
   
   const [creditNoteForm, setCreditNoteForm] = useState({
@@ -452,32 +446,6 @@ export const Invoices = () => {
     }
   };
 
-  const handleUploadSAT = async (e) => {
-    e.preventDefault();
-    if (!selectedInvoice) return;
-    
-    try {
-      let satFileBase64 = null;
-      if (satForm.sat_file) {
-        satFileBase64 = await fileToBase64(satForm.sat_file);
-      }
-      
-      await api.post(`/invoices/${selectedInvoice.id}/upload-sat`, null, {
-        params: {
-          sat_uuid: satForm.sat_uuid || null,
-          sat_file: satFileBase64,
-        }
-      });
-      
-      toast.success("Factura SAT subida");
-      setSatDialogOpen(false);
-      resetSatForm();
-      fetchData();
-    } catch (error) {
-      toast.error("Error al subir factura SAT");
-    }
-  };
-
   const handleViewStatement = async (clientId) => {
     try {
       const response = await api.get(`/clients/${clientId}/statement`);
@@ -592,11 +560,6 @@ export const Invoices = () => {
     setSelectedInvoice(null);
   };
 
-  const resetSatForm = () => {
-    setSatForm({ sat_uuid: "", sat_file: null });
-    setSelectedInvoice(null);
-  };
-
   const openNewInvoiceDialog = () => {
     resetForm();
     setFormData((prev) => ({ ...prev, invoice_number: generateInvoiceNumber() }));
@@ -633,10 +596,7 @@ export const Invoices = () => {
     setPaymentDialogOpen(true);
   };
 
-  const openSatDialog = (invoice) => {
-    setSelectedInvoice(invoice);
-    setSatDialogOpen(true);
-  };
+  // openSatDialog removed - SAT upload will be handled through Facturama integration
 
   const getClientName = (clientId) => {
     const client = clients.find((c) => c.id === clientId);
@@ -914,10 +874,13 @@ export const Invoices = () => {
                                   <FileText className="mr-2 h-4 w-4 text-violet-500" />
                                   Nota de Crédito
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => openSatDialog(invoice)}>
-                                  <Upload className="mr-2 h-4 w-4 text-orange-500" />
-                                  Subir Factura SAT
-                                </DropdownMenuItem>
+                                {/* XML download - will be enabled when Facturama is integrated */}
+                                {invoice.cfdi_xml && (
+                                  <DropdownMenuItem onClick={() => toast.info("Próximamente: Descargar XML con integración Facturama")}>
+                                    <Download className="mr-2 h-4 w-4 text-orange-500" />
+                                    Descargar XML
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem onClick={() => handleViewStatement(invoice.client_id)}>
                                   <User className="mr-2 h-4 w-4 text-purple-500" />
                                   Estado de Cuenta
@@ -1522,43 +1485,6 @@ export const Invoices = () => {
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setPaymentDialogOpen(false)}>Cancelar</Button>
               <Button type="submit" className="btn-industrial">Registrar Abono</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      {/* SAT Upload Dialog */}
-      <Dialog open={satDialogOpen} onOpenChange={setSatDialogOpen}>
-        <DialogContent className="sm:max-w-[400px]">
-          <form onSubmit={handleUploadSAT}>
-            <DialogHeader>
-              <DialogTitle>Subir Factura SAT</DialogTitle>
-              <DialogDescription>
-                Adjunta el archivo XML o PDF de la factura del SAT
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label>UUID de Factura (opcional)</Label>
-                <Input
-                  value={satForm.sat_uuid}
-                  onChange={(e) => setSatForm({ ...satForm, sat_uuid: e.target.value })}
-                  placeholder="XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>Archivo de Factura SAT</Label>
-                <Input
-                  type="file"
-                  accept=".xml,.pdf"
-                  onChange={(e) => setSatForm({ ...satForm, sat_file: e.target.files?.[0] })}
-                />
-                <p className="text-xs text-muted-foreground">Archivo XML o PDF del SAT</p>
-              </div>
-            </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setSatDialogOpen(false)}>Cancelar</Button>
-              <Button type="submit" className="bg-orange-600 hover:bg-orange-700">Subir</Button>
             </DialogFooter>
           </form>
         </DialogContent>

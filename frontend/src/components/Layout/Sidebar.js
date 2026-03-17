@@ -29,6 +29,7 @@ import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
 import { Separator } from "../ui/separator";
 import { Avatar, AvatarFallback } from "../ui/avatar";
+import { Badge } from "../ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -38,6 +39,7 @@ import {
   DropdownMenuTrigger,
 } from "../ui/dropdown-menu";
 import NotificationBell from "../Notifications/NotificationBell";
+import { useReminderCounts } from "../Notifications/ReminderBadge";
 
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_cia-operacional/artifacts/0bkwa552_Logo%20CIA.jpg";
 
@@ -68,6 +70,7 @@ export const Sidebar = ({ isOpen, onToggle }) => {
   const { user, company, logout, isSuperAdmin, companySlug } = useAuth();
   const navigate = useNavigate();
   const { slug } = useParams();
+  const reminderCounts = useReminderCounts();
   
   // Use slug from URL params or from auth context
   const currentSlug = slug || companySlug;
@@ -176,7 +179,24 @@ export const Sidebar = ({ isOpen, onToggle }) => {
                   }
                   data-testid={`nav-${item.path.slice(1)}`}
                 >
-                  <item.icon className="h-5 w-5" />
+                  <div className="relative">
+                    <item.icon className="h-5 w-5" />
+                    {item.moduleId === "reminders" && reminderCounts.overdue > 0 && (
+                      <Badge 
+                        variant="destructive" 
+                        className="absolute -top-2 -right-3 h-4 min-w-[16px] flex items-center justify-center text-[10px] px-1 animate-pulse"
+                      >
+                        {reminderCounts.overdue}
+                      </Badge>
+                    )}
+                    {item.moduleId === "reminders" && reminderCounts.overdue === 0 && reminderCounts.total > 0 && (
+                      <Badge 
+                        className="absolute -top-2 -right-3 h-4 min-w-[16px] flex items-center justify-center text-[10px] px-1 bg-amber-500"
+                      >
+                        {reminderCounts.total}
+                      </Badge>
+                    )}
+                  </div>
                   <span>{item.label}</span>
                 </NavLink>
               ))}
