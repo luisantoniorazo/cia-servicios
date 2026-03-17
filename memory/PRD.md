@@ -2,7 +2,7 @@
 
 ## Información General
 - **Nombre**: CIA SERVICIOS - Control Estratégico de Servicios y Proyectos
-- **Versión**: 3.1.0
+- **Versión**: 3.2.0
 - **Última Actualización**: Marzo 2026
 - **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2
 
@@ -110,10 +110,25 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - [x] **Inhabilitar/Habilitar usuarios** ✨ NEW
 - [x] **Editar usuario (nombre, email, teléfono, contraseña)** ✨ NEW
 
-### 13. Inteligencia IA
+### 13. Inteligencia IA ✨ MEJORADO
 - [x] Chat con GPT-5.2
 - [x] Análisis financiero
 - [x] Análisis de proyectos
+- [x] **Carga de archivos para análisis** ✨ NEW
+- [x] **Guardar/Cargar/Eliminar conversaciones** ✨ NEW
+- [x] **Historial de conversaciones** ✨ NEW
+
+### 14. Soporte Técnico (Tickets)
+- [x] Crear tickets de soporte
+- [x] Ver tickets propios
+- [x] Estados: abierto, en progreso, resuelto, cerrado
+- [x] **Bug de creación de tickets corregido** ✨ FIXED
+
+### 15. Notificaciones ✨ MEJORADO
+- [x] Campana de notificaciones
+- [x] Notificaciones en tiempo real
+- [x] **Notificaciones masivas (Admin)** ✨ NEW
+- [x] **Badge de recordatorios en Sidebar** ✨ NEW
 
 ## Roles y Permisos
 | Rol | Descripción |
@@ -182,6 +197,15 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - `PUT /api/admin/users/{id}/permissions` - Actualizar permisos
 - `PATCH /api/admin/users/{id}/toggle-status` - Habilitar/inhabilitar usuario ✨ NEW
 
+### Notificaciones Masivas (Admin) ✨ NEW
+- `POST /api/admin/broadcast-notification` - Enviar notificación a todos los usuarios de la empresa
+
+### Conversaciones de IA ✨ NEW
+- `POST /api/ai/conversations` - Guardar o actualizar conversación
+- `GET /api/ai/conversations` - Listar conversaciones del usuario
+- `GET /api/ai/conversations/{id}` - Obtener conversación con mensajes
+- `DELETE /api/ai/conversations/{id}` - Eliminar conversación
+
 ### Configuración de Servidor (Super Admin) ✨ NEW
 - `GET /api/super-admin/server-config` - Obtener configuración de servidor
 - `POST /api/super-admin/server-config` - Guardar configuración de servidor
@@ -233,7 +257,8 @@ Company Admin (CIA Servicios Demo):
 - [ ] Exportación a Excel
 - [x] Restricción de acceso basada en permisos (frontend) ✅ DONE
 - [x] Estadísticas de ingresos en dashboard Super Admin ✅ NEW
-- [ ] Refactorización completa de server.py (en progreso - estructura creada)
+- [ ] Refactorización completa de server.py (plan documentado en REFACTORING_PLAN.md)
+- [ ] Integración con PAC (Facturama) para CFDI 4.0
 
 ### P2 - Mejoras
 - [ ] Integración de pagos (Stripe) para renovaciones
@@ -244,7 +269,43 @@ Company Admin (CIA Servicios Demo):
 - [ ] Exportación de reportes a PDF/CSV
 
 ## Changelog
-### v3.1.0 (Marzo 2026) - CURRENT SESSION
+### v3.2.0 (Marzo 2026) - CURRENT SESSION
+- ✅ **Bug Fix: Creación de Tickets**
+  - Corregido error de serialización ObjectId en MongoDB
+  - Usuarios ahora pueden crear tickets correctamente
+  - Super Admin puede ver todos los tickets
+  
+- ✨ **Módulo de IA Mejorado**
+  - Carga de archivos (PDF, Excel, imágenes, etc.)
+  - Guardar conversaciones con historial
+  - Cargar conversaciones guardadas
+  - Eliminar conversaciones
+  - Endpoint CRUD completo para /api/ai/conversations
+  
+- ✨ **Notificaciones Masivas para Admin**
+  - Nuevo botón "Notificar" en Settings > Usuarios
+  - Diálogo para enviar notificación masiva a todos los usuarios de la empresa
+  - Endpoint POST /api/admin/broadcast-notification
+  
+- ✅ **Bug Fix: PDF Estado de Cuenta**
+  - El header ya no muestra "COTIZACIÓN"
+  - Muestra correctamente la información de la empresa
+  
+- 🔧 **UI de Facturación**
+  - Removida opción "Subir Factura SAT" del menú dropdown
+  - Preparado espacio para "Descargar XML" (pendiente integración Facturama)
+  
+- ✨ **Badge de Recordatorios en Sidebar**
+  - Badge rojo animado para recordatorios vencidos
+  - Badge ámbar para recordatorios pendientes
+  - Actualización automática cada 60 segundos
+  
+- 📋 **Plan de Refactorización Documentado**
+  - Creado /app/backend/REFACTORING_PLAN.md
+  - Estructura modular existente (/models/, /routes/, /utils/)
+  - Plan para migrar server.py monolítico (8000+ líneas)
+
+### v3.1.0 (Marzo 2026)
 - ✨ **Estadísticas de Ingresos en Super Admin Dashboard**
   - Gráfico de barras de ingresos últimos 12 meses
   - Distribución por tipo de licencia
