@@ -2976,9 +2976,11 @@ async def get_system_health(current_user: dict = Depends(require_super_admin)):
 
 @api_router.post("/super-admin/system/run-tests")
 async def run_system_tests(current_user: dict = Depends(require_super_admin)):
-    """Run comprehensive system tests"""
+    """Run comprehensive system tests with auto-repair capabilities"""
     tests = []
     start_time = datetime.now(timezone.utc)
+    
+    # ========== CATEGORY: DATABASE CONNECTIVITY ==========
     
     # Test 1: Database Connection
     test_start = datetime.now(timezone.utc)
@@ -3000,17 +3002,98 @@ async def run_system_tests(current_user: dict = Depends(require_super_admin)):
             duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
         ).model_dump())
     
-    # Test 2: Companies Collection
+    # Test 2: Database Indexes
+    test_start = datetime.now(timezone.utc)
+    try:
+        collections_to_check = ["companies", "users", "clients", "invoices", "projects", "quotes"]
+        missing_indexes = []
+        for coll_name in collections_to_check:
+            indexes = await db[coll_name].index_information()
+            if "id_1" not in indexes and coll_name != "companies":
+                # Create index if missing
+                await db[coll_name].create_index("id", unique=True)
+                missing_indexes.append(coll_name)
+        
+        if missing_indexes:
+            tests.append(SystemTestResult(
+                test_name="Índices de Base de Datos",
+                category="database",
+                status="passed",
+                message=f"Índices creados en: {', '.join(missing_indexes)}",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Índices faltantes creados automáticamente"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Índices de Base de Datos",
+                category="database",
+                status="passed",
+                message="Todos los índices están configurados",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Índices de Base de Datos",
+            category="database",
+            status="warning",
+            message=f"Error al verificar índices: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # ========== CATEGORY: DATA INTEGRITY - COMPANIES ==========
+    
+    # Test 3: Companies Collection Integrity
     test_start = datetime.now(timezone.utc)
     try:
         companies = await db.companies.find({}, {"_id": 0}).to_list(100)
-        invalid_companies = [c for c in companies if not c.get("business_name") or not c.get("slug")]
-        if invalid_companies:
+        issues = []
+        fixed_count = 0
+        
+        for c in companies:
+            company_issues = []
+            updates = {}
+            
+            # Check required fields
+            if not c.get("business_name"):
+                company_issues.append("sin nombre")
+            if not c.get("slug"):
+                company_issues.append("sin slug")
+                # Generate slug from business_name
+                if c.get("business_name"):
+                    new_slug = re.sub(r'[^a-z0-9]+', '-', c["business_name"].lower()).strip('-')
+                    updates["slug"] = new_slug
+            if not c.get("id"):
+                company_issues.append("sin ID")
+                updates["id"] = str(uuid.uuid4())
+            if not c.get("subscription_status"):
+                updates["subscription_status"] = "active"
+                company_issues.append("sin estado de suscripción")
+            
+            # Auto-fix
+            if updates:
+                await db.companies.update_one({"_id": c.get("_id") or {"id": c.get("id")}}, {"$set": updates})
+                fixed_count += 1
+            
+            if company_issues:
+                issues.append(f"{c.get('business_name', 'Desconocida')}: {', '.join(company_issues)}")
+        
+        if fixed_count > 0:
+            tests.append(SystemTestResult(
+                test_name="Integridad de Empresas",
+                category="database",
+                status="passed",
+                message=f"{fixed_count} empresa(s) corregidas automáticamente",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details=f"Corregidos: {'; '.join(issues[:3])}"
+            ).model_dump())
+        elif issues:
             tests.append(SystemTestResult(
                 test_name="Integridad de Empresas",
                 category="database",
                 status="warning",
-                message=f"{len(invalid_companies)} empresa(s) con datos incompletos",
+                message=f"{len(issues)} empresa(s) con problemas no reparables",
                 duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
             ).model_dump())
         else:
@@ -3018,7 +3101,7 @@ async def run_system_tests(current_user: dict = Depends(require_super_admin)):
                 test_name="Integridad de Empresas",
                 category="database",
                 status="passed",
-                message=f"{len(companies)} empresas verificadas",
+                message=f"{len(companies)} empresas verificadas correctamente",
                 duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
             ).model_dump())
     except Exception as e:
@@ -3030,174 +3113,40 @@ async def run_system_tests(current_user: dict = Depends(require_super_admin)):
             duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
         ).model_dump())
     
-    # Test 3: Users with valid companies
-    test_start = datetime.now(timezone.utc)
-    try:
-        users = await db.users.find({"role": {"$ne": "super_admin"}}, {"_id": 0}).to_list(1000)
-        companies = await db.companies.find({}, {"_id": 0, "id": 1}).to_list(1000)
-        company_ids = {c["id"] for c in companies}
-        orphan_users = [u for u in users if u.get("company_id") and u["company_id"] not in company_ids]
-        
-        if orphan_users:
-            tests.append(SystemTestResult(
-                test_name="Usuarios Huérfanos",
-                category="database",
-                status="warning",
-                message=f"{len(orphan_users)} usuario(s) sin empresa válida",
-                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
-            ).model_dump())
-        else:
-            tests.append(SystemTestResult(
-                test_name="Usuarios Huérfanos",
-                category="database",
-                status="passed",
-                message=f"{len(users)} usuarios verificados",
-                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
-            ).model_dump())
-    except Exception as e:
-        tests.append(SystemTestResult(
-            test_name="Usuarios Huérfanos",
-            category="database",
-            status="failed",
-            message=f"Error: {str(e)}",
-            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
-        ).model_dump())
-    
-    # Test 4: Invoices with valid clients
-    test_start = datetime.now(timezone.utc)
-    try:
-        invoices = await db.invoices.find({}, {"_id": 0}).to_list(5000)
-        clients = await db.clients.find({}, {"_id": 0, "id": 1}).to_list(5000)
-        client_ids = {c["id"] for c in clients}
-        orphan_invoices = [i for i in invoices if i.get("client_id") and i["client_id"] not in client_ids]
-        
-        if orphan_invoices:
-            tests.append(SystemTestResult(
-                test_name="Facturas Huérfanas",
-                category="database",
-                status="warning",
-                message=f"{len(orphan_invoices)} factura(s) sin cliente válido",
-                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
-            ).model_dump())
-        else:
-            tests.append(SystemTestResult(
-                test_name="Facturas Huérfanas",
-                category="database",
-                status="passed",
-                message=f"{len(invoices)} facturas verificadas",
-                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
-            ).model_dump())
-    except Exception as e:
-        tests.append(SystemTestResult(
-            test_name="Facturas Huérfanas",
-            category="database",
-            status="failed",
-            message=f"Error: {str(e)}",
-            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
-        ).model_dump())
-    
-    # Test 5: Projects integrity
-    test_start = datetime.now(timezone.utc)
-    try:
-        projects = await db.projects.find({}, {"_id": 0}).to_list(1000)
-        invalid_projects = [p for p in projects if p.get("total_progress", 0) > 100 or p.get("total_progress", 0) < 0]
-        
-        if invalid_projects:
-            # Auto-fix: Clamp progress to 0-100
-            for p in invalid_projects:
-                new_progress = max(0, min(100, p.get("total_progress", 0)))
-                await db.projects.update_one(
-                    {"id": p["id"]},
-                    {"$set": {"total_progress": new_progress}}
-                )
-            tests.append(SystemTestResult(
-                test_name="Progreso de Proyectos",
-                category="database",
-                status="passed",
-                message=f"{len(invalid_projects)} proyecto(s) corregidos automáticamente",
-                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
-                auto_fixed=True,
-                fix_details="Progreso ajustado a rango 0-100"
-            ).model_dump())
-        else:
-            tests.append(SystemTestResult(
-                test_name="Progreso de Proyectos",
-                category="database",
-                status="passed",
-                message=f"{len(projects)} proyectos verificados",
-                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
-            ).model_dump())
-    except Exception as e:
-        tests.append(SystemTestResult(
-            test_name="Progreso de Proyectos",
-            category="database",
-            status="failed",
-            message=f"Error: {str(e)}",
-            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
-        ).model_dump())
-    
-    # Test 6: Invoice calculations
-    test_start = datetime.now(timezone.utc)
-    try:
-        invoices = await db.invoices.find({}, {"_id": 0}).to_list(5000)
-        fixed_count = 0
-        for inv in invoices:
-            subtotal = inv.get("subtotal", 0)
-            tax = inv.get("tax", 0)
-            total = inv.get("total", 0)
-            expected_total = subtotal + tax
-            
-            if abs(total - expected_total) > 0.01:
-                await db.invoices.update_one(
-                    {"id": inv["id"]},
-                    {"$set": {"total": expected_total}}
-                )
-                fixed_count += 1
-        
-        if fixed_count > 0:
-            tests.append(SystemTestResult(
-                test_name="Cálculos de Facturas",
-                category="database",
-                status="passed",
-                message=f"{fixed_count} factura(s) corregidas automáticamente",
-                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
-                auto_fixed=True,
-                fix_details="Total recalculado como subtotal + IVA"
-            ).model_dump())
-        else:
-            tests.append(SystemTestResult(
-                test_name="Cálculos de Facturas",
-                category="database",
-                status="passed",
-                message=f"{len(invoices)} facturas verificadas",
-                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
-            ).model_dump())
-    except Exception as e:
-        tests.append(SystemTestResult(
-            test_name="Cálculos de Facturas",
-            category="database",
-            status="failed",
-            message=f"Error: {str(e)}",
-            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
-        ).model_dump())
-    
-    # Test 7: Company admins exist
+    # Test 4: Company Admins Validation
     test_start = datetime.now(timezone.utc)
     try:
         companies = await db.companies.find({}, {"_id": 0}).to_list(100)
         companies_without_admin = []
+        fixed = 0
+        
         for comp in companies:
             admin = await db.users.find_one({"company_id": comp["id"], "role": UserRole.ADMIN})
             if not admin:
+                # Auto-create default admin
+                new_admin = {
+                    "id": str(uuid.uuid4()),
+                    "company_id": comp["id"],
+                    "email": comp.get("admin_email") or f"admin@{comp['slug']}.temp",
+                    "full_name": f"Admin {comp['business_name']}",
+                    "password_hash": hash_password("Admin2024!"),
+                    "role": "admin",
+                    "is_active": True,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                }
+                await db.users.insert_one({**new_admin})
+                fixed += 1
                 companies_without_admin.append(comp["business_name"])
         
-        if companies_without_admin:
+        if fixed > 0:
             tests.append(SystemTestResult(
                 test_name="Admins de Empresas",
                 category="database",
-                status="warning",
-                message=f"{len(companies_without_admin)} empresa(s) sin admin: {', '.join(companies_without_admin[:3])}...",
-                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+                status="passed",
+                message=f"{fixed} admin(s) creados: {', '.join(companies_without_admin[:3])}",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Admins por defecto creados con contraseña: Admin2024!"
             ).model_dump())
         else:
             tests.append(SystemTestResult(
@@ -3216,24 +3165,385 @@ async def run_system_tests(current_user: dict = Depends(require_super_admin)):
             duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
         ).model_dump())
     
-    # Test 8: Overdue invoices status
+    # ========== CATEGORY: DATA INTEGRITY - USERS ==========
+    
+    # Test 5: Orphan Users
+    test_start = datetime.now(timezone.utc)
+    try:
+        users = await db.users.find({"role": {"$ne": "super_admin"}}, {"_id": 0}).to_list(1000)
+        companies = await db.companies.find({}, {"_id": 0, "id": 1}).to_list(1000)
+        company_ids = {c["id"] for c in companies}
+        orphan_users = [u for u in users if u.get("company_id") and u["company_id"] not in company_ids]
+        
+        if orphan_users:
+            # Auto-delete orphan users
+            deleted = await db.users.delete_many({
+                "role": {"$ne": "super_admin"},
+                "company_id": {"$nin": list(company_ids)}
+            })
+            tests.append(SystemTestResult(
+                test_name="Usuarios Huérfanos",
+                category="database",
+                status="passed",
+                message=f"{deleted.deleted_count} usuario(s) huérfano(s) eliminados",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Usuarios sin empresa válida fueron eliminados"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Usuarios Huérfanos",
+                category="database",
+                status="passed",
+                message=f"{len(users)} usuarios verificados correctamente",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Usuarios Huérfanos",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # Test 6: Users with invalid roles
+    test_start = datetime.now(timezone.utc)
+    try:
+        valid_roles = ["super_admin", "admin", "manager", "user"]
+        users_invalid_role = await db.users.find(
+            {"role": {"$nin": valid_roles}}, {"_id": 0, "email": 1, "role": 1}
+        ).to_list(100)
+        
+        if users_invalid_role:
+            # Fix to default role
+            result = await db.users.update_many(
+                {"role": {"$nin": valid_roles}},
+                {"$set": {"role": "user"}}
+            )
+            tests.append(SystemTestResult(
+                test_name="Roles de Usuarios",
+                category="database",
+                status="passed",
+                message=f"{result.modified_count} usuario(s) con rol inválido corregidos",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Roles inválidos cambiados a 'user'"
+            ).model_dump())
+        else:
+            total_users = await db.users.count_documents({})
+            tests.append(SystemTestResult(
+                test_name="Roles de Usuarios",
+                category="database",
+                status="passed",
+                message=f"Todos los {total_users} usuarios tienen roles válidos",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Roles de Usuarios",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # Test 7: Users without password
+    test_start = datetime.now(timezone.utc)
+    try:
+        users_no_password = await db.users.find(
+            {"$or": [{"password_hash": None}, {"password_hash": ""}, {"password_hash": {"$exists": False}}]},
+            {"_id": 0, "id": 1, "email": 1}
+        ).to_list(100)
+        
+        if users_no_password:
+            # Set default password
+            default_hash = hash_password("TempPassword2024!")
+            result = await db.users.update_many(
+                {"$or": [{"password_hash": None}, {"password_hash": ""}, {"password_hash": {"$exists": False}}]},
+                {"$set": {"password_hash": default_hash}}
+            )
+            tests.append(SystemTestResult(
+                test_name="Contraseñas de Usuarios",
+                category="security",
+                status="warning",
+                message=f"{result.modified_count} usuario(s) sin contraseña - se asignó temporal",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Contraseña temporal: TempPassword2024! - CAMBIAR INMEDIATAMENTE"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Contraseñas de Usuarios",
+                category="security",
+                status="passed",
+                message="Todos los usuarios tienen contraseña configurada",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Contraseñas de Usuarios",
+            category="security",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # ========== CATEGORY: DATA INTEGRITY - CLIENTS ==========
+    
+    # Test 8: Orphan Clients (without company)
+    test_start = datetime.now(timezone.utc)
+    try:
+        clients = await db.clients.find({}, {"_id": 0, "id": 1, "company_id": 1, "name": 1}).to_list(5000)
+        companies = await db.companies.find({}, {"_id": 0, "id": 1}).to_list(1000)
+        company_ids = {c["id"] for c in companies}
+        orphan_clients = [c for c in clients if c.get("company_id") and c["company_id"] not in company_ids]
+        
+        if orphan_clients:
+            # Delete orphan clients
+            result = await db.clients.delete_many({"company_id": {"$nin": list(company_ids)}})
+            tests.append(SystemTestResult(
+                test_name="Clientes Huérfanos",
+                category="database",
+                status="passed",
+                message=f"{result.deleted_count} cliente(s) huérfano(s) eliminados",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Clientes sin empresa válida fueron eliminados"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Clientes Huérfanos",
+                category="database",
+                status="passed",
+                message=f"{len(clients)} clientes verificados",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Clientes Huérfanos",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # Test 9: Clients without required fields
+    test_start = datetime.now(timezone.utc)
+    try:
+        clients_incomplete = await db.clients.find(
+            {"$or": [{"name": None}, {"name": ""}, {"name": {"$exists": False}}]},
+            {"_id": 0, "id": 1}
+        ).to_list(100)
+        
+        if clients_incomplete:
+            # Set default name
+            for client in clients_incomplete:
+                await db.clients.update_one(
+                    {"id": client["id"]},
+                    {"$set": {"name": f"Cliente_{client['id'][:8]}"}}
+                )
+            tests.append(SystemTestResult(
+                test_name="Nombres de Clientes",
+                category="database",
+                status="passed",
+                message=f"{len(clients_incomplete)} cliente(s) sin nombre corregidos",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Nombres temporales asignados"
+            ).model_dump())
+        else:
+            total_clients = await db.clients.count_documents({})
+            tests.append(SystemTestResult(
+                test_name="Nombres de Clientes",
+                category="database",
+                status="passed",
+                message=f"Todos los {total_clients} clientes tienen nombre",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Nombres de Clientes",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # ========== CATEGORY: INVOICES ==========
+    
+    # Test 10: Orphan Invoices
+    test_start = datetime.now(timezone.utc)
+    try:
+        invoices = await db.invoices.find({}, {"_id": 0}).to_list(5000)
+        clients = await db.clients.find({}, {"_id": 0, "id": 1}).to_list(5000)
+        client_ids = {c["id"] for c in clients}
+        orphan_invoices = [i for i in invoices if i.get("client_id") and i["client_id"] not in client_ids]
+        
+        if orphan_invoices:
+            # Mark as cancelled
+            result = await db.invoices.update_many(
+                {"client_id": {"$nin": list(client_ids)}},
+                {"$set": {"status": "cancelled", "notes": "Auto-cancelada: cliente eliminado"}}
+            )
+            tests.append(SystemTestResult(
+                test_name="Facturas Huérfanas",
+                category="database",
+                status="passed",
+                message=f"{result.modified_count} factura(s) huérfana(s) canceladas",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Facturas sin cliente válido fueron canceladas"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Facturas Huérfanas",
+                category="database",
+                status="passed",
+                message=f"{len(invoices)} facturas verificadas",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Facturas Huérfanas",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # Test 11: Invoice calculations
+    test_start = datetime.now(timezone.utc)
+    try:
+        invoices = await db.invoices.find({}, {"_id": 0}).to_list(5000)
+        fixed_count = 0
+        for inv in invoices:
+            subtotal = float(inv.get("subtotal", 0) or 0)
+            tax = float(inv.get("tax", 0) or 0)
+            total = float(inv.get("total", 0) or 0)
+            expected_total = subtotal + tax
+            
+            if abs(total - expected_total) > 0.01:
+                await db.invoices.update_one(
+                    {"id": inv["id"]},
+                    {"$set": {"total": round(expected_total, 2)}}
+                )
+                fixed_count += 1
+        
+        if fixed_count > 0:
+            tests.append(SystemTestResult(
+                test_name="Cálculos de Facturas",
+                category="database",
+                status="passed",
+                message=f"{fixed_count} factura(s) corregidas (total != subtotal + IVA)",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Total recalculado como subtotal + IVA"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Cálculos de Facturas",
+                category="database",
+                status="passed",
+                message=f"{len(invoices)} facturas con cálculos correctos",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Cálculos de Facturas",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # Test 12: Invoice paid_amount validation
+    test_start = datetime.now(timezone.utc)
+    try:
+        invoices = await db.invoices.find({}, {"_id": 0, "id": 1, "total": 1, "paid_amount": 1, "status": 1}).to_list(5000)
+        fixed_count = 0
+        
+        for inv in invoices:
+            total = float(inv.get("total", 0) or 0)
+            paid = float(inv.get("paid_amount", 0) or 0)
+            status = inv.get("status", "pending")
+            
+            updates = {}
+            
+            # Fix negative paid_amount
+            if paid < 0:
+                updates["paid_amount"] = 0
+                paid = 0
+            
+            # Fix paid_amount > total
+            if paid > total and total > 0:
+                updates["paid_amount"] = total
+                paid = total
+            
+            # Fix status based on paid_amount
+            if paid >= total and total > 0 and status not in ["paid", "cancelled"]:
+                updates["status"] = "paid"
+            elif paid > 0 and paid < total and status == "pending":
+                updates["status"] = "partial"
+            
+            if updates:
+                await db.invoices.update_one({"id": inv["id"]}, {"$set": updates})
+                fixed_count += 1
+        
+        if fixed_count > 0:
+            tests.append(SystemTestResult(
+                test_name="Montos Pagados en Facturas",
+                category="database",
+                status="passed",
+                message=f"{fixed_count} factura(s) con montos/estados corregidos",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="paid_amount y status corregidos automáticamente"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Montos Pagados en Facturas",
+                category="database",
+                status="passed",
+                message=f"Todos los montos pagados son válidos",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Montos Pagados en Facturas",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # Test 13: Overdue invoices status
     test_start = datetime.now(timezone.utc)
     try:
         now = datetime.now(timezone.utc)
         invoices = await db.invoices.find({"status": "pending"}, {"_id": 0}).to_list(5000)
         fixed_count = 0
+        
         for inv in invoices:
             if inv.get("due_date"):
-                due_date = datetime.fromisoformat(inv["due_date"].replace("Z", "+00:00")) if isinstance(inv["due_date"], str) else inv["due_date"]
-                # Ensure timezone-aware comparison
-                if due_date.tzinfo is None:
-                    due_date = due_date.replace(tzinfo=timezone.utc)
-                if due_date < now:
-                    await db.invoices.update_one(
-                        {"id": inv["id"]},
-                        {"$set": {"status": "overdue"}}
-                    )
-                    fixed_count += 1
+                try:
+                    due_date_str = inv["due_date"]
+                    if isinstance(due_date_str, str):
+                        due_date = datetime.fromisoformat(due_date_str.replace("Z", "+00:00"))
+                    else:
+                        due_date = due_date_str
+                    
+                    if due_date.tzinfo is None:
+                        due_date = due_date.replace(tzinfo=timezone.utc)
+                    
+                    if due_date < now:
+                        await db.invoices.update_one(
+                            {"id": inv["id"]},
+                            {"$set": {"status": "overdue"}}
+                        )
+                        fixed_count += 1
+                except:
+                    pass
         
         if fixed_count > 0:
             tests.append(SystemTestResult(
@@ -3243,7 +3553,7 @@ async def run_system_tests(current_user: dict = Depends(require_super_admin)):
                 message=f"{fixed_count} factura(s) marcadas como vencidas",
                 duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
                 auto_fixed=True,
-                fix_details="Facturas pendientes pasadas a vencidas automáticamente"
+                fix_details="Facturas pendientes con fecha vencida actualizadas"
             ).model_dump())
         else:
             tests.append(SystemTestResult(
@@ -3261,6 +3571,541 @@ async def run_system_tests(current_user: dict = Depends(require_super_admin)):
             message=f"Error: {str(e)}",
             duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
         ).model_dump())
+    
+    # Test 14: Invoice numbers uniqueness
+    test_start = datetime.now(timezone.utc)
+    try:
+        pipeline = [
+            {"$group": {"_id": {"company_id": "$company_id", "invoice_number": "$invoice_number"}, "count": {"$sum": 1}}},
+            {"$match": {"count": {"$gt": 1}}}
+        ]
+        duplicates = await db.invoices.aggregate(pipeline).to_list(100)
+        
+        if duplicates:
+            # Fix duplicate invoice numbers
+            for dup in duplicates:
+                invoices_to_fix = await db.invoices.find({
+                    "company_id": dup["_id"]["company_id"],
+                    "invoice_number": dup["_id"]["invoice_number"]
+                }, {"_id": 0, "id": 1}).to_list(100)
+                
+                for idx, inv in enumerate(invoices_to_fix[1:], 1):  # Skip first one
+                    new_number = f"{dup['_id']['invoice_number']}-DUP{idx}"
+                    await db.invoices.update_one({"id": inv["id"]}, {"$set": {"invoice_number": new_number}})
+            
+            tests.append(SystemTestResult(
+                test_name="Folios de Facturas Únicos",
+                category="database",
+                status="passed",
+                message=f"{len(duplicates)} grupo(s) de folios duplicados corregidos",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Folios duplicados renombrados con sufijo -DUP"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Folios de Facturas Únicos",
+                category="database",
+                status="passed",
+                message="Todos los folios de factura son únicos",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Folios de Facturas Únicos",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # ========== CATEGORY: PROJECTS ==========
+    
+    # Test 15: Project progress validation
+    test_start = datetime.now(timezone.utc)
+    try:
+        projects = await db.projects.find({}, {"_id": 0}).to_list(1000)
+        fixed_count = 0
+        
+        for p in projects:
+            progress = p.get("total_progress", 0) or 0
+            updates = {}
+            
+            if progress > 100:
+                updates["total_progress"] = 100
+            elif progress < 0:
+                updates["total_progress"] = 0
+            
+            if updates:
+                await db.projects.update_one({"id": p["id"]}, {"$set": updates})
+                fixed_count += 1
+        
+        if fixed_count > 0:
+            tests.append(SystemTestResult(
+                test_name="Progreso de Proyectos",
+                category="database",
+                status="passed",
+                message=f"{fixed_count} proyecto(s) con progreso corregido (0-100%)",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Valores fuera de rango ajustados"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Progreso de Proyectos",
+                category="database",
+                status="passed",
+                message=f"{len(projects)} proyectos con progreso válido",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Progreso de Proyectos",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # Test 16: Orphan projects
+    test_start = datetime.now(timezone.utc)
+    try:
+        projects = await db.projects.find({}, {"_id": 0, "id": 1, "company_id": 1}).to_list(1000)
+        companies = await db.companies.find({}, {"_id": 0, "id": 1}).to_list(1000)
+        company_ids = {c["id"] for c in companies}
+        orphan_projects = [p for p in projects if p.get("company_id") and p["company_id"] not in company_ids]
+        
+        if orphan_projects:
+            result = await db.projects.delete_many({"company_id": {"$nin": list(company_ids)}})
+            tests.append(SystemTestResult(
+                test_name="Proyectos Huérfanos",
+                category="database",
+                status="passed",
+                message=f"{result.deleted_count} proyecto(s) huérfano(s) eliminados",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Proyectos sin empresa válida eliminados"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Proyectos Huérfanos",
+                category="database",
+                status="passed",
+                message=f"{len(projects)} proyectos verificados",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Proyectos Huérfanos",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # ========== CATEGORY: QUOTES ==========
+    
+    # Test 17: Orphan quotes
+    test_start = datetime.now(timezone.utc)
+    try:
+        quotes = await db.quotes.find({}, {"_id": 0, "id": 1, "company_id": 1, "client_id": 1}).to_list(5000)
+        companies = await db.companies.find({}, {"_id": 0, "id": 1}).to_list(1000)
+        company_ids = {c["id"] for c in companies}
+        orphan_quotes = [q for q in quotes if q.get("company_id") and q["company_id"] not in company_ids]
+        
+        if orphan_quotes:
+            result = await db.quotes.delete_many({"company_id": {"$nin": list(company_ids)}})
+            tests.append(SystemTestResult(
+                test_name="Cotizaciones Huérfanas",
+                category="database",
+                status="passed",
+                message=f"{result.deleted_count} cotización(es) huérfana(s) eliminadas",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Cotizaciones sin empresa válida eliminadas"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Cotizaciones Huérfanas",
+                category="database",
+                status="passed",
+                message=f"{len(quotes)} cotizaciones verificadas",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Cotizaciones Huérfanas",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # ========== CATEGORY: PAYMENTS ==========
+    
+    # Test 18: Orphan payments
+    test_start = datetime.now(timezone.utc)
+    try:
+        payments = await db.payments.find({}, {"_id": 0, "id": 1, "invoice_id": 1}).to_list(10000)
+        invoices = await db.invoices.find({}, {"_id": 0, "id": 1}).to_list(5000)
+        invoice_ids = {i["id"] for i in invoices}
+        orphan_payments = [p for p in payments if p.get("invoice_id") and p["invoice_id"] not in invoice_ids]
+        
+        if orphan_payments:
+            result = await db.payments.delete_many({"invoice_id": {"$nin": list(invoice_ids)}})
+            tests.append(SystemTestResult(
+                test_name="Pagos Huérfanos",
+                category="database",
+                status="passed",
+                message=f"{result.deleted_count} pago(s) huérfano(s) eliminados",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Pagos sin factura válida eliminados"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Pagos Huérfanos",
+                category="database",
+                status="passed",
+                message=f"{len(payments)} pagos verificados",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Pagos Huérfanos",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # Test 19: Payment amounts sync with invoice paid_amount
+    test_start = datetime.now(timezone.utc)
+    try:
+        invoices = await db.invoices.find({"status": {"$ne": "cancelled"}}, {"_id": 0, "id": 1, "paid_amount": 1}).to_list(5000)
+        fixed_count = 0
+        
+        for inv in invoices:
+            payments = await db.payments.find({"invoice_id": inv["id"]}, {"_id": 0, "amount": 1}).to_list(1000)
+            total_paid = sum(float(p.get("amount", 0) or 0) for p in payments)
+            current_paid = float(inv.get("paid_amount", 0) or 0)
+            
+            if abs(total_paid - current_paid) > 0.01:
+                await db.invoices.update_one(
+                    {"id": inv["id"]},
+                    {"$set": {"paid_amount": round(total_paid, 2)}}
+                )
+                fixed_count += 1
+        
+        if fixed_count > 0:
+            tests.append(SystemTestResult(
+                test_name="Sincronización Pagos-Facturas",
+                category="integration",
+                status="passed",
+                message=f"{fixed_count} factura(s) con monto pagado resincronizado",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="paid_amount recalculado desde tabla de pagos"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Sincronización Pagos-Facturas",
+                category="integration",
+                status="passed",
+                message="Todos los montos pagados están sincronizados",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Sincronización Pagos-Facturas",
+            category="integration",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # ========== CATEGORY: TICKETS ==========
+    
+    # Test 20: Tickets integrity
+    test_start = datetime.now(timezone.utc)
+    try:
+        tickets = await db.tickets.find({}, {"_id": 0, "id": 1, "company_id": 1, "status": 1, "ticket_number": 1}).to_list(1000)
+        companies = await db.companies.find({}, {"_id": 0, "id": 1}).to_list(1000)
+        company_ids = {c["id"] for c in companies}
+        
+        fixed_count = 0
+        for ticket in tickets:
+            updates = {}
+            
+            # Check for valid company
+            if ticket.get("company_id") and ticket["company_id"] not in company_ids:
+                # Delete orphan ticket
+                await db.tickets.delete_one({"id": ticket["id"]})
+                fixed_count += 1
+                continue
+            
+            # Check for valid status
+            valid_statuses = ["open", "in_progress", "resolved", "closed"]
+            if ticket.get("status") and ticket["status"] not in valid_statuses:
+                updates["status"] = "open"
+            
+            # Check for ticket number
+            if not ticket.get("ticket_number"):
+                count = await db.tickets.count_documents({})
+                updates["ticket_number"] = f"TKT-{datetime.now().year}-{count:04d}"
+            
+            if updates:
+                await db.tickets.update_one({"id": ticket["id"]}, {"$set": updates})
+                fixed_count += 1
+        
+        if fixed_count > 0:
+            tests.append(SystemTestResult(
+                test_name="Integridad de Tickets",
+                category="database",
+                status="passed",
+                message=f"{fixed_count} ticket(s) corregidos/eliminados",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Tickets huérfanos o con datos inválidos corregidos"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Integridad de Tickets",
+                category="database",
+                status="passed",
+                message=f"{len(tickets)} tickets verificados",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Integridad de Tickets",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # ========== CATEGORY: NOTIFICATIONS ==========
+    
+    # Test 21: Clean old notifications
+    test_start = datetime.now(timezone.utc)
+    try:
+        # Delete notifications older than 90 days
+        cutoff = datetime.now(timezone.utc) - timedelta(days=90)
+        result = await db.notifications.delete_many({
+            "created_at": {"$lt": cutoff.isoformat()},
+            "read": True
+        })
+        
+        if result.deleted_count > 0:
+            tests.append(SystemTestResult(
+                test_name="Limpieza de Notificaciones",
+                category="maintenance",
+                status="passed",
+                message=f"{result.deleted_count} notificación(es) antigua(s) eliminadas (>90 días)",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Notificaciones leídas de más de 90 días eliminadas"
+            ).model_dump())
+        else:
+            total = await db.notifications.count_documents({})
+            tests.append(SystemTestResult(
+                test_name="Limpieza de Notificaciones",
+                category="maintenance",
+                status="passed",
+                message=f"{total} notificaciones en el sistema",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Limpieza de Notificaciones",
+            category="maintenance",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # ========== CATEGORY: REMINDERS ==========
+    
+    # Test 22: Reminders validation
+    test_start = datetime.now(timezone.utc)
+    try:
+        reminders = await db.reminders.find({}, {"_id": 0, "id": 1, "user_id": 1, "company_id": 1}).to_list(5000)
+        users = await db.users.find({}, {"_id": 0, "id": 1}).to_list(1000)
+        user_ids = {u["id"] for u in users}
+        
+        orphan_reminders = [r for r in reminders if r.get("user_id") and r["user_id"] not in user_ids]
+        
+        if orphan_reminders:
+            result = await db.reminders.delete_many({"user_id": {"$nin": list(user_ids)}})
+            tests.append(SystemTestResult(
+                test_name="Recordatorios Huérfanos",
+                category="database",
+                status="passed",
+                message=f"{result.deleted_count} recordatorio(s) huérfano(s) eliminados",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Recordatorios de usuarios eliminados fueron borrados"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Recordatorios Huérfanos",
+                category="database",
+                status="passed",
+                message=f"{len(reminders)} recordatorios verificados",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Recordatorios Huérfanos",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # ========== CATEGORY: ACTIVITY LOGS ==========
+    
+    # Test 23: Clean old activity logs
+    test_start = datetime.now(timezone.utc)
+    try:
+        # Delete activity logs older than 180 days
+        cutoff = datetime.now(timezone.utc) - timedelta(days=180)
+        result = await db.activity_logs.delete_many({
+            "created_at": {"$lt": cutoff.isoformat()}
+        })
+        
+        if result.deleted_count > 0:
+            tests.append(SystemTestResult(
+                test_name="Limpieza de Logs de Actividad",
+                category="maintenance",
+                status="passed",
+                message=f"{result.deleted_count} log(s) antiguo(s) eliminados (>180 días)",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Logs de actividad de más de 180 días eliminados"
+            ).model_dump())
+        else:
+            total = await db.activity_logs.count_documents({})
+            tests.append(SystemTestResult(
+                test_name="Limpieza de Logs de Actividad",
+                category="maintenance",
+                status="passed",
+                message=f"{total} logs de actividad en el sistema",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Limpieza de Logs de Actividad",
+            category="maintenance",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # ========== CATEGORY: SUBSCRIPTIONS ==========
+    
+    # Test 24: Subscription status validation
+    test_start = datetime.now(timezone.utc)
+    try:
+        now = datetime.now(timezone.utc)
+        companies = await db.companies.find({}, {"_id": 0, "id": 1, "subscription_status": 1, "subscription_end_date": 1}).to_list(100)
+        fixed_count = 0
+        
+        for company in companies:
+            end_date_str = company.get("subscription_end_date")
+            current_status = company.get("subscription_status", "active")
+            
+            if end_date_str:
+                try:
+                    if isinstance(end_date_str, str):
+                        end_date = datetime.fromisoformat(end_date_str.replace("Z", "+00:00"))
+                    else:
+                        end_date = end_date_str
+                    
+                    if end_date.tzinfo is None:
+                        end_date = end_date.replace(tzinfo=timezone.utc)
+                    
+                    # If subscription has expired
+                    if end_date < now and current_status == "active":
+                        await db.companies.update_one(
+                            {"id": company["id"]},
+                            {"$set": {"subscription_status": "suspended"}}
+                        )
+                        fixed_count += 1
+                except:
+                    pass
+        
+        if fixed_count > 0:
+            tests.append(SystemTestResult(
+                test_name="Estado de Suscripciones",
+                category="integration",
+                status="passed",
+                message=f"{fixed_count} empresa(s) suspendidas por suscripción vencida",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000),
+                auto_fixed=True,
+                fix_details="Empresas con suscripción vencida marcadas como suspendidas"
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="Estado de Suscripciones",
+                category="integration",
+                status="passed",
+                message="Estados de suscripción correctos",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="Estado de Suscripciones",
+            category="integration",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # ========== CATEGORY: DATA CONSISTENCY ==========
+    
+    # Test 25: Duplicate IDs check
+    test_start = datetime.now(timezone.utc)
+    try:
+        collections_to_check = ["companies", "users", "clients", "invoices", "projects", "quotes", "payments", "tickets"]
+        duplicates_found = []
+        
+        for coll_name in collections_to_check:
+            pipeline = [
+                {"$group": {"_id": "$id", "count": {"$sum": 1}}},
+                {"$match": {"count": {"$gt": 1}}}
+            ]
+            dups = await db[coll_name].aggregate(pipeline).to_list(100)
+            if dups:
+                duplicates_found.append(f"{coll_name}: {len(dups)}")
+        
+        if duplicates_found:
+            tests.append(SystemTestResult(
+                test_name="IDs Duplicados",
+                category="database",
+                status="warning",
+                message=f"IDs duplicados encontrados en: {', '.join(duplicates_found)}",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+        else:
+            tests.append(SystemTestResult(
+                test_name="IDs Duplicados",
+                category="database",
+                status="passed",
+                message="No se encontraron IDs duplicados",
+                duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+            ).model_dump())
+    except Exception as e:
+        tests.append(SystemTestResult(
+            test_name="IDs Duplicados",
+            category="database",
+            status="failed",
+            message=f"Error: {str(e)}",
+            duration_ms=int((datetime.now(timezone.utc) - test_start).total_seconds() * 1000)
+        ).model_dump())
+    
+    # ========== SUMMARY ==========
     
     # Calculate totals
     passed = len([t for t in tests if t["status"] == "passed"])
@@ -3281,9 +4126,12 @@ async def run_system_tests(current_user: dict = Depends(require_super_admin)):
         overall_status=overall_status
     )
     
-    await db.system_reports.insert_one(report.model_dump())
+    report_dict = report.model_dump()
+    report_dict["execution_time_ms"] = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
     
-    return report.model_dump()
+    await db.system_reports.insert_one({**report_dict})
+    
+    return report_dict
 
 @api_router.get("/super-admin/system/reports")
 async def get_system_reports(

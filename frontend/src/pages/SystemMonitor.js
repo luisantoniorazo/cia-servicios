@@ -72,6 +72,17 @@ const CATEGORY_ICONS = {
   backend: <Server className="h-4 w-4" />,
   frontend: <FileWarning className="h-4 w-4" />,
   integration: <Zap className="h-4 w-4" />,
+  security: <Shield className="h-4 w-4" />,
+  maintenance: <Wrench className="h-4 w-4" />,
+};
+
+const CATEGORY_LABELS = {
+  database: "Base de Datos",
+  backend: "Backend",
+  frontend: "Frontend",
+  integration: "Integración",
+  security: "Seguridad",
+  maintenance: "Mantenimiento",
 };
 
 export const SystemMonitor = () => {

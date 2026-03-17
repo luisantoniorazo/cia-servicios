@@ -300,6 +300,28 @@ Company Admin (CIA Servicios Demo):
   - Badge ámbar para recordatorios pendientes
   - Actualización automática cada 60 segundos
   
+- ✨ **Monitor del Sistema MEJORADO (25 pruebas)**
+  - Validación completa de integridad de datos
+  - Auto-reparación automática de errores detectados
+  - Nuevas pruebas:
+    - Índices de Base de Datos (auto-creación)
+    - Roles de Usuarios (validación)
+    - Contraseñas de Usuarios (detección de vacías)
+    - Clientes Huérfanos (limpieza)
+    - Nombres de Clientes (validación)
+    - Montos Pagados en Facturas (sincronización)
+    - Folios de Facturas Únicos (detección de duplicados)
+    - Proyectos Huérfanos (limpieza)
+    - Cotizaciones Huérfanas (limpieza)
+    - Pagos Huérfanos (limpieza)
+    - Sincronización Pagos-Facturas (recálculo automático)
+    - Integridad de Tickets (validación)
+    - Limpieza de Notificaciones (>90 días)
+    - Recordatorios Huérfanos (limpieza)
+    - Limpieza de Logs de Actividad (>180 días)
+    - Estado de Suscripciones (actualización automática)
+    - IDs Duplicados (detección)
+  
 - 📋 **Plan de Refactorización Documentado**
   - Creado /app/backend/REFACTORING_PLAN.md
   - Estructura modular existente (/models/, /routes/, /utils/)
