@@ -2,9 +2,9 @@
 
 ## Información General
 - **Nombre**: CIA SERVICIOS - Control Estratégico de Servicios y Proyectos
-- **Versión**: 3.3.0
+- **Versión**: 3.4.0
 - **Última Actualización**: Marzo 2026
-- **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2 + Facturama
+- **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2 + Facturama + Stripe
 
 ## Problem Statement Original
 Aplicación empresarial de renta mensual que permita gestionar, monitorear y optimizar todos los procesos operativos, comerciales y estratégicos de una empresa mexicana de servicios y proyectos industriales. Sistema multi-tenant con Super Admin para gestión de suscripciones.
@@ -19,6 +19,7 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - **Monitor del Sistema (25 pruebas diagnósticas)** ✨
 - **Configuración de Servidor de Bases de Datos** ✨
 - **Configuración de Facturama (PAC)** ✨ NEW v3.3.0
+- **Sistema de Facturación de Suscripciones** ✨ NEW v3.4.0
 
 ### Portal de Empresa (`/empresa/{slug}/login`)
 - Login por empresa
@@ -26,6 +27,7 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - Gestión de usuarios y permisos
 - **Sidebar filtrado por permisos de módulo** ✨
 - **Facturación Electrónica (CFDI 4.0)** ✨ NEW v3.3.0
+- **Mi Suscripción - Vista y pago de suscripción** ✨ NEW v3.4.0
 
 ## Módulos Implementados ✅
 
@@ -132,6 +134,18 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - [x] **Notificaciones masivas (Admin)** ✨ NEW
 - [x] **Badge de recordatorios en Sidebar** ✨ NEW
 
+### 16. Sistema de Facturación de Suscripciones ✨ NEW v3.4.0
+- [x] **Planes de suscripción** - Base ($2,500/mes) y con Facturación (+$500)
+- [x] **Ciclos de facturación** - Mensual, Trimestral (5% desc), Semestral (10% desc), Anual (15% desc)
+- [x] **Dashboard de ingresos** - Estadísticas, gráficos mensuales, facturas pendientes
+- [x] **Configuración de métodos de pago** - Stripe (tarjeta) y transferencia bancaria
+- [x] **Gestión de cuentas bancarias** - Datos para depósitos
+- [x] **Creación de facturas** - Con cálculo automático de descuentos
+- [x] **Registro de pagos manuales** - Para transferencias bancarias
+- [x] **Portal del cliente** - Ver suscripción, facturas pendientes, pagar
+- [x] **Pago con tarjeta (Stripe)** - Integración con checkout
+- [x] **Historial de pagos** - Para empresas clientes
+
 ## Roles y Permisos
 | Rol | Descripción |
 |-----|-------------|
@@ -177,10 +191,18 @@ Aplicación empresarial de renta mensual que permita gestionar, monitorear y opt
 - `PUT /api/super-admin/companies/{id}/admin` - Actualizar datos del admin
 - `PATCH /api/super-admin/companies/{id}/admin/toggle-status` - Bloquear/desbloquear admin
 
-### Suscripciones (Super Admin) ✨ NEW
-- `GET /api/super-admin/companies/{id}/subscription` - Ver estado de suscripción
-- `POST /api/super-admin/companies/{id}/subscription/renew` - Renovar suscripción
-- `GET /api/super-admin/check-expirations` - Ver empresas próximas a vencer
+### Suscripciones (Super Admin) ✨ UPDATED v3.4.0
+- `GET /api/subscriptions/plans` - Obtener planes y ciclos de facturación
+- `GET /api/subscriptions/config` - Obtener configuración de facturación
+- `POST /api/subscriptions/config` - Guardar configuración (cuentas bancarias, etc.)
+- `GET /api/subscriptions/invoices` - Listar facturas de suscripción
+- `POST /api/subscriptions/invoices` - Crear factura de suscripción
+- `POST /api/subscriptions/invoices/{id}/record-payment` - Registrar pago manual
+- `GET /api/subscriptions/dashboard` - Dashboard de ingresos y estadísticas
+- `GET /api/subscriptions/my-subscription` - Vista del cliente de su suscripción
+- `POST /api/subscriptions/request-invoice` - Cliente solicita factura de renovación
+- `POST /api/subscriptions/checkout/create-session` - Crear sesión Stripe para pago
+- `GET /api/subscriptions/checkout/status/{session_id}` - Verificar estado de pago Stripe
 
 ### Migración MySQL (Super Admin) ✨ NEW
 - `POST /api/super-admin/test-mysql-connection` - Probar conexión MySQL
