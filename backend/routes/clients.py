@@ -8,20 +8,30 @@ from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
 
-from .auth import get_current_user, require_admin
-
 router = APIRouter(prefix="/clients", tags=["clients"])
 
-# Database reference
+# Database reference and dependencies
 _db = None
 _log_activity = None
 _create_notification = None
+_get_current_user = None
+_require_admin = None
 
-def init_clients_routes(db, log_activity_func, create_notification_func):
-    global _db, _log_activity, _create_notification
+def init_clients_routes(db, log_activity_func, create_notification_func, get_current_user_func=None, require_admin_func=None):
+    global _db, _log_activity, _create_notification, _get_current_user, _require_admin
     _db = db
     _log_activity = log_activity_func
     _create_notification = create_notification_func
+    _get_current_user = get_current_user_func
+    _require_admin = require_admin_func
+
+def get_current_user():
+    """Wrapper for current user dependency"""
+    return _get_current_user
+
+def require_admin():
+    """Wrapper for admin dependency - uses current_user if no specific func"""
+    return _require_admin if _require_admin else _get_current_user
 
 # ============== MODELS ==============
 class ClientCreate(BaseModel):

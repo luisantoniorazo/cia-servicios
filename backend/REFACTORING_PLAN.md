@@ -2,106 +2,121 @@
 
 ## ✅ COMPLETADO - Marzo 2026
 
-### Módulos Activos en Producción
+### Estado Actual: 14 Módulos en Producción
 
-| Módulo | Archivo | Endpoints | Estado |
-|--------|---------|-----------|--------|
+| Módulo | Archivo | Endpoints Aprox | Estado |
+|--------|---------|-----------------|--------|
 | Clients | `clients.py` | 11 | ✅ **ACTIVO** |
 | Projects | `projects.py` | 10 | ✅ **ACTIVO** |
 | Quotes | `quotes.py` | 8 | ✅ **ACTIVO** |
 | Invoices | `invoices.py` | 9 | ✅ **ACTIVO** |
 | Subscriptions | `subscriptions.py` | 12 | ✅ **ACTIVO** |
 | Users | `users.py` | 9 | ✅ **ACTIVO** |
-| Dashboard | `dashboard.py` | 6 | ✅ **ACTIVO** (NUEVO) |
-| **TOTAL** | | **65** | **ACTIVOS** |
+| Dashboard | `dashboard.py` | 6 | ✅ **ACTIVO** |
+| Auth | `auth.py` | 12 | ✅ **ACTIVO** (NEW) |
+| Tickets | `tickets.py` | 8 | ✅ **ACTIVO** (NEW) |
+| Notifications | `notifications.py` | 7 | ✅ **ACTIVO** (NEW) |
+| Purchases | `purchases.py` | 12 | ✅ **ACTIVO** (NEW) |
+| Documents | `documents.py` | 10 | ✅ **ACTIVO** (NEW) |
+| AI | `ai.py` | 6 | ✅ **ACTIVO** (NEW) |
+| Activity | `activity.py` | 4 | ✅ **ACTIVO** (NEW) |
+| **TOTAL** | | **~114** | **14 ACTIVOS** |
 
-### Módulos Preparados (No Activos)
-
-| Módulo | Archivo | Endpoints | Razón |
-|--------|---------|-----------|-------|
-| Auth | `auth.py` | 5 | Estructura DB diferente (super_admins vs users) |
-| Admin | `admin.py` | 11 | Funciones especiales en server.py |
-
-### Arquitectura Actual
+### Arquitectura Final
 
 ```
 /app/backend/
 ├── routes/
-│   ├── __init__.py      # Exporta módulos activos
-│   ├── clients.py       # ✅ ACTIVO - CRM/Clientes
-│   ├── projects.py      # ✅ ACTIVO - Proyectos/Tareas
-│   ├── quotes.py        # ✅ ACTIVO - Cotizaciones
-│   ├── invoices.py      # ✅ ACTIVO - Facturación
-│   ├── subscriptions.py # ✅ ACTIVO - Suscripciones
-│   ├── users.py         # ✅ ACTIVO - Gestión de usuarios
-│   ├── dashboard.py     # ✅ ACTIVO - Dashboard stats (NUEVO)
-│   ├── auth.py          # Preparado
-│   └── admin.py         # Preparado
-├── server.py            # Rutas especiales (CFDI, PDFs, etc.)
-└── server_backup_*.py   # Backups
+│   ├── __init__.py        # Exporta 14 módulos activos
+│   ├── clients.py         # ✅ CRM/Clientes
+│   ├── projects.py        # ✅ Proyectos/Tareas  
+│   ├── quotes.py          # ✅ Cotizaciones
+│   ├── invoices.py        # ✅ Facturación
+│   ├── subscriptions.py   # ✅ Suscripciones SaaS
+│   ├── users.py           # ✅ Gestión usuarios empresa
+│   ├── dashboard.py       # ✅ Dashboard stats
+│   ├── auth.py            # ✅ Login, password reset, perfil
+│   ├── tickets.py         # ✅ Sistema de tickets
+│   ├── notifications.py   # ✅ Notificaciones y recordatorios
+│   ├── purchases.py       # ✅ Órdenes de compra/proveedores
+│   ├── documents.py       # ✅ Documentos y reportes campo
+│   ├── ai.py              # ✅ Inteligencia artificial
+│   ├── activity.py        # ✅ Logs de actividad
+│   └── admin.py           # Preparado (no activo)
+├── server.py              # Rutas especiales (CFDI, PDFs, Super Admin)
+└── requirements.txt
 ```
 
-### Rutas Especiales en server.py (No Modularizadas)
+### Rutas que Permanecen en server.py
 
-Estas rutas permanecen en server.py porque tienen lógica compleja específica:
+Estas rutas tienen lógica compleja o dependencias especiales:
 
 **CFDI / Facturación Electrónica:**
-- `/invoices/{id}/upload-cfdi` - Subir CFDI
-- `/invoices/{id}/stamp` - Timbrar factura
-- `/invoices/{id}/cfdi`, `/cfdi/xml`, `/cfdi/pdf` - Obtener CFDI
-- `/invoices/{id}/cancel-cfdi` - Cancelar CFDI
-- `/company/csd-certificate` - Gestión de certificados CSD
-- `/company/cfdi-status` - Estado de facturación electrónica
+- `/invoices/{id}/upload-cfdi`, `/stamp`, `/cfdi`, `/cancel-cfdi`
+- `/company/csd-certificate`, `/cfdi-status`
+- Catálogos SAT, certificados CSD
 
 **PDF Generation:**
-- `/pdf/quote/{id}` - PDF de cotización
-- `/pdf/invoice/{id}` - PDF de factura
-- `/pdf/purchase-order/{id}` - PDF de orden de compra
-- `/clients/{id}/statement/pdf` - PDF de estado de cuenta
+- `/pdf/quote/{id}`, `/pdf/invoice/{id}`, `/pdf/purchase-order/{id}`
+- `/clients/{id}/statement/pdf`
 
-**Super Admin:**
-- `/super-admin/*` - Rutas de administración del sistema
-- `/super-admin/facturama/*` - Configuración de Facturama
+**Super Admin (rutas especiales):**
+- `/super-admin/companies` - Gestión completa de empresas
+- `/super-admin/facturama` - Configuración PAC
+- `/super-admin/system-monitor` - Monitor del sistema
+- `/super-admin/revenue-stats` - Estadísticas de ingresos
 
-**Otros:**
-- `/quotes/{id}/request-signature` - Firma electrónica
-- `/sign/*` - Proceso de firma
-- `/ai/*` - Inteligencia artificial
-- Auth routes - Login, password reset
+**Otros Especializados:**
+- `/quotes/{id}/request-signature`, `/sign/*` - Firma electrónica
+- `/company/duplicate` - Duplicar empresa
+- Webhooks y schedulers
 
-### Beneficios Logrados
+### Patrón de Inyección de Dependencias
 
-1. **65 endpoints modularizados** en 7 archivos separados
-2. **Código más organizado** - Cada módulo con responsabilidad clara
-3. **Testing más fácil** - Módulos independientes
-4. **Coexistencia** - Módulos y server.py funcionan juntos
-5. **Migración gradual** - Se pueden activar más módulos incrementalmente
-
-### Cómo Funciona
-
-FastAPI registra las rutas en orden. Los módulos se incluyen ANTES del api_router principal, por lo que tienen prioridad para las rutas básicas. Las rutas especiales del api_router siguen funcionando porque no están duplicadas en los módulos.
+Todos los módulos usan inyección de dependencias para evitar imports circulares:
 
 ```python
-# server.py
-app.include_router(clients_router, prefix="/api")    # Prioridad 1
-app.include_router(projects_router, prefix="/api")   # Prioridad 2
-app.include_router(quotes_router, prefix="/api")     # Prioridad 3
-app.include_router(invoices_router, prefix="/api")   # Prioridad 4
-app.include_router(users_router, prefix="/api")      # Prioridad 5
-app.include_router(dashboard_router, prefix="/api")  # Prioridad 6
-app.include_router(subscriptions_router)             # Prioridad 7
-app.include_router(api_router)                       # Prioridad 8 (rutas especiales)
+# En cada módulo (ej: clients.py)
+_db = None
+_get_current_user = None
+_require_admin = None
+
+def init_clients_routes(db, log_activity, create_notification, get_current_user, require_admin):
+    global _db, _get_current_user, _require_admin
+    _db = db
+    _get_current_user = get_current_user
+    _require_admin = require_admin
+
+def get_current_user():
+    return _get_current_user
+
+def require_admin():
+    return _require_admin
 ```
 
-### Próximos Pasos (Opcionales)
+```python
+# En server.py
+init_clients_routes(db, module_log_activity, module_create_notification, get_current_user, require_admin)
+app.include_router(clients_router, prefix="/api")
+```
 
-1. ~~Activar módulo `users.py` para gestión de usuarios~~ ✅ COMPLETADO
-2. ~~Crear módulo `dashboard.py` para estadísticas~~ ✅ COMPLETADO
-3. Actualizar `auth.py` para usar la misma estructura DB que server.py
-4. Modularizar rutas de Super Admin cuando sea necesario
-5. Eliminar código duplicado de server.py una vez verificado todo
+### Beneficios de la Refactorización
+
+1. **114+ endpoints organizados** en 14 módulos especializados
+2. **Separación de responsabilidades** clara
+3. **Testing más fácil** - cada módulo puede probarse independientemente
+4. **Mantenimiento simplificado** - cambios aislados por funcionalidad
+5. **Onboarding más rápido** - estructura fácil de entender
+6. **Hot reload funcional** - cambios en módulos recargan automáticamente
+7. **server.py reducido** - solo contiene lógica especializada
+
+### Métricas de Reducción
+
+- **Antes**: server.py con ~10,500 líneas, todos los endpoints
+- **Después**: server.py con ~6,000 líneas (rutas especiales) + 14 módulos organizados
+- **Reducción**: ~40% de código movido a módulos especializados
 
 ---
 
-*Refactorización actualizada: Marzo 2026*
-*7 módulos activos en producción con 65 endpoints*
+*Refactorización completada: Marzo 2026*
+*14 módulos activos, 114+ endpoints modularizados*

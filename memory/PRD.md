@@ -2,12 +2,34 @@
 
 ## Información General
 - **Nombre**: CIA SERVICIOS - Control Estratégico de Servicios y Proyectos
-- **Versión**: 3.5.0
+- **Versión**: 3.6.0
 - **Última Actualización**: Marzo 2026
 - **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2 + Facturama + Stripe
 
 ## Problem Statement Original
 Aplicación empresarial de renta mensual que permita gestionar, monitorear y optimizar todos los procesos operativos, comerciales y estratégicos de una empresa mexicana de servicios y proyectos industriales. Sistema multi-tenant con Super Admin para gestión de suscripciones.
+
+## Arquitectura Modular Backend (v3.6.0)
+
+El backend ha sido completamente refactorizado en **14 módulos independientes** con ~114 endpoints:
+
+```
+/app/backend/routes/
+├── clients.py       # CRM/Clientes (11 endpoints)
+├── projects.py      # Proyectos (10 endpoints)
+├── quotes.py        # Cotizaciones (8 endpoints)
+├── invoices.py      # Facturación (9 endpoints)
+├── subscriptions.py # Suscripciones SaaS (12 endpoints)
+├── users.py         # Usuarios empresa (9 endpoints)
+├── dashboard.py     # Dashboard stats (6 endpoints)
+├── auth.py          # Auth/Login (12 endpoints)
+├── tickets.py       # Tickets soporte (8 endpoints)
+├── notifications.py # Notificaciones (7 endpoints)
+├── purchases.py     # Compras/Proveedores (12 endpoints)
+├── documents.py     # Documentos (10 endpoints)
+├── ai.py            # IA/Chat (6 endpoints)
+└── activity.py      # Activity logs (4 endpoints)
+```
 
 ## Arquitectura Multi-Portal
 

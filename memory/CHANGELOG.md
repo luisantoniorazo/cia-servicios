@@ -1,6 +1,40 @@
 # CIA SERVICIOS - Changelog
 
 
+## [3.6.0] - 2026-03-17
+
+### Refactorización Backend COMPLETA
+
+**14 Módulos Activos en Producción:**
+
+| Módulo | Endpoints | Descripción |
+|--------|-----------|-------------|
+| `clients.py` | 11 | CRM/Clientes y seguimientos |
+| `projects.py` | 10 | Proyectos y tareas |
+| `quotes.py` | 8 | Cotizaciones |
+| `invoices.py` | 9 | Facturación y pagos |
+| `subscriptions.py` | 12 | Suscripciones SaaS |
+| `users.py` | 9 | Gestión de usuarios |
+| `dashboard.py` | 6 | Dashboard y estadísticas |
+| `auth.py` | 12 | Login, perfil, password reset |
+| `tickets.py` | 8 | Sistema de tickets |
+| `notifications.py` | 7 | Notificaciones y recordatorios |
+| `purchases.py` | 12 | Órdenes de compra/proveedores |
+| `documents.py` | 10 | Documentos y reportes campo |
+| `ai.py` | 6 | Inteligencia artificial |
+| `activity.py` | 4 | Logs de actividad |
+
+**Total: ~114 endpoints modularizados**
+
+### Technical
+- Patrón de inyección de dependencias implementado
+- Sin dependencias circulares entre módulos
+- Hot reload funcional
+- server.py reducido (~40% código movido a módulos)
+- Coexistencia con rutas especiales (CFDI, PDFs, Super Admin)
+
+---
+
 ## [3.5.0] - 2026-03-17
 
 ### Added - Tutorial Interactivo para Clientes

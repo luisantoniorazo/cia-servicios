@@ -8,18 +8,26 @@ from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
 
-from .auth import get_current_user, require_admin
-
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 # Database reference
 _db = None
 _log_activity = None
+_get_current_user = None
+_require_admin = None
 
-def init_projects_routes(db, log_activity_func):
-    global _db, _log_activity
+def init_projects_routes(db, log_activity_func, get_current_user_func=None, require_admin_func=None):
+    global _db, _log_activity, _get_current_user, _require_admin
     _db = db
     _log_activity = log_activity_func
+    _get_current_user = get_current_user_func
+    _require_admin = require_admin_func
+
+def get_current_user():
+    return _get_current_user
+
+def require_admin():
+    return _require_admin if _require_admin else _get_current_user
 
 # ============== MODELS ==============
 class ProjectCreate(BaseModel):

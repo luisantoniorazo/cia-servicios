@@ -8,19 +8,28 @@ from typing import Optional, List
 from datetime import datetime, timezone
 import uuid
 
-from .auth import get_current_user
-from .invoices import calculate_invoice_totals
-
 router = APIRouter(prefix="/quotes", tags=["quotes"])
 
 # Database reference
 _db = None
 _log_activity = None
+_get_current_user = None
 
-def init_quotes_routes(db, log_activity_func):
-    global _db, _log_activity
+def init_quotes_routes(db, log_activity_func, get_current_user_func=None):
+    global _db, _log_activity, _get_current_user
     _db = db
     _log_activity = log_activity_func
+    _get_current_user = get_current_user_func
+
+def get_current_user():
+    return _get_current_user
+
+def calculate_invoice_totals(items, tax_rate=0.16):
+    """Calculate subtotal, tax and total for invoice items"""
+    subtotal = sum(item.get("quantity", 0) * item.get("unit_price", 0) for item in items)
+    tax = subtotal * tax_rate
+    total = subtotal + tax
+    return subtotal, tax, total
 
 # ============== MODELS ==============
 class QuoteItem(BaseModel):

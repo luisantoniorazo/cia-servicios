@@ -1,240 +1,347 @@
 """
-Authentication & Authorization Routes
-Rutas de autenticación para Super Admin y usuarios de empresa
+Auth Routes - CIA SERVICIOS
+Autenticación, login, password reset y perfil de usuario
 """
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel, EmailStr
+from fastapi import APIRouter, Depends, HTTPException
 from typing import Optional
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
+import secrets
 import bcrypt
-import jwt
-import os
-import re
-import uuid
 
-router = APIRouter(tags=["auth"])
-security = HTTPBearer()
+router = APIRouter(tags=["Auth"])
 
-# JWT Configuration
-JWT_SECRET = os.environ.get('JWT_SECRET', 'cia-servicios-secret-key-2024')
-JWT_ALGORITHM = "HS256"
-SUPER_ADMIN_KEY = os.environ.get('SUPER_ADMIN_KEY', 'cia-master-2024')
+# Variables globales
+db = None
+get_current_user = None
+UserRole = None
+SubscriptionStatus = None
+JWT_SECRET = None
+JWT_ALGORITHM = None
+create_token = None
+verify_password = None
+hash_password = None
+send_email_async = None
 
-# Database reference - will be injected
-_db = None
 
-def init_auth_routes(db):
-    """Initialize auth routes with database connection"""
-    global _db
-    _db = db
+def init_auth_routes(database, user_dependency, user_role_enum, subscription_status_enum, 
+                     jwt_secret, jwt_algorithm, token_creator, password_verifier, password_hasher,
+                     email_sender=None):
+    """Inicializa las dependencias del módulo"""
+    global db, get_current_user, UserRole, SubscriptionStatus, JWT_SECRET, JWT_ALGORITHM
+    global create_token, verify_password, hash_password, send_email_async
+    db = database
+    get_current_user = user_dependency
+    UserRole = user_role_enum
+    SubscriptionStatus = subscription_status_enum
+    JWT_SECRET = jwt_secret
+    JWT_ALGORITHM = jwt_algorithm
+    create_token = token_creator
+    verify_password = password_verifier
+    hash_password = password_hasher
+    send_email_async = email_sender
 
-# ============== MODELS ==============
-class SuperAdminLogin(BaseModel):
-    email: EmailStr
-    password: str
 
-class UserLogin(BaseModel):
-    email: EmailStr
-    password: str
+# ============== SUPER ADMIN AUTH ==============
 
-class TokenResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    user: dict
-
-class UserResponse(BaseModel):
-    id: str
-    email: str
-    full_name: str
-    role: str
-    company_id: Optional[str] = None
-    company_slug: Optional[str] = None
-
-class CompanyPublic(BaseModel):
-    id: str
-    business_name: str
-    slug: str
-    logo_url: Optional[str] = None
-
-# ============== HELPERS ==============
-def hash_password(password: str) -> str:
-    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-def verify_password(password: str, hashed: str) -> bool:
-    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
-
-def create_token(user_id: str, email: str, role: str, company_id: Optional[str] = None, 
-                 company_slug: Optional[str] = None, full_name: Optional[str] = None) -> str:
-    payload = {
-        "sub": user_id,
-        "email": email,
-        "role": role,
-        "company_id": company_id,
-        "company_slug": company_slug,
-        "full_name": full_name,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=24)
+@router.post("/super-admin/login")
+async def super_admin_login(credentials: dict):
+    """Login exclusivo para Super Admin"""
+    email = credentials.get("email")
+    password = credentials.get("password")
+    
+    user_doc = await db.users.find_one({"email": email, "role": UserRole.SUPER_ADMIN}, {"_id": 0})
+    if not user_doc:
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+    
+    if not verify_password(password, user_doc.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
+    
+    if isinstance(user_doc.get("created_at"), str):
+        user_doc["created_at"] = datetime.fromisoformat(user_doc["created_at"])
+    
+    token = create_token(user_doc["id"], user_doc["email"], user_doc["role"], None, None, user_doc.get("full_name"))
+    
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {k: v for k, v in user_doc.items() if k != "password_hash"}
     }
-    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
-def generate_slug(business_name: str) -> str:
-    """Generate URL-friendly slug from business name"""
-    slug = business_name.lower()
-    slug = re.sub(r'[áàäâ]', 'a', slug)
-    slug = re.sub(r'[éèëê]', 'e', slug)
-    slug = re.sub(r'[íìïî]', 'i', slug)
-    slug = re.sub(r'[óòöô]', 'o', slug)
-    slug = re.sub(r'[úùüû]', 'u', slug)
-    slug = re.sub(r'[ñ]', 'n', slug)
-    slug = re.sub(r'[^a-z0-9\s-]', '', slug)
-    slug = re.sub(r'[\s_]+', '-', slug)
-    slug = re.sub(r'-+', '-', slug)
-    return slug.strip('-')
-
-# ============== DEPENDENCY INJECTION ==============
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    try:
-        payload = jwt.decode(credentials.credentials, JWT_SECRET, algorithms=[JWT_ALGORITHM])
-        return payload
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expirado")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Token inválido")
-
-async def require_super_admin(current_user: dict = Depends(get_current_user)) -> dict:
-    if current_user.get("role") != "super_admin":
-        raise HTTPException(status_code=403, detail="Acceso de Super Admin requerido")
-    return current_user
-
-async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
-    if current_user.get("role") not in ["super_admin", "admin"]:
-        if current_user.get("role") != "manager":
-            raise HTTPException(status_code=403, detail="Acceso de administrador requerido")
-    return current_user
-
-# ============== ROUTES ==============
-@router.post("/super-admin/login", response_model=TokenResponse)
-async def super_admin_login(credentials: SuperAdminLogin):
-    """Login for Super Admin"""
-    # Try super_admins collection first, then users collection with role=super_admin
-    super_admin = await _db.super_admins.find_one({"email": credentials.email}, {"_id": 0})
-    
-    if not super_admin:
-        # Fallback to users collection
-        super_admin = await _db.users.find_one({"email": credentials.email, "role": "super_admin"}, {"_id": 0})
-        if super_admin:
-            # Use password_hash field for users collection
-            if not verify_password(credentials.password, super_admin.get("password_hash", "")):
-                raise HTTPException(status_code=401, detail="Credenciales inválidas")
-        else:
-            raise HTTPException(status_code=401, detail="Credenciales inválidas")
-    else:
-        # Use password field for super_admins collection
-        if not verify_password(credentials.password, super_admin.get("password", "")):
-            raise HTTPException(status_code=401, detail="Credenciales inválidas")
-    
-    token = create_token(
-        user_id=super_admin["id"],
-        email=super_admin["email"],
-        role="super_admin",
-        full_name=super_admin.get("full_name", "Super Admin")
-    )
-    
-    return TokenResponse(
-        access_token=token,
-        user={"id": super_admin["id"], "email": super_admin["email"], "role": "super_admin", "full_name": super_admin.get("full_name", "Super Admin")}
-    )
 
 @router.post("/super-admin/setup")
 async def setup_super_admin():
-    """Initial setup for Super Admin (only works if no super admin exists)"""
-    existing = await _db.super_admins.find_one({})
+    """Crear Super Admin inicial (solo una vez)"""
+    import uuid
+    
+    existing = await db.users.find_one({"role": UserRole.SUPER_ADMIN}, {"_id": 0})
     if existing:
         raise HTTPException(status_code=400, detail="Super Admin ya existe")
     
-    super_admin = {
+    admin_dict = {
         "id": str(uuid.uuid4()),
         "email": "superadmin@cia-servicios.com",
-        "password": hash_password("SuperAdmin2024!"),
-        "full_name": "Super Administrador",
-        "created_at": datetime.now(timezone.utc).isoformat()
+        "full_name": "Super Administrador CIA",
+        "role": UserRole.SUPER_ADMIN,
+        "company_id": None,
+        "is_active": True,
+        "password_hash": hash_password("SuperAdmin2024!"),
+        "created_at": datetime.now().isoformat()
     }
+    await db.users.insert_one(admin_dict)
     
-    await _db.super_admins.insert_one({**super_admin})
-    
-    return {"message": "Super Admin creado exitosamente", "email": super_admin["email"]}
+    return {
+        "message": "Super Admin creado exitosamente",
+        "email": "superadmin@cia-servicios.com",
+        "password": "SuperAdmin2024!"
+    }
 
-@router.get("/empresa/{slug}/info", response_model=CompanyPublic)
+
+# ============== COMPANY AUTH ==============
+
+@router.get("/empresa/{slug}/info")
 async def get_company_by_slug(slug: str):
-    """Get public company info by slug"""
-    company = await _db.companies.find_one({"slug": slug}, {"_id": 0})
+    """Obtener información pública de empresa por slug"""
+    company = await db.companies.find_one({"slug": slug}, {"_id": 0})
     if not company:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
     
-    return CompanyPublic(
-        id=company["id"],
-        business_name=company["business_name"],
-        slug=company["slug"],
-        logo_url=company.get("logo_url")
-    )
+    return {
+        "id": company["id"],
+        "business_name": company["business_name"],
+        "slug": company["slug"],
+        "logo_url": company.get("logo_url"),
+        "logo_file": company.get("logo_file")
+    }
 
-@router.post("/empresa/{slug}/login", response_model=TokenResponse)
-async def company_login(slug: str, credentials: UserLogin):
-    """Login for company users"""
-    company = await _db.companies.find_one({"slug": slug}, {"_id": 0})
+
+@router.post("/empresa/{slug}/login")
+async def company_login(slug: str, credentials: dict):
+    """Login para usuarios de una empresa específica"""
+    email = credentials.get("email")
+    password = credentials.get("password")
+    
+    # Verificar empresa
+    company = await db.companies.find_one({"slug": slug}, {"_id": 0})
     if not company:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
     
-    # Check subscription
-    if company.get("subscription_status") == "suspended":
-        raise HTTPException(status_code=403, detail="Suscripción suspendida. Contacte al administrador.")
+    if company.get("subscription_status") not in [SubscriptionStatus.ACTIVE, SubscriptionStatus.TRIAL]:
+        raise HTTPException(status_code=403, detail="La suscripción de esta empresa no está activa")
     
-    # Find user
-    user = await _db.users.find_one({
-        "email": credentials.email,
-        "company_id": company["id"]
+    # Buscar usuario
+    user_doc = await db.users.find_one({
+        "email": email,
+        "company_id": company["id"],
+        "role": {"$ne": UserRole.SUPER_ADMIN}
     }, {"_id": 0})
     
-    if not user:
+    if not user_doc:
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
     
-    if not verify_password(credentials.password, user["password"]):
+    if not user_doc.get("is_active", True):
+        raise HTTPException(status_code=403, detail="Usuario desactivado")
+    
+    if not verify_password(password, user_doc.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Credenciales inválidas")
     
-    if user.get("status") == "inactive":
-        raise HTTPException(status_code=403, detail="Usuario inactivo. Contacte al administrador.")
+    if isinstance(user_doc.get("created_at"), str):
+        user_doc["created_at"] = datetime.fromisoformat(user_doc["created_at"])
     
-    token = create_token(
-        user_id=user["id"],
-        email=user["email"],
-        role=user["role"],
-        company_id=company["id"],
-        company_slug=company["slug"],
-        full_name=user.get("full_name")
-    )
+    token = create_token(user_doc["id"], user_doc["email"], user_doc["role"], company["id"], slug, user_doc.get("full_name"))
     
-    return TokenResponse(
-        access_token=token,
-        user={
-            "id": user["id"],
-            "email": user["email"],
-            "role": user["role"],
-            "full_name": user.get("full_name"),
-            "company_id": company["id"],
-            "company_slug": company["slug"],
-            "company_name": company["business_name"],
-            "module_permissions": user.get("module_permissions", [])
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {k: v for k, v in user_doc.items() if k != "password_hash"},
+        "company": {
+            "id": company["id"],
+            "business_name": company["business_name"],
+            "slug": company["slug"],
+            "logo_url": company.get("logo_url"),
+            "logo_file": company.get("logo_file")
         }
-    )
+    }
 
-@router.get("/auth/me", response_model=UserResponse)
-async def get_me(current_user: dict = Depends(get_current_user)):
-    """Get current user info"""
-    return UserResponse(
-        id=current_user.get("sub"),
-        email=current_user.get("email"),
-        full_name=current_user.get("full_name", ""),
-        role=current_user.get("role"),
-        company_id=current_user.get("company_id"),
-        company_slug=current_user.get("company_slug")
+
+@router.get("/auth/me")
+async def get_me(current_user: dict = Depends(lambda: get_current_user)):
+    """Obtener información del usuario actual"""
+    user_doc = await db.users.find_one({"id": current_user["sub"]}, {"_id": 0, "password_hash": 0})
+    if not user_doc:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if isinstance(user_doc.get("created_at"), str):
+        user_doc["created_at"] = datetime.fromisoformat(user_doc["created_at"])
+    return user_doc
+
+
+# ============== PASSWORD RESET ==============
+
+@router.post("/auth/request-password-reset")
+async def request_password_reset(data: dict):
+    """Solicitar restablecimiento de contraseña"""
+    email = data.get("email")
+    
+    user = await db.users.find_one({"email": email}, {"_id": 0})
+    if not user:
+        # No revelar si el email existe
+        return {"message": "Si el email existe, recibirás instrucciones"}
+    
+    # Generar token
+    token = secrets.token_urlsafe(32)
+    expires_at = datetime.now() + timedelta(hours=24)
+    
+    await db.password_resets.insert_one({
+        "user_id": user["id"],
+        "email": email,
+        "token": token,
+        "expires_at": expires_at.isoformat(),
+        "used": False,
+        "created_at": datetime.now().isoformat()
+    })
+    
+    # Enviar email si está configurado
+    if send_email_async:
+        try:
+            reset_url = f"https://yourdomain.com/reset-password?token={token}"
+            html_body = f"""
+            <h2>Restablecer Contraseña</h2>
+            <p>Haz clic en el siguiente enlace para restablecer tu contraseña:</p>
+            <a href="{reset_url}">{reset_url}</a>
+            <p>Este enlace expira en 24 horas.</p>
+            """
+            await send_email_async("general", email, "Restablecer Contraseña", html_body)
+        except:
+            pass
+    
+    return {"message": "Si el email existe, recibirás instrucciones", "token": token}
+
+
+@router.post("/auth/reset-password")
+async def reset_password(data: dict):
+    """Restablecer contraseña con token"""
+    token = data.get("token")
+    new_password = data.get("new_password")
+    
+    reset_doc = await db.password_resets.find_one({
+        "token": token,
+        "used": False
+    }, {"_id": 0})
+    
+    if not reset_doc:
+        raise HTTPException(status_code=400, detail="Token inválido o expirado")
+    
+    expires_at = datetime.fromisoformat(reset_doc["expires_at"])
+    if datetime.now() > expires_at:
+        raise HTTPException(status_code=400, detail="Token expirado")
+    
+    # Actualizar contraseña
+    await db.users.update_one(
+        {"id": reset_doc["user_id"]},
+        {"$set": {"password_hash": hash_password(new_password)}}
     )
+    
+    # Marcar token como usado
+    await db.password_resets.update_one(
+        {"token": token},
+        {"$set": {"used": True}}
+    )
+    
+    return {"message": "Contraseña actualizada exitosamente"}
+
+
+@router.get("/auth/verify-reset-token/{token}")
+async def verify_reset_token(token: str):
+    """Verificar si un token de reset es válido"""
+    reset_doc = await db.password_resets.find_one({
+        "token": token,
+        "used": False
+    }, {"_id": 0})
+    
+    if not reset_doc:
+        return {"valid": False, "message": "Token inválido"}
+    
+    expires_at = datetime.fromisoformat(reset_doc["expires_at"])
+    if datetime.now() > expires_at:
+        return {"valid": False, "message": "Token expirado"}
+    
+    return {"valid": True, "email": reset_doc["email"]}
+
+
+# ============== USER PROFILE ==============
+
+@router.get("/profile")
+async def get_profile(current_user: dict = Depends(lambda: get_current_user)):
+    """Obtener perfil del usuario actual"""
+    user = await db.users.find_one({"id": current_user["sub"]}, {"_id": 0, "password_hash": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return user
+
+
+@router.patch("/profile")
+async def update_profile(updates: dict, current_user: dict = Depends(lambda: get_current_user)):
+    """Actualizar perfil del usuario"""
+    allowed_fields = ["full_name", "phone", "avatar_url"]
+    update_data = {k: v for k, v in updates.items() if k in allowed_fields}
+    
+    if not update_data:
+        raise HTTPException(status_code=400, detail="No hay campos válidos para actualizar")
+    
+    update_data["updated_at"] = datetime.now().isoformat()
+    
+    await db.users.update_one(
+        {"id": current_user["sub"]},
+        {"$set": update_data}
+    )
+    
+    return {"message": "Perfil actualizado"}
+
+
+@router.post("/profile/change-password")
+async def change_password(data: dict, current_user: dict = Depends(lambda: get_current_user)):
+    """Cambiar contraseña del usuario actual"""
+    current_password = data.get("current_password")
+    new_password = data.get("new_password")
+    
+    user = await db.users.find_one({"id": current_user["sub"]}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    if not verify_password(current_password, user.get("password_hash", "")):
+        raise HTTPException(status_code=400, detail="Contraseña actual incorrecta")
+    
+    await db.users.update_one(
+        {"id": current_user["sub"]},
+        {"$set": {
+            "password_hash": hash_password(new_password),
+            "updated_at": datetime.now().isoformat()
+        }}
+    )
+    
+    return {"message": "Contraseña actualizada exitosamente"}
+
+
+# ============== USER PREFERENCES ==============
+
+@router.get("/preferences")
+async def get_preferences(current_user: dict = Depends(lambda: get_current_user)):
+    """Obtener preferencias del usuario"""
+    prefs = await db.user_preferences.find_one({"user_id": current_user["sub"]}, {"_id": 0})
+    if not prefs:
+        return {
+            "theme": "system",
+            "language": "es",
+            "notifications_enabled": True
+        }
+    return prefs
+
+
+@router.patch("/preferences")
+async def update_preferences(updates: dict, current_user: dict = Depends(lambda: get_current_user)):
+    """Actualizar preferencias del usuario"""
+    await db.user_preferences.update_one(
+        {"user_id": current_user["sub"]},
+        {"$set": {**updates, "updated_at": datetime.now().isoformat()}},
+        upsert=True
+    )
+    return {"message": "Preferencias actualizadas"}

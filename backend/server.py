@@ -35,6 +35,13 @@ from routes.quotes import router as quotes_router, init_quotes_routes
 from routes.invoices import router as invoices_router, init_invoices_routes
 from routes.users import router as users_router, init_users_routes
 from routes.dashboard import router as dashboard_router, init_dashboard_routes
+from routes.auth import router as auth_router, init_auth_routes
+from routes.tickets import router as tickets_router, init_tickets_routes
+from routes.notifications import router as notifications_router, init_notifications_routes
+from routes.purchases import router as purchases_router, init_purchases_routes
+from routes.documents import router as documents_router, init_documents_routes
+from routes.ai import router as ai_router, init_ai_routes
+from routes.activity import router as activity_router, init_activity_routes
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -9994,14 +10001,23 @@ async def module_create_notification(company_id, title, message, user_id=None):
     except:
         pass
 
-# Initialize modules
-init_clients_routes(db, module_log_activity, module_create_notification)
-init_projects_routes(db, module_log_activity)
-init_quotes_routes(db, module_log_activity)
-init_invoices_routes(db, module_log_activity)
-init_users_routes(db, module_log_activity)
+# Initialize modules with dependencies
+init_clients_routes(db, module_log_activity, module_create_notification, get_current_user, require_admin)
+init_projects_routes(db, module_log_activity, get_current_user, require_admin)
+init_quotes_routes(db, module_log_activity, get_current_user)
+init_invoices_routes(db, module_log_activity, get_current_user, require_admin)
+init_users_routes(db, module_log_activity, get_current_user, require_admin)
 init_subscription_routes(db, security, JWT_SECRET, JWT_ALGORITHM)
 init_dashboard_routes(db, get_current_user, UserRole, ProjectStatus, QuoteStatus)
+
+# Initialize new refactored modules
+init_auth_routes(db, get_current_user, UserRole, SubscriptionStatus, JWT_SECRET, JWT_ALGORITHM, create_token, verify_password, hash_password)
+init_tickets_routes(db, get_current_user, require_super_admin, UserRole, module_log_activity)
+init_notifications_routes(db, get_current_user, require_admin, UserRole)
+init_purchases_routes(db, get_current_user, UserRole, module_log_activity)
+init_documents_routes(db, get_current_user, UserRole, module_log_activity)
+init_ai_routes(db, get_current_user, UserRole, llm_chat if 'llm_chat' in dir() else None)
+init_activity_routes(db, get_current_user, require_super_admin, UserRole)
 
 # Include modular routers (replacing basic CRUD routes, keeping special routes in api_router)
 app.include_router(clients_router, prefix="/api")
@@ -10009,7 +10025,14 @@ app.include_router(projects_router, prefix="/api")
 app.include_router(quotes_router, prefix="/api")
 app.include_router(invoices_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
-app.include_router(dashboard_router, prefix="/api")  # Dashboard stats
+app.include_router(dashboard_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
+app.include_router(tickets_router, prefix="/api")
+app.include_router(notifications_router, prefix="/api")
+app.include_router(purchases_router, prefix="/api")
+app.include_router(documents_router, prefix="/api")
+app.include_router(ai_router, prefix="/api")
+app.include_router(activity_router, prefix="/api")
 app.include_router(subscriptions_router)  # Subscriptions at /api/subscriptions
 
 # Stripe webhook endpoint (must be outside api_router for proper path)
