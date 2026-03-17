@@ -24,6 +24,7 @@ import {
   User,
   Activity,
   Palette,
+  CreditCard,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
@@ -61,6 +62,7 @@ const menuItems = [
 
 const configItems = [
   { path: "/settings", label: "Empresa", icon: Settings, moduleId: "settings" },
+  { path: "/subscription", label: "Mi Suscripción", icon: CreditCard, moduleId: "subscription", adminOnly: true },
   { path: "/fiscal-settings", label: "Fiscal / CFDI", icon: FileText, moduleId: "fiscal-settings" },
   { path: "/document-settings", label: "Documentos PDF", icon: Palette, moduleId: "document-settings" },
   { path: "/activity-logs", label: "Historial", icon: Activity, moduleId: "activity-logs" },
@@ -206,8 +208,10 @@ export const Sidebar = ({ isOpen, onToggle }) => {
               <p className="px-3 py-2 text-xs font-medium text-slate-500 uppercase">Configuración</p>
               {configItems
                 .filter((item) => {
+                  // Admin-only items
+                  if (item.adminOnly && user?.role !== "admin") return false;
                   if (!user?.module_permissions) return true;
-                  if (item.moduleId === "settings" || item.moduleId === "document-settings" || item.moduleId === "activity-logs") {
+                  if (item.moduleId === "settings" || item.moduleId === "document-settings" || item.moduleId === "activity-logs" || item.moduleId === "subscription") {
                     return user.role === "admin" || !user?.module_permissions;
                   }
                   return user.module_permissions.includes(item.moduleId);

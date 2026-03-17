@@ -22,9 +22,13 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
+from fastapi import Request
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+# Import subscription routes
+from routes.subscriptions import router as subscriptions_router, init_routes as init_subscription_routes, handle_stripe_webhook
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -9958,6 +9962,16 @@ async def get_cfdi_status(current_user: dict = Depends(get_current_user)):
 
 # Include router and configure CORS
 app.include_router(api_router)
+
+# Include subscription routes and initialize with dependencies
+init_subscription_routes(db, security, JWT_SECRET, JWT_ALGORITHM)
+app.include_router(subscriptions_router)
+
+# Stripe webhook endpoint (must be outside api_router for proper path)
+@app.post("/api/webhook/stripe")
+async def stripe_webhook(request: Request):
+    """Handle Stripe webhook events"""
+    return await handle_stripe_webhook(request)
 
 app.add_middleware(
     CORSMiddleware,

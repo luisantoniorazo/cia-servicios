@@ -590,6 +590,16 @@ export const SuperAdminDashboard = () => {
             <Button 
               variant="outline" 
               size="sm"
+              className="border-green-500 text-green-400 hover:bg-green-500/20 text-xs sm:text-sm" 
+              onClick={() => navigate("/admin-portal/subscriptions")}
+              data-testid="subscriptions-btn"
+            >
+              <DollarSign className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Suscripciones</span>
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm"
               className="border-emerald-500 text-emerald-400 hover:bg-emerald-500/20 text-xs sm:text-sm" 
               onClick={() => navigate("/admin-portal/facturama")}
               data-testid="facturama-config-btn"

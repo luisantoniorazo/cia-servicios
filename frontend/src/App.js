@@ -32,6 +32,8 @@ import Reminders from "./pages/Reminders";
 import DocumentSettings from "./pages/DocumentSettings";
 import ActivityLogs from "./pages/ActivityLogs";
 import FiscalSettings from "./pages/FiscalSettings";
+import SubscriptionBilling from "./pages/SubscriptionBilling";
+import MySubscription from "./pages/MySubscription";
 
 // Layout
 import MainLayout from "./components/Layout/MainLayout";
@@ -198,6 +200,14 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/admin-portal/subscriptions"
+        element={
+          <SuperAdminRoute>
+            <SubscriptionBilling />
+          </SuperAdminRoute>
+        }
+      />
+      <Route
         path="/admin-portal/activity-logs"
         element={
           <SuperAdminRoute>
@@ -250,6 +260,7 @@ function AppRoutes() {
         <Route path="document-settings" element={<DocumentSettings />} />
         <Route path="activity-logs" element={<ActivityLogs />} />
         <Route path="fiscal-settings" element={<FiscalSettings />} />
+        <Route path="subscription" element={<MySubscription />} />
       </Route>
 
       {/* Catch all */}

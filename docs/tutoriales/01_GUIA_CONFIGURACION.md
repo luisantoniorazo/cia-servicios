@@ -1,261 +1,245 @@
-# CIA SERVICIOS - Guía de Configuración Inicial
+# Guía de Configuración del Sistema - CIA SERVICIOS
 
-## Manual del Administrador del Sistema
-
-**Versión:** 3.3.0  
-**Fecha:** Marzo 2026
+Esta guía está dirigida al **Super Administrador** del sistema y cubre la configuración inicial necesaria para poner en producción la plataforma CIA SERVICIOS.
 
 ---
 
-## Tabla de Contenidos
+## Índice
 
-1. [Requisitos Previos](#1-requisitos-previos)
-2. [Acceso al Portal Super Admin](#2-acceso-al-portal-super-admin)
-3. [Configuración de Facturama (PAC)](#3-configuración-de-facturama-pac)
-4. [Configuración del Servidor de Email](#4-configuración-del-servidor-de-email)
-5. [Creación de Empresas](#5-creación-de-empresas)
-6. [Activar Facturación por Empresa](#6-activar-facturación-por-empresa)
-7. [Monitor del Sistema](#7-monitor-del-sistema)
-8. [Verificación Final](#8-verificación-final)
+1. [Acceso al Portal de Administración](#1-acceso-al-portal-de-administración)
+2. [Configuración de Facturama (CFDI)](#2-configuración-de-facturama-cfdi)
+3. [Configuración de Suscripciones y Facturación](#3-configuración-de-suscripciones-y-facturación)
+4. [Gestión de Empresas Clientes](#4-gestión-de-empresas-clientes)
+5. [Configuración de Email (SMTP)](#5-configuración-de-email-smtp)
+6. [Monitor del Sistema](#6-monitor-del-sistema)
 
 ---
 
-## 1. Requisitos Previos
+## 1. Acceso al Portal de Administración
 
-Antes de comenzar, asegúrate de tener:
-
-| Requisito | Descripción | Dónde obtenerlo |
-|-----------|-------------|-----------------|
-| **Cuenta Facturama** | Para facturación electrónica | [facturama.mx](https://www.facturama.mx) |
-| **Cuenta de Email** | Para envío de notificaciones | Gmail, Outlook, o SMTP propio |
-| **Credenciales Super Admin** | Proporcionadas en la instalación | Tu equipo de desarrollo |
-
-### Credenciales por defecto (cambiar inmediatamente):
-- **Email:** `superadmin@cia-servicios.com`
-- **Contraseña:** `SuperAdmin2024!`
-
----
-
-## 2. Acceso al Portal Super Admin
-
-### Paso 1: Abrir el navegador
-Ingresa a la URL del portal administrativo:
+### URL de Acceso
+Accede al portal de Super Admin en:
 ```
-https://tu-dominio.com/admin-portal
+https://[tu-dominio]/admin-portal
 ```
 
-### Paso 2: Iniciar sesión
-1. Ingresa tu correo electrónico de Super Admin
-2. Ingresa tu contraseña
-3. Haz clic en **"Acceder al Portal"**
+### Credenciales
+- **Email:** superadmin@cia-servicios.com (configurado en variables de entorno)
+- **Contraseña:** Definida en `SUPER_ADMIN_KEY` en el archivo `.env`
 
-![Login Super Admin](./screenshots/01_login_superadmin.png)
-
-### Paso 3: Verificar acceso
-Una vez dentro, verás el **Dashboard Principal** con:
-- Total de empresas registradas
-- Empresas activas y pendientes
-- Ingresos mensuales
-- Lista de empresas
-
-![Dashboard Super Admin](./screenshots/02_dashboard_superadmin.png)
+### Dashboard Principal
+Al ingresar, verás el dashboard con:
+- **Empresas Activas:** Total de empresas registradas y activas
+- **Usuarios Totales:** Suma de todos los usuarios en la plataforma
+- **Tickets Abiertos:** Solicitudes de soporte pendientes
+- **Accesos Directos:**
+  - Botón "Tickets" (púrpura) - Gestión de soporte
+  - Botón "Suscripciones" (verde) - Facturación a clientes
+  - Botón "Facturama" (esmeralda) - Configuración CFDI
 
 ---
 
-## 3. Configuración de Facturama (PAC)
+## 2. Configuración de Facturama (CFDI)
 
-### ¿Por qué configurar Facturama?
-Facturama es el PAC (Proveedor Autorizado de Certificación) que permite generar CFDIs válidos ante el SAT.
+### Acceso
+Desde el dashboard del Super Admin, haz clic en el botón **"Facturama"** o navega a `/admin-portal/facturama`.
 
-### Paso 1: Acceder a configuración
-1. En el menú superior, haz clic en el botón verde **"Facturama"**
+### Configuración de Credenciales Maestras
+1. **Modo de Operación:**
+   - **Sandbox:** Para pruebas (no genera CFDI reales)
+   - **Production:** Para facturación real
 
-![Botón Facturama](./screenshots/03_facturama_config.png)
+2. **Credenciales API:**
+   - **API Key:** Clave pública proporcionada por Facturama
+   - **Secret Key:** Clave privada proporcionada por Facturama
 
-### Paso 2: Configurar credenciales
-1. Haz clic en **"Configurar"** (esquina superior derecha)
-2. Completa el formulario:
+3. Haz clic en **"Guardar Configuración"**
 
-| Campo | Descripción | Ejemplo |
-|-------|-------------|---------|
-| **Usuario de API** | Tu usuario de Facturama | `miusuario` |
-| **Contraseña de API** | Tu contraseña de API | `••••••••` |
-| **Ambiente** | Sandbox (pruebas) o Producción | `Sandbox (Pruebas)` |
-| **RFC del Emisor** | RFC de tu empresa (opcional) | `CSD123456ABC` |
+### Modelo de Facturación Híbrido
+El sistema soporta tres modalidades para cada empresa cliente:
 
-![Diálogo Facturama](./screenshots/04_facturama_dialog.png)
+| Modalidad | Descripción | Configuración |
+|-----------|-------------|---------------|
+| **Facturación Incluida** | CIA SERVICIOS paga el timbrado | Activar "Facturación Incluida" para la empresa |
+| **Cuenta Propia** | El cliente tiene su propia cuenta Facturama | El cliente configura sus credenciales en su portal |
+| **Manual** | El cliente sube archivos XML/PDF externos | No requiere configuración de Facturama |
 
-### Paso 3: Guardar y probar
-1. Haz clic en **"Guardar"**
-2. Haz clic en **"Probar Conexión"** para verificar
-
-### Ambientes de Facturama
-
-| Ambiente | Uso | Costo |
-|----------|-----|-------|
-| **Sandbox** | Pruebas y desarrollo | Gratis |
-| **Producción** | CFDIs reales válidos ante SAT | Por timbre |
-
-> **Importante:** Usa Sandbox para probar. Cambia a Producción solo cuando estés listo para facturar realmente.
+### Configurar Empresa con Facturación Incluida
+1. En la sección "Empresas con Facturación Incluida"
+2. Encuentra la empresa en la lista
+3. Activa el toggle "Facturación Incluida"
+4. El sistema usará las credenciales maestras para esa empresa
 
 ---
 
-## 4. Configuración del Servidor de Email
+## 3. Configuración de Suscripciones y Facturación
 
-### Paso 1: Acceder a configuración del servidor
-1. En el menú superior, haz clic en **"Servidor"**
-2. Busca la sección **"Configuración de Email"**
+### Acceso
+Haz clic en el botón **"Suscripciones"** desde el dashboard del Super Admin.
 
-### Paso 2: Configurar Email de Cobranza
-Este email se usa para enviar recordatorios de pago y notificaciones de facturación.
+### Planes Disponibles
+El sistema viene preconfigurado con dos planes:
 
-| Campo | Gmail | Outlook | SMTP Propio |
-|-------|-------|---------|-------------|
-| **Servidor SMTP** | smtp.gmail.com | smtp.office365.com | Tu servidor |
-| **Puerto** | 587 | 587 | 587 o 465 |
-| **Usar TLS** | Sí | Sí | Depende |
-| **Usuario** | tu@gmail.com | tu@outlook.com | tu@dominio.com |
-| **Contraseña** | Contraseña de App* | Tu contraseña | Tu contraseña |
+| Plan | Precio Mensual | Incluye |
+|------|----------------|---------|
+| **Plan Base** | $2,500 MXN | Todas las funciones excepto timbrado CFDI |
+| **Plan con Facturación** | $3,000 MXN | Todo + timbrado CFDI ilimitado |
 
-> **Nota Gmail:** Debes crear una "Contraseña de aplicación" en tu cuenta de Google. No uses tu contraseña normal.
+### Ciclos de Facturación
+- **Mensual:** Precio base
+- **Trimestral:** 5% descuento
+- **Semestral:** 10% descuento
+- **Anual:** 15% descuento
 
-### Paso 3: Configurar Email General
-Este email se usa para notificaciones del sistema, bienvenida a usuarios, etc.
+### Configuración de Pagos
+1. Haz clic en **"Configuración"** (ícono de engranaje)
+2. **Métodos de Pago:**
+   - Activar/desactivar Stripe (tarjeta)
+   - Activar/desactivar transferencia bancaria
 
-Puede ser el mismo que cobranza o uno diferente.
+3. **Cuentas Bancarias:**
+   - Agrega una o más cuentas para depósitos
+   - Campos requeridos: Banco, Titular, Número de Cuenta, CLABE
+   - Instrucciones de referencia (ej: "Usar RFC como referencia")
 
-### Paso 4: Probar configuración
-1. Haz clic en **"Probar Email"**
-2. Ingresa un correo de prueba
-3. Verifica que llegue el correo
+4. **Configuración de Avisos:**
+   - Días de anticipación para recordatorios (ej: 15, 7, 3, 1)
+   - Días después de vencimiento para suspensión automática
 
----
+### Crear Factura de Suscripción
+1. Haz clic en **"Nueva Factura"**
+2. Selecciona la empresa
+3. Elige el plan (Base o con Facturación)
+4. Selecciona el período (mensual, trimestral, etc.)
+5. El sistema calcula automáticamente descuentos
+6. Haz clic en **"Crear Factura"**
 
-## 5. Creación de Empresas
-
-### Paso 1: Nueva empresa
-1. En el Dashboard, haz clic en **"+ Nueva Empresa"**
-
-### Paso 2: Completar datos de la empresa
-
-**Información de la Empresa:**
-| Campo | Descripción | Requerido |
-|-------|-------------|-----------|
-| Nombre Comercial | Nombre de la empresa | Sí |
-| RFC | Registro Federal de Contribuyentes | Sí |
-| Dirección | Domicilio fiscal | No |
-| Teléfono | Número de contacto | No |
-| Email | Correo de la empresa | Sí |
-
-**Información de Suscripción:**
-| Campo | Descripción |
-|-------|-------------|
-| Tipo de Licencia | Básica, Profesional, Enterprise |
-| Tarifa Mensual | Costo de la renta mensual |
-| Duración | Meses de suscripción inicial |
-
-**Administrador de la Empresa:**
-| Campo | Descripción |
-|-------|-------------|
-| Nombre Completo | Nombre del admin |
-| Email | Correo del admin (para login) |
-| Teléfono | Contacto del admin |
-| Contraseña | Contraseña inicial |
-
-### Paso 3: Guardar
-Haz clic en **"Crear Empresa"**
-
-La empresa aparecerá en la lista y recibirá un correo de bienvenida (si el email está configurado).
+### Registrar Pago Manual
+1. En la lista de facturas pendientes, haz clic en los tres puntos (⋮)
+2. Selecciona **"Registrar Pago"**
+3. Indica el método de pago y referencia
+4. El sistema actualiza automáticamente la suscripción de la empresa
 
 ---
 
-## 6. Activar Facturación por Empresa
+## 4. Gestión de Empresas Clientes
 
-### Opción A: Facturación Incluida (tú pagas los timbres)
+### Crear Nueva Empresa
+1. En el dashboard, sección "Empresas"
+2. Haz clic en **"Nueva Empresa"**
+3. Completa los datos:
+   - Nombre comercial
+   - RFC
+   - Email del administrador
+   - Contraseña inicial
+4. Configura permisos de módulos
+5. Haz clic en **"Crear Empresa"**
 
-1. Ve a **Facturama** en el menú superior
-2. En la tabla de empresas, activa el switch de **"Facturación Incluida"**
-3. La empresa podrá timbrar facturas usando tu cuenta de Facturama
+### Editar Empresa
+1. Busca la empresa en la lista
+2. Haz clic en el ícono de editar (lápiz)
+3. Modifica los datos necesarios
+4. Guarda los cambios
 
-### Opción B: Facturación Propia (la empresa paga)
+### Configurar Suscripción
+1. En la tarjeta de la empresa, observa:
+   - Estado de suscripción (Activa/Vencida/Trial)
+   - Fecha de vencimiento
+   - Tipo de plan
 
-1. Deja el switch desactivado
-2. La empresa deberá configurar sus propias credenciales de Facturama
-3. O podrá subir CFDIs generados externamente
-
-### Opción C: Sin Facturación
-
-1. Deja el switch desactivado
-2. La empresa no configura Facturama
-3. Solo puede subir CFDIs manuales
-
----
-
-## 7. Monitor del Sistema
-
-### Acceder al Monitor
-1. Haz clic en **"Monitor"** en el menú superior
-
-### Ejecutar diagnóstico
-1. Haz clic en **"Ejecutar Pruebas"**
-2. Espera a que se completen las 25 pruebas
-3. Revisa los resultados
-
-![Monitor del Sistema](./screenshots/05_monitor_sistema.png)
-
-### Interpretación de resultados
-
-| Estado | Significado | Acción |
-|--------|-------------|--------|
-| ✅ Pasado | Todo correcto | Ninguna |
-| ⚠️ Advertencia | Problema menor | Revisar |
-| ❌ Fallido | Problema crítico | Corregir inmediatamente |
-| 🔧 Auto-reparado | Se corrigió automáticamente | Verificar |
-
-### Pruebas que realiza el sistema:
-- Conexión a base de datos
-- Integridad de empresas
-- Usuarios huérfanos
-- Cálculos de facturas
-- Estado de suscripciones
-- Limpieza de datos antiguos
-- Y más...
+2. Para cambiar plan o período:
+   - Crea una nueva factura de suscripción
+   - Al registrar el pago, el sistema actualiza automáticamente
 
 ---
 
-## 8. Verificación Final
+## 5. Configuración de Email (SMTP)
 
-### Checklist de configuración
+### Presets Disponibles
+El sistema incluye configuraciones predefinidas para:
+- **Gmail:** smtp.gmail.com:587
+- **Outlook:** smtp-mail.outlook.com:587
+- **Yahoo:** smtp.mail.yahoo.com:587
+- **Custom:** Para servidores SMTP propios
 
-- [ ] Facturama configurado y probado
-- [ ] Email de cobranza configurado y probado
-- [ ] Email general configurado y probado
-- [ ] Al menos una empresa creada
-- [ ] Monitor del sistema ejecutado sin errores críticos
+### Configuración
+1. Ve a la sección de configuración de email
+2. Selecciona un preset o configura manualmente:
+   - Servidor SMTP
+   - Puerto
+   - Usuario/Email
+   - Contraseña o App Password
+3. Prueba la configuración antes de guardar
 
-### Prueba completa del flujo
-
-1. **Crear empresa de prueba**
-2. **Iniciar sesión como admin de la empresa**
-3. **Crear un cliente**
-4. **Crear una factura**
-5. **Timbrar la factura** (en Sandbox)
-6. **Descargar XML y PDF**
-7. **Cancelar la factura** (prueba)
-
-Si todo funciona, ¡el sistema está listo para producción!
-
----
-
-## Soporte
-
-Si tienes problemas:
-1. Revisa el Monitor del Sistema
-2. Verifica la configuración de credenciales
-3. Consulta los logs del sistema
-4. Contacta a soporte técnico
+### Gmail - Configuración Especial
+Para Gmail, debes crear una "Contraseña de aplicación":
+1. Ve a tu cuenta de Google > Seguridad
+2. Habilita verificación en 2 pasos
+3. Genera una contraseña de aplicación
+4. Usa esa contraseña en la configuración
 
 ---
 
-**CIA SERVICIOS** - Sistema de Control Integral  
-*Documento generado automáticamente - Marzo 2026*
+## 6. Monitor del Sistema
+
+### Acceso
+Desde el dashboard, haz clic en **"Monitor del Sistema"** o navega a `/admin-portal/system-monitor`.
+
+### Diagnósticos Incluidos
+El monitor ejecuta 25 pruebas de diagnóstico:
+
+**Categoría: Base de Datos**
+- Conexión a MongoDB
+- Índices necesarios
+- Integridad referencial
+
+**Categoría: Integridad de Datos**
+- Facturas huérfanas
+- Pagos sin factura asociada
+- Totales inconsistentes
+- Estados inválidos
+
+**Categoría: Suscripciones**
+- Empresas con suscripción vencida
+- Recordatorios pendientes
+
+**Categoría: CFDI**
+- Configuración de Facturama
+- Cancelaciones pendientes
+
+### Auto-Reparación
+El sistema puede corregir automáticamente ciertos problemas:
+- Crear índices faltantes
+- Marcar facturas como vencidas
+- Enviar recordatorios pendientes
+
+Haz clic en **"Auto-Reparar"** después de ejecutar el diagnóstico.
+
+### Programación Automática
+Los diagnósticos se ejecutan automáticamente:
+- Cada día a las 2:00 AM (diagnóstico completo)
+- Cada hora (verificación de cancelaciones CFDI)
+
+---
+
+## Próximos Pasos
+
+Una vez configurado el sistema:
+1. Crea la primera empresa cliente
+2. Genera su factura de suscripción
+3. Comparte con el cliente su guía de "Primeros Pasos"
+4. Monitorea el sistema regularmente
+
+---
+
+## Soporte Técnico
+
+Para problemas técnicos con la plataforma:
+- **Email:** soporte@cia-servicios.com
+- **Portal de Tickets:** Integrado en el sistema
+- **Documentación:** Esta guía y tutoriales adicionales
+
+---
+
+*Última actualización: Marzo 2026*
+*CIA SERVICIOS - Control Integral*
