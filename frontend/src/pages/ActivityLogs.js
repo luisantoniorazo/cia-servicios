@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -24,7 +25,8 @@ import {
   CreditCard,
   RefreshCw,
   Settings,
-  Filter
+  Filter,
+  ArrowLeft
 } from "lucide-react";
 
 const ACTIVITY_TYPES = [
@@ -79,6 +81,7 @@ const getActivityIcon = (type) => {
 
 export const ActivityLogs = ({ isSuperAdmin = false }) => {
   const { api } = useAuth();
+  const navigate = useNavigate();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({
@@ -142,11 +145,23 @@ export const ActivityLogs = ({ isSuperAdmin = false }) => {
   return (
     <div className="space-y-6 animate-fade-in" data-testid="activity-logs-page">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold font-[Chivo]">Historial de Actividad</h1>
-          <p className="text-muted-foreground">
-            {total} registros encontrados
-          </p>
+        <div className="flex items-center gap-4">
+          {isSuperAdmin && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate("/admin-portal/dashboard")}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          )}
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold font-[Chivo]">Historial de Actividad</h1>
+            <p className="text-muted-foreground">
+              {total} registros encontrados
+            </p>
+          </div>
         </div>
       </div>
 

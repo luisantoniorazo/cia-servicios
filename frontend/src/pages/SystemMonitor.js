@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -53,6 +54,7 @@ import {
   Shield,
   Zap,
   History,
+  ArrowLeft,
 } from "lucide-react";
 
 const STATUS_ICONS = {
@@ -87,6 +89,7 @@ const CATEGORY_LABELS = {
 
 export const SystemMonitor = () => {
   const { api } = useAuth();
+  const navigate = useNavigate();
   const [health, setHealth] = useState(null);
   const [reports, setReports] = useState([]);
   const [issues, setIssues] = useState([]);
@@ -221,12 +224,22 @@ export const SystemMonitor = () => {
     <div className="space-y-6" data-testid="system-monitor">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold font-[Chivo] text-white flex items-center gap-3">
-            <Bot className="h-8 w-8 text-amber-400" />
-            Monitor del Sistema
-          </h1>
-          <p className="text-slate-400">Bot de pruebas y reparación automática</p>
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate("/admin-portal/dashboard")}
+            className="text-slate-400 hover:text-white hover:bg-slate-700"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-3xl font-bold font-[Chivo] text-white flex items-center gap-3">
+              <Bot className="h-8 w-8 text-amber-400" />
+              Monitor del Sistema
+            </h1>
+            <p className="text-slate-400">Bot de pruebas y reparación automática</p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <Button

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
@@ -54,10 +55,12 @@ import {
   TestTube,
   Save,
   Info,
+  ArrowLeft,
 } from "lucide-react";
 
 export const FacturamaConfig = () => {
   const { api } = useAuth();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
@@ -179,14 +182,24 @@ export const FacturamaConfig = () => {
     <div className="space-y-6 p-6" data-testid="facturama-config-page">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <FileText className="h-6 w-6 text-primary" />
-            Configuración de Facturama
-          </h1>
-          <p className="text-muted-foreground">
-            Configura la cuenta maestra de Facturama para facturación electrónica
-          </p>
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate("/admin-portal/dashboard")}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <FileText className="h-6 w-6 text-primary" />
+              Configuración de Facturama
+            </h1>
+            <p className="text-muted-foreground">
+              Configura la cuenta maestra de Facturama para facturación electrónica
+            </p>
+          </div>
         </div>
         <div className="flex gap-2">
           {config?.configured && (
