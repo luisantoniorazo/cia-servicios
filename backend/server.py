@@ -254,20 +254,20 @@ class TokenResponse(BaseModel):
 # Client/Prospect Models
 class ClientBase(BaseModel):
     company_id: str
-    name: str
+    name: str  # Se mantiene por compatibilidad, será igual a trade_name
+    trade_name: Optional[str] = None  # Nombre Comercial (ej: "MANTENIMIENTO INDUSTRIAL ALAMO")
     reference: Optional[str] = None  # Campo de referencia para diferenciar clientes
     contact_name: Optional[str] = None
     email: Optional[EmailStr] = None
     phone: Optional[str] = None
     address: Optional[str] = None
-    rfc: Optional[str] = None
     is_prospect: bool = True
     probability: int = 0
     notes: Optional[str] = None
     credit_days: int = 0  # Plazo de crédito en días
     # Campos SAT para CFDI
-    rfc: Optional[str] = None  # RFC del cliente
-    razon_social_fiscal: Optional[str] = None  # Razón social exacta como en SAT
+    rfc: Optional[str] = None  # RFC del cliente (ej: "VAGM570107AP6")
+    razon_social_fiscal: Optional[str] = None  # Razón social exacta como en SAT (ej: "MARISELA VAZQUEZ GARCIA")
     regimen_fiscal: Optional[str] = None  # Clave del régimen fiscal (601, 603, 612, etc.)
     uso_cfdi: Optional[str] = None  # Uso del CFDI (G01, G03, P01, etc.)
     codigo_postal_fiscal: Optional[str] = None  # CP del domicilio fiscal
@@ -5272,8 +5272,8 @@ async def list_pending_followups(company_id: str, current_user: dict = Depends(g
     
     for f in followups:
         # Get client info
-        client = await db.clients.find_one({"id": f.get("client_id")}, {"_id": 0, "name": 1, "phone": 1, "email": 1})
-        f["client_name"] = client.get("name") if client else "N/A"
+        client = await db.clients.find_one({"id": f.get("client_id")}, {"_id": 0, "name": 1, "trade_name": 1, "phone": 1, "email": 1})
+        f["client_name"] = client.get("trade_name") or client.get("name") if client else "N/A"
         f["client_phone"] = client.get("phone") if client else None
         f["client_email"] = client.get("email") if client else None
         
@@ -5690,8 +5690,8 @@ async def get_overdue_invoices(company_id: str, current_user: dict = Depends(get
                 due_date = due_date.replace(tzinfo=timezone.utc)
             
             # Get client info
-            client = await db.clients.find_one({"id": inv.get("client_id")}, {"_id": 0, "name": 1, "email": 1, "phone": 1})
-            inv["client_name"] = client.get("name") if client else "N/A"
+            client = await db.clients.find_one({"id": inv.get("client_id")}, {"_id": 0, "name": 1, "trade_name": 1, "email": 1, "phone": 1})
+            inv["client_name"] = client.get("trade_name") or client.get("name") if client else "N/A"
             inv["client_email"] = client.get("email") if client else None
             inv["client_phone"] = client.get("phone") if client else None
             inv["balance"] = inv["total"] - inv.get("paid_amount", 0)
@@ -7094,7 +7094,9 @@ async def get_client_statement_pdf(client_id: str, current_user: dict = Depends(
     pdf_bytes = generate_statement_pdf(client, company or {}, invoices, payments, summary, credit_notes)
     pdf_base64 = base64.b64encode(pdf_bytes).decode('utf-8')
     
-    client_name_slug = client.get("name", "cliente").replace(" ", "_")[:20]
+    # Usar nombre comercial para el nombre del archivo
+    display_name = client.get("trade_name") or client.get("name", "cliente")
+    client_name_slug = display_name.replace(" ", "_")[:20]
     
     return {
         "filename": f"estado_cuenta_{client_name_slug}_{datetime.now().strftime('%Y%m%d')}.pdf",
@@ -7547,8 +7549,8 @@ async def get_project_progress(company_id: str, current_user: dict = Depends(get
     ).to_list(100)
     
     for p in projects:
-        client = await db.clients.find_one({"id": p.get("client_id")}, {"_id": 0, "name": 1})
-        p["client_name"] = client.get("name") if client else "N/A"
+        client = await db.clients.find_one({"id": p.get("client_id")}, {"_id": 0, "name": 1, "trade_name": 1})
+        p["client_name"] = client.get("trade_name") or client.get("name") if client else "N/A"
     
     return projects
 
@@ -8149,14 +8151,16 @@ def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
     elements.append(Paragraph("INFORMACIÓN DEL CLIENTE", section_title_style))
     
     client_ref = f" ({client.get('reference')})" if client.get('reference') else ""
-    client_name = (client.get('name') or 'N/A') + client_ref
+    # Usar nombre comercial, luego razón social, luego name como fallback
+    trade_name = client.get('trade_name') or client.get('name') or 'N/A'
+    razon_social = client.get('razon_social_fiscal') or ''
     
     client_info_data = [
-        [Paragraph("Cliente", label_style), Paragraph(client_name, value_style), 
+        [Paragraph("Nombre Comercial", label_style), Paragraph(trade_name + client_ref, value_style), 
          Paragraph("RFC", label_style), Paragraph(client.get('rfc') or 'N/A', value_style)],
-        [Paragraph("Contacto", label_style), Paragraph(client.get('contact_name') or 'N/A', value_style),
+        [Paragraph("Razón Social", label_style), Paragraph(razon_social or 'N/A', value_style),
          Paragraph("Email", label_style), Paragraph(client.get('email') or 'N/A', value_style)],
-        [Paragraph("Vigencia", label_style), Paragraph(quote.get('valid_until', '')[:10] if quote.get('valid_until') else 'N/A', value_style),
+        [Paragraph("Contacto", label_style), Paragraph(client.get('contact_name') or 'N/A', value_style),
          Paragraph("Elaboró", label_style), Paragraph(quote.get('created_by_name') or 'N/A', value_style)],
     ]
     
@@ -8321,13 +8325,18 @@ def generate_invoice_pdf(invoice: dict, company: dict, client: dict) -> bytes:
     elements.append(Paragraph(f"FACTURA {invoice.get('invoice_number', '')}", styles['Heading2']))
     elements.append(Spacer(1, 0.2*inch))
     
+    # Usar nombre comercial y razón social
+    trade_name = client.get('trade_name') or client.get('name') or 'N/A'
+    razon_social = client.get('razon_social_fiscal') or ''
+    client_ref = f" ({client.get('reference')})" if client.get('reference') else ""
+    
     # Info table
     info_data = [
-        ['Cliente:', client.get('name', 'N/A'), 'Fecha:', invoice.get('created_at', '')[:10] if invoice.get('created_at') else ''],
-        ['RFC:', client.get('rfc', 'N/A'), 'Vencimiento:', invoice.get('due_date', '')[:10] if invoice.get('due_date') else 'N/A'],
-        ['Estado:', invoice.get('status', 'pending').upper(), '', ''],
+        ['Nombre Comercial:', trade_name + client_ref, 'Fecha:', invoice.get('created_at', '')[:10] if invoice.get('created_at') else ''],
+        ['Razón Social:', razon_social or 'N/A', 'Vencimiento:', invoice.get('due_date', '')[:10] if invoice.get('due_date') else 'N/A'],
+        ['RFC:', client.get('rfc', 'N/A'), 'Estado:', invoice.get('status', 'pending').upper()],
     ]
-    info_table = Table(info_data, colWidths=[1*inch, 2.5*inch, 1*inch, 2*inch])
+    info_table = Table(info_data, colWidths=[1.2*inch, 2.3*inch, 1*inch, 2*inch])
     info_table.setStyle(TableStyle([
         ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
         ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),

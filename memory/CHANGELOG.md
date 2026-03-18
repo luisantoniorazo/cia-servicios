@@ -1,6 +1,29 @@
 # CIA SERVICIOS - Changelog
 
 
+## [3.6.2] - 2026-03-18
+
+### Added - Campo "Nombre Comercial" en todo el sistema
+- **Nuevo campo `trade_name`** (Nombre Comercial) en el modelo de Cliente
+- Reorganizado el formulario de CRM:
+  - Nombre Comercial como campo principal obligatorio
+  - Razón Social (SAT) para facturación electrónica
+  - RFC separado del nombre
+- **Actualizada la tabla de clientes** para mostrar:
+  - Columna "Nombre Comercial" como principal
+  - Columna "Razón Social / RFC" combinada
+- **PDFs actualizados**:
+  - Cotizaciones muestran Nombre Comercial + Razón Social
+  - Facturas muestran Nombre Comercial + Razón Social
+  - Estados de cuenta usan Nombre Comercial
+- **Búsqueda mejorada** incluye:
+  - Nombre comercial
+  - Razón social
+  - RFC
+- **Backend actualizado** para sincronizar `name` = `trade_name` (compatibilidad)
+
+---
+
 ## [3.6.1] - 2026-03-18
 
 ### Added - Pantalla de Comprobantes de Pago

@@ -297,7 +297,7 @@ export const Invoices = () => {
             document_type: "invoice",
             document_id: response.data.id,
             recipient_email: client.email,
-            recipient_name: client.name,
+            recipient_name: client.trade_name || client.name,
           });
         } catch (emailError) {
           console.log("Email notification failed:", emailError);
@@ -613,7 +613,8 @@ export const Invoices = () => {
   const getClientName = (clientId) => {
     const client = clients.find((c) => c.id === clientId);
     if (!client) return "N/A";
-    return client.reference ? `${client.name} (${client.reference})` : client.name;
+    const displayName = client.trade_name || client.name;
+    return client.reference ? `${displayName} (${client.reference})` : displayName;
   };
 
   const stats = {

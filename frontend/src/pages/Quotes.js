@@ -320,7 +320,8 @@ export const Quotes = () => {
   const getClientWithRef = (clientId) => {
     const client = clients.find((c) => c.id === clientId);
     if (!client) return "N/A";
-    return client.reference ? `${client.name} (${client.reference})` : client.name;
+    const displayName = client.trade_name || client.name;
+    return client.reference ? `${displayName} (${client.reference})` : displayName;
   };
 
   // Filter quotes based on search
@@ -328,14 +329,18 @@ export const Quotes = () => {
     if (!searchFilter) return true;
     const search = searchFilter.toLowerCase();
     const client = clients.find(c => c.id === quote.client_id);
+    const clientTradeName = client?.trade_name?.toLowerCase() || "";
     const clientName = client?.name?.toLowerCase() || "";
+    const clientRazonSocial = client?.razon_social_fiscal?.toLowerCase() || "";
     const clientRef = client?.reference?.toLowerCase() || "";
     return (
       quote.quote_number?.toLowerCase().includes(search) ||
       quote.title?.toLowerCase().includes(search) ||
       quote.description?.toLowerCase().includes(search) ||
       quote.created_by_name?.toLowerCase().includes(search) ||
+      clientTradeName.includes(search) ||
       clientName.includes(search) ||
+      clientRazonSocial.includes(search) ||
       clientRef.includes(search) ||
       formatCurrency(quote.total).includes(search) ||
       getStatusLabel(quote.status)?.toLowerCase().includes(search)
@@ -617,7 +622,7 @@ export const Quotes = () => {
                     <SelectContent>
                       {clients.map((client) => (
                         <SelectItem key={client.id} value={client.id}>
-                          {client.name} {client.reference && `(${client.reference})`}
+                          {client.trade_name || client.name} {client.reference && `(${client.reference})`}
                         </SelectItem>
                       ))}
                     </SelectContent>

@@ -85,6 +85,7 @@ export const CRM = () => {
   const [activeTab, setActiveTab] = useState("all");
   const [formData, setFormData] = useState({
     name: "",
+    trade_name: "",  // Nombre Comercial
     reference: "",
     contact_name: "",
     email: "",
@@ -96,7 +97,7 @@ export const CRM = () => {
     notes: "",
     credit_days: 0,
     // Campos SAT para CFDI
-    razon_social_fiscal: "",
+    razon_social_fiscal: "",  // Razón Social
     regimen_fiscal: "",
     uso_cfdi: "G03",
     codigo_postal_fiscal: "",
@@ -159,21 +160,20 @@ export const CRM = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
+      // Sincronizar name con trade_name para compatibilidad
+      const submitData = {
+        company_id: company.id,
+        ...formData,
+        name: formData.trade_name || formData.name,  // name = trade_name para compatibilidad
+        probability: parseInt(formData.probability) || 0,
+        credit_days: parseInt(formData.credit_days) || 0,
+      };
+      
       if (editingClient) {
-        await api.put(`/clients/${editingClient.id}`, {
-          company_id: company.id,
-          ...formData,
-          probability: parseInt(formData.probability) || 0,
-          credit_days: parseInt(formData.credit_days) || 0,
-        });
+        await api.put(`/clients/${editingClient.id}`, submitData);
         toast.success("Cliente actualizado");
       } else {
-        await api.post("/clients", {
-          company_id: company.id,
-          ...formData,
-          probability: parseInt(formData.probability) || 0,
-          credit_days: parseInt(formData.credit_days) || 0,
-        });
+        await api.post("/clients", submitData);
         toast.success("Cliente creado exitosamente");
       }
       setDialogOpen(false);
@@ -188,6 +188,7 @@ export const CRM = () => {
     setEditingClient(client);
     setFormData({
       name: client.name,
+      trade_name: client.trade_name || client.name || "",  // Nombre Comercial
       reference: client.reference || "",
       contact_name: client.contact_name || "",
       email: client.email || "",
@@ -269,6 +270,7 @@ export const CRM = () => {
     setEditingClient(null);
     setFormData({
       name: "",
+      trade_name: "",
       reference: "",
       contact_name: "",
       email: "",
@@ -320,6 +322,8 @@ export const CRM = () => {
     const search = searchFilter.toLowerCase();
     return (
       client.name?.toLowerCase().includes(search) ||
+      client.trade_name?.toLowerCase().includes(search) ||
+      client.razon_social_fiscal?.toLowerCase().includes(search) ||
       client.reference?.toLowerCase().includes(search) ||
       client.contact_name?.toLowerCase().includes(search) ||
       client.email?.toLowerCase().includes(search) ||
@@ -376,15 +380,18 @@ export const CRM = () => {
               <div className="grid gap-4 py-4">
                 <div className="grid grid-cols-3 gap-4">
                   <div className="col-span-2 grid gap-2">
-                    <Label htmlFor="name">Nombre de la Empresa *</Label>
+                    <Label htmlFor="trade_name" className="flex items-center gap-1">
+                      Nombre Comercial <span className="text-red-500">*</span>
+                    </Label>
                     <Input
-                      id="name"
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      placeholder="Empresa S.A. de C.V."
+                      id="trade_name"
+                      value={formData.trade_name}
+                      onChange={(e) => setFormData({ ...formData, trade_name: e.target.value })}
+                      placeholder="MANTENIMIENTO INDUSTRIAL ALAMO"
                       required
-                      data-testid="client-name-input"
+                      data-testid="client-trade-name-input"
                     />
+                    <p className="text-xs text-muted-foreground">Nombre con el que se conoce comercialmente</p>
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor="reference">Referencia</Label>
@@ -393,7 +400,28 @@ export const CRM = () => {
                       value={formData.reference}
                       onChange={(e) => setFormData({ ...formData, reference: e.target.value })}
                       placeholder="Sucursal Norte"
-                      title="Campo para diferenciar clientes con misma razón social"
+                      title="Campo para diferenciar clientes"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="razon_social_fiscal">Razón Social (SAT)</Label>
+                    <Input
+                      id="razon_social_fiscal"
+                      value={formData.razon_social_fiscal}
+                      onChange={(e) => setFormData({ ...formData, razon_social_fiscal: e.target.value.toUpperCase() })}
+                      placeholder="MARISELA VAZQUEZ GARCIA"
+                    />
+                    <p className="text-xs text-muted-foreground">Exactamente como aparece en el SAT</p>
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="rfc">RFC</Label>
+                    <Input
+                      id="rfc"
+                      value={formData.rfc}
+                      onChange={(e) => setFormData({ ...formData, rfc: e.target.value.toUpperCase() })}
+                      placeholder="VAGM570107AP6"
                     />
                   </div>
                 </div>
@@ -408,17 +436,6 @@ export const CRM = () => {
                     />
                   </div>
                   <div className="grid gap-2">
-                    <Label htmlFor="rfc">RFC</Label>
-                    <Input
-                      id="rfc"
-                      value={formData.rfc}
-                      onChange={(e) => setFormData({ ...formData, rfc: e.target.value.toUpperCase() })}
-                      placeholder="ABC123456XYZ"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="grid gap-2">
                     <Label htmlFor="email">Correo Electrónico</Label>
                     <Input
                       id="email"
@@ -428,6 +445,8 @@ export const CRM = () => {
                       placeholder="contacto@empresa.com"
                     />
                   </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
                     <Label htmlFor="phone">Teléfono</Label>
                     <Input
@@ -437,15 +456,15 @@ export const CRM = () => {
                       placeholder="+52 55 1234 5678"
                     />
                   </div>
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="address">Dirección</Label>
-                  <Input
-                    id="address"
-                    value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    placeholder="Av. Principal 123, Ciudad"
-                  />
+                  <div className="grid gap-2">
+                    <Label htmlFor="address">Dirección</Label>
+                    <Input
+                      id="address"
+                      value={formData.address}
+                      onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                      placeholder="Av. Principal 123, Ciudad"
+                    />
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">
@@ -495,16 +514,8 @@ export const CRM = () => {
                 {!formData.is_prospect && (
                   <>
                     <Separator className="my-2" />
-                    <p className="text-sm font-medium text-muted-foreground">Datos Fiscales (CFDI)</p>
+                    <p className="text-sm font-medium text-muted-foreground">Datos Fiscales Adicionales (CFDI)</p>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div className="grid gap-2">
-                        <Label>Razón Social Fiscal</Label>
-                        <Input
-                          value={formData.razon_social_fiscal}
-                          onChange={(e) => setFormData({ ...formData, razon_social_fiscal: e.target.value })}
-                          placeholder="Exacta como en constancia SAT"
-                        />
-                      </div>
                       <div className="grid gap-2">
                         <Label>Código Postal Fiscal</Label>
                         <Input
@@ -514,8 +525,6 @@ export const CRM = () => {
                           maxLength={5}
                         />
                       </div>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="grid gap-2">
                         <Label>Régimen Fiscal</Label>
                         <Select
@@ -673,10 +682,10 @@ export const CRM = () => {
             <Table>
               <TableHeader>
                 <TableRow className="bg-slate-50">
-                  <TableHead>Empresa</TableHead>
+                  <TableHead>Nombre Comercial</TableHead>
+                  <TableHead>Razón Social / RFC</TableHead>
                   <TableHead>Contacto</TableHead>
                   <TableHead>Email</TableHead>
-                  <TableHead>Teléfono</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead>Probabilidad</TableHead>
                   <TableHead className="w-[50px]"></TableHead>
@@ -693,25 +702,30 @@ export const CRM = () => {
                   filteredClients.map((client) => (
                     <TableRow key={client.id} data-testid={`client-row-${client.id}`}>
                       <TableCell>
-                        <div className="font-medium">{client.name}</div>
+                        <div className="font-semibold text-primary">{client.trade_name || client.name}</div>
                         {client.reference && (
-                          <div className="text-sm text-blue-600">{client.reference}</div>
+                          <div className="text-xs text-blue-600">{client.reference}</div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {client.razon_social_fiscal && (
+                          <div className="text-sm">{client.razon_social_fiscal}</div>
                         )}
                         {client.rfc && (
-                          <div className="text-sm text-muted-foreground font-mono">{client.rfc}</div>
+                          <div className="text-xs text-muted-foreground font-mono">{client.rfc}</div>
                         )}
+                        {!client.razon_social_fiscal && !client.rfc && "-"}
                       </TableCell>
                       <TableCell>{client.contact_name || "-"}</TableCell>
                       <TableCell>
                         {client.email ? (
-                          <a href={`mailto:${client.email}`} className="text-primary hover:underline">
+                          <a href={`mailto:${client.email}`} className="text-primary hover:underline text-sm">
                             {client.email}
                           </a>
                         ) : (
                           "-"
                         )}
                       </TableCell>
-                      <TableCell>{client.phone || "-"}</TableCell>
                       <TableCell>
                         <Badge className={client.is_prospect ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}>
                           {client.is_prospect ? "Prospecto" : "Cliente"}
