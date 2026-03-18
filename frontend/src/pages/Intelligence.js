@@ -30,6 +30,7 @@ import {
   Send,
   Loader2,
   Bot,
+  User,
   RefreshCw,
   Paperclip,
   Save,
@@ -107,9 +108,9 @@ export const Intelligence = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!prompt.trim() || isLoading) return;
+    if ((!prompt.trim() && attachedFiles.length === 0) || isLoading) return;
 
-    const userMessage = prompt.trim();
+    const userMessage = prompt.trim() || "Analiza los archivos adjuntos";
     setPrompt("");
     
     const userMsgObj = { 
