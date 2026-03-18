@@ -473,10 +473,40 @@ export const SuperAdminDashboard = () => {
     }
   };
 
-  const copyLoginUrl = (slug) => {
+  const copyLoginUrl = async (slug) => {
     const url = `${window.location.origin}/empresa/${slug}/login`;
-    navigator.clipboard.writeText(url);
-    toast.success("URL copiada al portapapeles");
+    
+    try {
+      // Intentar usar la API moderna de clipboard
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(url);
+        toast.success("URL copiada al portapapeles");
+      } else {
+        // Fallback para contextos no seguros
+        const textArea = document.createElement("textarea");
+        textArea.value = url;
+        textArea.style.position = "fixed";
+        textArea.style.left = "-999999px";
+        textArea.style.top = "-999999px";
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        
+        if (successful) {
+          toast.success("URL copiada al portapapeles");
+        } else {
+          // Mostrar URL para copiar manualmente
+          toast.info(`URL: ${url}`, { duration: 10000 });
+        }
+      }
+    } catch (err) {
+      console.error("Error al copiar:", err);
+      // Mostrar URL para copiar manualmente
+      toast.info(`URL: ${url}`, { duration: 10000 });
+    }
   };
 
   const fileToBase64 = (file) => {
