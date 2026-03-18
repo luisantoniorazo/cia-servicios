@@ -158,6 +158,7 @@ export const SuperAdminDashboard = () => {
   });
   const [formData, setFormData] = useState({
     business_name: "",
+    trade_name: "",
     rfc: "",
     address: "",
     phone: "",
@@ -536,6 +537,7 @@ export const SuperAdminDashboard = () => {
   const resetForm = () => {
     setFormData({
       business_name: "",
+      trade_name: "",
       rfc: "",
       address: "",
       phone: "",
@@ -976,7 +978,10 @@ export const SuperAdminDashboard = () => {
                     dashboard?.companies?.map((company) => (
                       <TableRow key={company.id} className="border-slate-700">
                         <TableCell>
-                          <div className="text-white font-medium">{company.business_name}</div>
+                          <div className="text-white font-medium">{company.trade_name || company.business_name}</div>
+                          {company.trade_name && company.business_name !== company.trade_name && (
+                            <div className="text-xs text-slate-500">{company.business_name}</div>
+                          )}
                           <div className="text-sm text-slate-400">{company.slug}</div>
                         </TableCell>
                         <TableCell>
@@ -1144,7 +1149,17 @@ export const SuperAdminDashboard = () => {
                   Datos de la Empresa
                 </h4>
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2 grid gap-2">
+                  <div className="grid gap-2">
+                    <Label>Nombre Comercial</Label>
+                    <Input
+                      value={formData.trade_name}
+                      onChange={(e) => setFormData({ ...formData, trade_name: e.target.value })}
+                      placeholder="Mi Empresa (marca)"
+                      data-testid="new-company-trade-name"
+                    />
+                    <p className="text-xs text-slate-500">Nombre con el que se conoce comercialmente</p>
+                  </div>
+                  <div className="grid gap-2">
                     <Label>Razón Social *</Label>
                     <Input
                       value={formData.business_name}
@@ -1153,6 +1168,7 @@ export const SuperAdminDashboard = () => {
                       required
                       data-testid="new-company-name"
                     />
+                    <p className="text-xs text-slate-500">Nombre legal de la empresa</p>
                   </div>
                   <div className="grid gap-2">
                     <Label>RFC *</Label>

@@ -142,7 +142,8 @@ class NotificationType(str, Enum):
 # ============== MODELS ==============
 # Company Models
 class CompanyBase(BaseModel):
-    business_name: str
+    business_name: str  # Razón Social (nombre legal)
+    trade_name: Optional[str] = None  # Nombre Comercial (marca)
     slug: str
     rfc: str
     address: Optional[str] = None
@@ -162,7 +163,8 @@ class CompanyBase(BaseModel):
     billing_mode: str = "manual"  # "master" (usa tu cuenta), "own" (su cuenta), "manual" (sube CFDIs)
 
 class CompanyCreate(BaseModel):
-    business_name: str
+    business_name: str  # Razón Social (nombre legal)
+    trade_name: Optional[str] = None  # Nombre Comercial (marca)
     rfc: str
     address: Optional[str] = None
     phone: Optional[str] = None
@@ -200,6 +202,7 @@ class Company(CompanyBase):
 class CompanyPublic(BaseModel):
     id: str
     business_name: str
+    trade_name: Optional[str] = None
     slug: str
     logo_url: Optional[str] = None
     logo_file: Optional[str] = None  # Base64 encoded logo
@@ -7864,14 +7867,23 @@ def add_professional_header(elements: list, company: dict, doc_type: str, doc_nu
         'purchase_order': 'ORDEN DE COMPRA',
     }
     
-    # Styles
-    company_name_style = ParagraphStyle(
-        'CompanyName', 
-        fontSize=14, 
+    # Styles - Nombre comercial grande
+    trade_name_style = ParagraphStyle(
+        'TradeName', 
+        fontSize=16, 
         fontName='Helvetica-Bold',
         textColor=colors.HexColor(scheme['primary']),
-        leading=18,
-        spaceAfter=4
+        leading=20,
+        spaceAfter=2
+    )
+    # Razón social más pequeña
+    business_name_style = ParagraphStyle(
+        'BusinessName', 
+        fontSize=9, 
+        fontName='Helvetica',
+        textColor=colors.HexColor('#2d3748'),
+        leading=11,
+        spaceAfter=2
     )
     company_info_line_style = ParagraphStyle(
         'CompanyInfoLine', 
@@ -7927,8 +7939,14 @@ def add_professional_header(elements: list, company: dict, doc_type: str, doc_nu
         left_content.append([logo_element])
         left_content.append([Spacer(1, 4)])
     
-    # Company name
-    left_content.append([Paragraph(company.get('business_name') or 'CIA SERVICIOS', company_name_style)])
+    # Nombre comercial prominente (o razón social si no hay nombre comercial)
+    trade_name = company.get('trade_name') or company.get('business_name') or 'CIA SERVICIOS'
+    left_content.append([Paragraph(trade_name, trade_name_style)])
+    
+    # Razón social debajo (solo si es diferente al nombre comercial)
+    business_name = company.get('business_name')
+    if business_name and company.get('trade_name') and business_name != company.get('trade_name'):
+        left_content.append([Paragraph(business_name, business_name_style)])
     
     # Build compact info line (RFC • Address)
     info_parts = []
@@ -8001,13 +8019,24 @@ def add_company_header_to_pdf(elements: list, company: dict, styles, title_style
     
     PRIMARY = '#1a365d'
     TEXT_MUTED = '#4a5568'
+    SECONDARY = '#2d3748'
     
-    company_name_style = ParagraphStyle(
-        'CompanyName', 
-        fontSize=14, 
+    # Estilo para nombre comercial (grande y prominente)
+    trade_name_style = ParagraphStyle(
+        'TradeName', 
+        fontSize=16, 
         fontName='Helvetica-Bold',
         textColor=colors.HexColor(PRIMARY),
-        leading=18,
+        leading=20,
+        spaceAfter=2
+    )
+    # Estilo para razón social (más pequeño)
+    business_name_style = ParagraphStyle(
+        'BusinessName', 
+        fontSize=10, 
+        fontName='Helvetica',
+        textColor=colors.HexColor(SECONDARY),
+        leading=12,
         spaceAfter=4
     )
     company_info_line_style = ParagraphStyle(
@@ -8041,7 +8070,14 @@ def add_company_header_to_pdf(elements: list, company: dict, styles, title_style
         header_content.append([logo_element])
         header_content.append([Spacer(1, 4)])
     
-    header_content.append([Paragraph(company.get('business_name') or 'CIA SERVICIOS', company_name_style)])
+    # Nombre comercial prominente (o razón social si no hay nombre comercial)
+    trade_name = company.get('trade_name') or company.get('business_name') or 'CIA SERVICIOS'
+    header_content.append([Paragraph(trade_name, trade_name_style)])
+    
+    # Razón social debajo (solo si hay nombre comercial diferente)
+    business_name = company.get('business_name')
+    if business_name and company.get('trade_name') and business_name != company.get('trade_name'):
+        header_content.append([Paragraph(business_name, business_name_style)])
     
     info_parts = []
     if company.get('rfc'):
