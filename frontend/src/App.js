@@ -35,6 +35,7 @@ import ActivityLogs from "./pages/ActivityLogs";
 import FiscalSettings from "./pages/FiscalSettings";
 import SubscriptionBilling from "./pages/SubscriptionBilling";
 import MySubscription from "./pages/MySubscription";
+import PendingReceipts from "./pages/PendingReceipts";
 
 // Layout
 import MainLayout from "./components/Layout/MainLayout";
@@ -221,6 +222,14 @@ function AppRoutes() {
         element={
           <SuperAdminRoute>
             <ActivityLogs isSuperAdmin={true} />
+          </SuperAdminRoute>
+        }
+      />
+      <Route
+        path="/admin-portal/pending-receipts"
+        element={
+          <SuperAdminRoute>
+            <PendingReceipts />
           </SuperAdminRoute>
         }
       />

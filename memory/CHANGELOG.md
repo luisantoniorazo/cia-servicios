@@ -1,6 +1,30 @@
 # CIA SERVICIOS - Changelog
 
 
+## [3.6.1] - 2026-03-18
+
+### Added - Pantalla de Comprobantes de Pago
+- **Nueva página `PendingReceipts.js`** para Super Admin
+  - Lista de comprobantes de transferencia pendientes de revisión
+  - Estadísticas: pendientes, monto total, empresas
+  - Visualización de comprobantes (imagen/PDF)
+  - Botones Aprobar/Rechazar con flujo completo
+  - Verificación del monto antes de aprobar
+- **Nueva ruta** `/admin-portal/pending-receipts`
+- **Botón "Comprobantes"** agregado al dashboard del Super Admin
+- **Endpoints backend** completamente funcionales:
+  - `GET /api/subscriptions/admin/pending-receipts`
+  - `POST /api/subscriptions/admin/receipts/{id}/approve`
+  - `POST /api/subscriptions/admin/receipts/{id}/reject`
+
+### Updated - Documentación de Refactorización
+- Actualizado `REFACTORING_PLAN.md` con estado REAL del código
+- El `server.py` aún tiene 10,119 líneas (NO está refactorizado)
+- 14 módulos creados pero con código DUPLICADO en server.py
+- Documentada estrategia de limpieza gradual
+
+---
+
 ## [3.6.0] - 2026-03-17
 
 ### Refactorización Backend COMPLETA

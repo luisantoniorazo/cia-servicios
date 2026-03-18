@@ -9,9 +9,11 @@
 ## Problem Statement Original
 Aplicación empresarial de renta mensual que permita gestionar, monitorear y optimizar todos los procesos operativos, comerciales y estratégicos de una empresa mexicana de servicios y proyectos industriales. Sistema multi-tenant con Super Admin para gestión de suscripciones.
 
-## Arquitectura Modular Backend (v3.6.0)
+## Arquitectura Modular Backend (v3.6.1)
 
-El backend ha sido completamente refactorizado en **14 módulos independientes** con ~114 endpoints:
+### Estado Actual
+- **server.py**: 10,119 líneas, 188 rutas (monolito original)
+- **14 módulos en /routes/**: Conectados pero con código DUPLICADO en server.py
 
 ```
 /app/backend/routes/
@@ -19,17 +21,25 @@ El backend ha sido completamente refactorizado en **14 módulos independientes**
 ├── projects.py      # Proyectos (10 endpoints)
 ├── quotes.py        # Cotizaciones (8 endpoints)
 ├── invoices.py      # Facturación (9 endpoints)
-├── subscriptions.py # Suscripciones SaaS (12 endpoints)
+├── subscriptions.py # Suscripciones SaaS (17 endpoints) ✅ PRINCIPAL
 ├── users.py         # Usuarios empresa (9 endpoints)
 ├── dashboard.py     # Dashboard stats (6 endpoints)
-├── auth.py          # Auth/Login (12 endpoints)
+├── auth.py          # Auth/Login (13 endpoints)
 ├── tickets.py       # Tickets soporte (8 endpoints)
-├── notifications.py # Notificaciones (7 endpoints)
-├── purchases.py     # Compras/Proveedores (12 endpoints)
-├── documents.py     # Documentos (10 endpoints)
-├── ai.py            # IA/Chat (6 endpoints)
-└── activity.py      # Activity logs (4 endpoints)
+├── notifications.py # Notificaciones (10 endpoints)
+├── purchases.py     # Compras/Proveedores (11 endpoints)
+├── documents.py     # Documentos (13 endpoints)
+├── ai.py            # IA/Chat (7 endpoints)
+├── activity.py      # Activity logs (3 endpoints)
+└── admin.py         # Admin (11 endpoints) - NO CONECTADO
 ```
+
+### ⚠️ Deuda Técnica - Refactorización Pendiente
+Ver `/app/backend/REFACTORING_PLAN.md` para detalles completos.
+
+**Problema**: Las rutas están duplicadas entre server.py y los módulos. FastAPI usa la primera ruta encontrada, por lo que las rutas de server.py tienen prioridad.
+
+**Solución propuesta**: Eliminar gradualmente las rutas duplicadas de server.py después de verificar que los módulos funcionan correctamente.
 
 ## Arquitectura Multi-Portal
 
