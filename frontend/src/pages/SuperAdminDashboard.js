@@ -165,10 +165,8 @@ export const SuperAdminDashboard = () => {
     email: "",
     logo_url: "",
     logo_file: "",
-    monthly_fee: "",
-    license_type: "basic",
-    max_users: 5,
-    subscription_months: 1,
+    license_type: "professional",
+    trial_days: 7,
     admin_full_name: "",
     admin_email: "",
     admin_phone: "",
@@ -544,9 +542,8 @@ export const SuperAdminDashboard = () => {
       email: "",
       logo_url: "",
       logo_file: "",
-      monthly_fee: "",
-      license_type: "basic",
-      max_users: 5,
+      license_type: "professional",
+      trial_days: 7,
       admin_full_name: "",
       admin_email: "",
       admin_phone: "",
@@ -1257,40 +1254,20 @@ export const SuperAdminDashboard = () => {
                     </Select>
                   </div>
                   <div className="grid gap-2">
-                    <Label>Máximo Usuarios</Label>
+                    <Label>Días de Prueba *</Label>
                     <Input
                       type="number"
-                      value={formData.max_users}
-                      onChange={(e) => setFormData({ ...formData, max_users: e.target.value })}
-                    />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Mensualidad (MXN) *</Label>
-                    <Input
-                      type="number"
-                      value={formData.monthly_fee}
-                      onChange={(e) => setFormData({ ...formData, monthly_fee: e.target.value })}
-                      placeholder="2500"
+                      min="1"
+                      max="15"
+                      value={formData.trial_days || 7}
+                      onChange={(e) => {
+                        const value = Math.min(15, Math.max(1, parseInt(e.target.value) || 7));
+                        setFormData({ ...formData, trial_days: value });
+                      }}
+                      placeholder="7"
                       required
-                      data-testid="new-company-fee"
                     />
-                  </div>
-                  <div className="grid gap-2">
-                    <Label>Meses de Suscripción Inicial</Label>
-                    <Select 
-                      value={String(formData.subscription_months)} 
-                      onValueChange={(value) => setFormData({ ...formData, subscription_months: parseInt(value) })}
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">1 mes</SelectItem>
-                        <SelectItem value="3">3 meses</SelectItem>
-                        <SelectItem value="6">6 meses</SelectItem>
-                        <SelectItem value="12">12 meses (1 año)</SelectItem>
-                      </SelectContent>
-                    </Select>
+                    <p className="text-xs text-slate-500">Máximo 15 días de periodo de prueba</p>
                   </div>
                 </div>
               </div>

@@ -171,11 +171,9 @@ class CompanyCreate(BaseModel):
     email: Optional[EmailStr] = None
     logo_url: Optional[str] = None
     logo_file: Optional[str] = None  # Base64 encoded logo
-    monthly_fee: float = 0.0
-    license_type: str = "basic"
-    max_users: int = 5
-    # Subscription fields
-    subscription_months: int = 1  # Duration of subscription in months
+    license_type: str = "professional"
+    # Trial period
+    trial_days: int = 7  # Días de prueba (máximo 15)
     # Configuración de Facturación Electrónica
     billing_included: bool = False  # True = usa cuenta maestra
     # Admin user data
@@ -1225,14 +1223,23 @@ async def create_company_with_admin(company_data: CompanyCreate, current_user: d
     if existing_user:
         raise HTTPException(status_code=400, detail="El email del administrador ya está registrado")
     
-    # Calculate subscription dates
+    # Calculate subscription dates based on trial_days
     now = datetime.now(timezone.utc)
-    subscription_months = getattr(company_data, 'subscription_months', 1) or 1
-    subscription_end = now + relativedelta(months=subscription_months)
+    trial_days = min(15, max(1, getattr(company_data, 'trial_days', 7) or 7))  # Max 15 days
+    subscription_end = now + timedelta(days=trial_days)
+    
+    # Definir max_users según el plan
+    plan_users = {
+        "basic": 3,
+        "professional": 10,
+        "enterprise": 50
+    }
+    max_users = plan_users.get(company_data.license_type, 10)
     
     # Crear empresa
     company = Company(
         business_name=company_data.business_name,
+        trade_name=company_data.trade_name,
         slug=slug,
         rfc=company_data.rfc,
         address=company_data.address,
@@ -1240,14 +1247,14 @@ async def create_company_with_admin(company_data: CompanyCreate, current_user: d
         email=company_data.email,
         logo_url=company_data.logo_url,
         logo_file=company_data.logo_file,
-        monthly_fee=company_data.monthly_fee,
+        monthly_fee=0.0,  # Trial period is free
         license_type=company_data.license_type,
-        max_users=company_data.max_users,
-        subscription_status=SubscriptionStatus.ACTIVE,
+        max_users=max_users,
+        subscription_status=SubscriptionStatus.TRIAL,
         subscription_start=now,
         subscription_end=subscription_end,
-        subscription_months=subscription_months,
-        last_payment_date=now,
+        subscription_months=0,  # Trial, not a monthly subscription yet
+        last_payment_date=None,
         payment_reminder_sent=False
     )
     company_dict = company.model_dump()
