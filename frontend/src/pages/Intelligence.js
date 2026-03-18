@@ -27,15 +27,10 @@ import { toast } from "sonner";
 import {
   Sparkles,
   Brain,
-  TrendingUp,
-  FileText,
-  Zap,
   Send,
   Loader2,
   Bot,
-  User,
   RefreshCw,
-  BarChart3,
   Paperclip,
   Save,
   History,
@@ -78,29 +73,6 @@ export const Intelligence = () => {
       console.log("No saved conversations");
     }
   };
-
-  const quickPrompts = [
-    {
-      icon: TrendingUp,
-      label: "Análisis Financiero",
-      prompt: "Dame un análisis de la situación financiera actual de la empresa, incluyendo facturación, cobranza y proyección.",
-    },
-    {
-      icon: BarChart3,
-      label: "Estado de Proyectos",
-      prompt: "¿Cuál es el estado general de los proyectos activos? Identifica riesgos y oportunidades.",
-    },
-    {
-      icon: FileText,
-      label: "Pipeline Comercial",
-      prompt: "Analiza el pipeline de cotizaciones y prospectos. ¿Qué probabilidad de conversión tenemos?",
-    },
-    {
-      icon: Zap,
-      label: "Recomendaciones",
-      prompt: "Dame 3 recomendaciones accionables para mejorar la eficiencia operativa esta semana.",
-    },
-  ];
 
   const handleFileSelect = (e) => {
     const files = Array.from(e.target.files);
@@ -171,10 +143,6 @@ export const Intelligence = () => {
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleQuickPrompt = (promptText) => {
-    setPrompt(promptText);
   };
 
   const clearChat = () => {
@@ -288,76 +256,58 @@ export const Intelligence = () => {
         </CardContent>
       </Card>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Quick Prompts */}
-        <div className="lg:col-span-1 space-y-3">
-          <h3 className="font-semibold text-slate-700">Consultas rápidas</h3>
-          {quickPrompts.map((qp, idx) => (
-            <Card
-              key={idx}
-              className="cursor-pointer hover:border-purple-300 hover:bg-purple-50/50 transition-colors"
-              onClick={() => handleQuickPrompt(qp.prompt)}
-            >
-              <CardContent className="p-3 flex items-center gap-3">
-                <qp.icon className="h-5 w-5 text-purple-500" />
-                <span className="text-sm font-medium">{qp.label}</span>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {/* Chat Area */}
-        <Card className="lg:col-span-3">
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2">
-              <Bot className="h-5 w-5 text-purple-500" />
-              Asistente IA
-              {currentConversationId && (
-                <Badge variant="outline" className="text-xs">Guardada</Badge>
-              )}
-            </CardTitle>
-            <CardDescription>
-              Pregunta sobre proyectos, finanzas, clientes o adjunta archivos para análisis
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {/* Messages */}
-            <ScrollArea className="h-[350px] pr-4 mb-4">
-              {messages.length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
-                  <Brain className="h-12 w-12 mb-4 text-purple-200" />
-                  <p className="font-medium">¿En qué puedo ayudarte hoy?</p>
-                  <p className="text-sm mt-1">Pregunta sobre tu negocio, adjunta archivos o usa las consultas rápidas</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {messages.map((msg, idx) => (
+      {/* Chat Area - Full Width */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2">
+            <Bot className="h-5 w-5 text-purple-500" />
+            Asistente IA
+            {currentConversationId && (
+              <Badge variant="outline" className="text-xs">Guardada</Badge>
+            )}
+          </CardTitle>
+          <CardDescription>
+            Pregunta lo que necesites sobre tu empresa o adjunta archivos para análisis
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {/* Messages */}
+          <ScrollArea className="h-[400px] pr-4 mb-4">
+            {messages.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-full text-center text-muted-foreground">
+                <Brain className="h-12 w-12 mb-4 text-purple-200" />
+                <p className="font-medium">¿En qué puedo ayudarte hoy?</p>
+                <p className="text-sm mt-1">Escribe tu pregunta o adjunta archivos para análisis</p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {messages.map((msg, idx) => (
+                  <div
+                    key={idx}
+                    className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                  >
+                    {msg.role === "assistant" && (
+                      <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                        <Bot className="h-4 w-4 text-purple-600" />
+                      </div>
+                    )}
                     <div
-                      key={idx}
-                      className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                      className={`max-w-[80%] rounded-lg p-3 ${
+                        msg.role === "user"
+                          ? "bg-primary text-primary-foreground"
+                          : msg.error
+                          ? "bg-red-50 border border-red-200"
+                          : "bg-muted"
+                      }`}
                     >
-                      {msg.role === "assistant" && (
-                        <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
-                          <Bot className="h-4 w-4 text-purple-600" />
-                        </div>
-                      )}
-                      <div
-                        className={`max-w-[80%] rounded-lg p-3 ${
-                          msg.role === "user"
-                            ? "bg-primary text-primary-foreground"
-                            : msg.error
-                            ? "bg-red-50 border border-red-200"
-                            : "bg-muted"
-                        }`}
-                      >
-                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
-                        {msg.files && msg.files.length > 0 && (
-                          <div className="mt-2 flex flex-wrap gap-1">
-                            {msg.files.map((f, fidx) => (
-                              <Badge key={fidx} variant="secondary" className="text-xs">
-                                <Paperclip className="h-3 w-3 mr-1" />
-                                {f.name}
-                              </Badge>
+                      <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                      {msg.files && msg.files.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {msg.files.map((f, fidx) => (
+                            <Badge key={fidx} variant="secondary" className="text-xs">
+                              <Paperclip className="h-3 w-3 mr-1" />
+                              {f.name}
+                            </Badge>
                             ))}
                           </div>
                         )}
@@ -448,7 +398,6 @@ export const Intelligence = () => {
             </form>
           </CardContent>
         </Card>
-      </div>
 
       {/* History Dialog */}
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>

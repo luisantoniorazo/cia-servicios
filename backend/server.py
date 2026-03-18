@@ -1281,17 +1281,17 @@ async def create_company_with_admin(company_data: CompanyCreate, current_user: d
     admin_dict["created_by"] = current_user["sub"]
     await db.users.insert_one(admin_dict)
     
-    # Record initial subscription history
+    # Record initial subscription history (trial period)
     history_entry = {
         "id": str(uuid.uuid4()),
         "company_id": company.id,
-        "action": "initial_subscription",
+        "action": "trial_started",
         "previous_end_date": None,
         "new_end_date": subscription_end.isoformat(),
-        "months_added": subscription_months,
-        "amount": company_data.monthly_fee * subscription_months,
-        "payment_method": "initial",
-        "notes": "Suscripción inicial al crear empresa",
+        "days_added": trial_days,
+        "amount": 0,  # Trial is free
+        "payment_method": "trial",
+        "notes": f"Periodo de prueba de {trial_days} días",
         "created_by": current_user.get("sub"),
         "created_at": now.isoformat()
     }
@@ -1302,8 +1302,11 @@ async def create_company_with_admin(company_data: CompanyCreate, current_user: d
         "company": {
             "id": company.id,
             "business_name": company.business_name,
+            "trade_name": company.trade_name,
             "slug": slug,
             "login_url": f"/empresa/{slug}/login",
+            "subscription_status": "trial",
+            "trial_days": trial_days,
             "subscription_end": subscription_end.isoformat()
         },
         "admin": {
