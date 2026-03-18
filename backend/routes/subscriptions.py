@@ -634,6 +634,230 @@ async def request_subscription_invoice(
         "invoice": invoice_dict
     }
 
+
+# ============== CLIENT RECEIPT UPLOAD ==============
+
+class ReceiptUploadRequest(BaseModel):
+    file_content: str  # Base64
+    file_name: str
+    file_type: str
+    reference: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@router.post("/invoices/{invoice_id}/upload-receipt")
+async def upload_payment_receipt(
+    invoice_id: str,
+    request: ReceiptUploadRequest,
+    current_user: dict = Depends(get_current_user_sub)
+):
+    """Upload payment receipt for a subscription invoice (Client)"""
+    company_id = current_user.get("company_id")
+    
+    # Verify invoice belongs to user's company
+    invoice = await _db.subscription_invoices.find_one(
+        {"id": invoice_id, "company_id": company_id},
+        {"_id": 0}
+    )
+    
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    if invoice["status"] == "paid":
+        raise HTTPException(status_code=400, detail="Esta factura ya está pagada")
+    
+    now = datetime.now(timezone.utc)
+    
+    # Save receipt
+    receipt_id = str(uuid.uuid4())
+    receipt_doc = {
+        "id": receipt_id,
+        "invoice_id": invoice_id,
+        "company_id": company_id,
+        "file_content": request.file_content,
+        "file_name": request.file_name,
+        "file_type": request.file_type,
+        "reference": request.reference,
+        "notes": request.notes,
+        "status": "pending_review",  # pending_review, approved, rejected
+        "uploaded_by": current_user.get("sub"),
+        "uploaded_at": now.isoformat(),
+        "reviewed_at": None,
+        "reviewed_by": None
+    }
+    
+    await _db.payment_receipts.insert_one(receipt_doc)
+    
+    # Update invoice to indicate receipt was uploaded
+    await _db.subscription_invoices.update_one(
+        {"id": invoice_id},
+        {"$set": {
+            "receipt_uploaded": True,
+            "receipt_id": receipt_id,
+            "receipt_uploaded_at": now.isoformat()
+        }}
+    )
+    
+    # Create notification for Super Admin
+    await _db.notifications.insert_one({
+        "id": str(uuid.uuid4()),
+        "user_id": "super_admin",  # Special ID for super admin notifications
+        "company_id": None,
+        "type": "payment_receipt",
+        "title": "Nuevo comprobante de pago",
+        "message": f"La empresa ha subido un comprobante de pago para la factura {invoice['invoice_number']}",
+        "read": False,
+        "data": {
+            "invoice_id": invoice_id,
+            "receipt_id": receipt_id,
+            "company_id": company_id
+        },
+        "created_at": now.isoformat()
+    })
+    
+    return {
+        "message": "Comprobante subido exitosamente",
+        "receipt_id": receipt_id
+    }
+
+
+@router.get("/admin/pending-receipts")
+async def list_pending_receipts(
+    current_user: dict = Depends(require_super_admin_sub)
+):
+    """List all pending payment receipts (Super Admin)"""
+    receipts = await _db.payment_receipts.find(
+        {"status": "pending_review"},
+        {"_id": 0}
+    ).sort("uploaded_at", -1).to_list(100)
+    
+    # Enrich with company and invoice info
+    for receipt in receipts:
+        company = await _db.companies.find_one(
+            {"id": receipt.get("company_id")},
+            {"_id": 0, "business_name": 1}
+        )
+        receipt["company_name"] = company["business_name"] if company else "Desconocida"
+        
+        invoice = await _db.subscription_invoices.find_one(
+            {"id": receipt.get("invoice_id")},
+            {"_id": 0, "invoice_number": 1, "total": 1}
+        )
+        if invoice:
+            receipt["invoice_number"] = invoice["invoice_number"]
+            receipt["invoice_total"] = invoice["total"]
+    
+    return {"receipts": receipts}
+
+
+@router.post("/admin/receipts/{receipt_id}/approve")
+async def approve_receipt(
+    receipt_id: str,
+    current_user: dict = Depends(require_super_admin_sub)
+):
+    """Approve a payment receipt and mark invoice as paid (Super Admin)"""
+    receipt = await _db.payment_receipts.find_one({"id": receipt_id}, {"_id": 0})
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Comprobante no encontrado")
+    
+    now = datetime.now(timezone.utc)
+    invoice_id = receipt["invoice_id"]
+    
+    # Update receipt status
+    await _db.payment_receipts.update_one(
+        {"id": receipt_id},
+        {"$set": {
+            "status": "approved",
+            "reviewed_at": now.isoformat(),
+            "reviewed_by": current_user.get("sub")
+        }}
+    )
+    
+    # Get invoice to update company
+    invoice = await _db.subscription_invoices.find_one({"id": invoice_id}, {"_id": 0})
+    
+    if invoice:
+        # Update invoice as paid
+        await _db.subscription_invoices.update_one(
+            {"id": invoice_id},
+            {"$set": {
+                "status": "paid",
+                "payment_method": "transfer",
+                "payment_reference": receipt.get("reference"),
+                "payment_date": now.isoformat()
+            }}
+        )
+        
+        # Update company subscription
+        company_id = invoice["company_id"]
+        period_end = invoice["period_end"]
+        plan_id = invoice["plan_id"]
+        includes_billing = SUBSCRIPTION_PLANS.get(plan_id, {}).get("includes_billing", False)
+        
+        await _db.companies.update_one(
+            {"id": company_id},
+            {"$set": {
+                "subscription_status": "active",
+                "subscription_end": period_end,
+                "last_payment_date": now.isoformat(),
+                "payment_reminder_sent": False,
+                "billing_included": includes_billing,
+                "billing_mode": "master" if includes_billing else "manual"
+            }}
+        )
+        
+        # Record in history
+        await _db.subscription_history.insert_one({
+            "id": str(uuid.uuid4()),
+            "invoice_id": invoice_id,
+            "company_id": company_id,
+            "date": now.isoformat(),
+            "amount": invoice["total"],
+            "payment_method": "transfer",
+            "reference": receipt.get("reference"),
+            "created_at": now.isoformat()
+        })
+    
+    return {"message": "Comprobante aprobado y pago registrado"}
+
+
+@router.post("/admin/receipts/{receipt_id}/reject")
+async def reject_receipt(
+    receipt_id: str,
+    data: dict,
+    current_user: dict = Depends(require_super_admin_sub)
+):
+    """Reject a payment receipt (Super Admin)"""
+    receipt = await _db.payment_receipts.find_one({"id": receipt_id}, {"_id": 0})
+    if not receipt:
+        raise HTTPException(status_code=404, detail="Comprobante no encontrado")
+    
+    now = datetime.now(timezone.utc)
+    
+    # Update receipt status
+    await _db.payment_receipts.update_one(
+        {"id": receipt_id},
+        {"$set": {
+            "status": "rejected",
+            "rejection_reason": data.get("reason", ""),
+            "reviewed_at": now.isoformat(),
+            "reviewed_by": current_user.get("sub")
+        }}
+    )
+    
+    # Update invoice
+    await _db.subscription_invoices.update_one(
+        {"id": receipt["invoice_id"]},
+        {"$set": {
+            "receipt_uploaded": False,
+            "receipt_rejected": True,
+            "receipt_rejection_reason": data.get("reason", "")
+        }}
+    )
+    
+    return {"message": "Comprobante rechazado"}
+
+
 # ============== STRIPE PAYMENT ROUTES ==============
 
 @router.post("/checkout/create-session")

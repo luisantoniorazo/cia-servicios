@@ -5,6 +5,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Separator } from "../components/ui/separator";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import { Textarea } from "../components/ui/textarea";
 import {
   Dialog,
   DialogContent,
@@ -42,6 +45,8 @@ import {
   RefreshCw,
   Sparkles,
   Shield,
+  Upload,
+  Image,
 } from "lucide-react";
 
 const MySubscription = () => {
@@ -59,6 +64,7 @@ const MySubscription = () => {
   // Dialog states
   const [requestInvoiceDialogOpen, setRequestInvoiceDialogOpen] = useState(false);
   const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
+  const [uploadReceiptDialogOpen, setUploadReceiptDialogOpen] = useState(false);
   const [selectedInvoice, setSelectedInvoice] = useState(null);
   
   // Form states
@@ -66,8 +72,14 @@ const MySubscription = () => {
     plan_id: "base",
     billing_cycle: "monthly"
   });
+  const [receiptForm, setReceiptForm] = useState({
+    file: null,
+    reference: "",
+    notes: ""
+  });
   const [processingPayment, setProcessingPayment] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadingReceipt, setUploadingReceipt] = useState(false);
 
   useEffect(() => {
     fetchData();
@@ -175,6 +187,52 @@ const MySubscription = () => {
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
     toast.success("Copiado al portapapeles");
+  };
+
+  const handleUploadReceipt = async () => {
+    if (!receiptForm.file) {
+      toast.error("Por favor selecciona un archivo");
+      return;
+    }
+    
+    setUploadingReceipt(true);
+    try {
+      // Convert file to base64
+      const reader = new FileReader();
+      reader.readAsDataURL(receiptForm.file);
+      
+      reader.onload = async () => {
+        const base64 = reader.result.split(',')[1];
+        
+        await api.post(`/subscriptions/invoices/${selectedInvoice.id}/upload-receipt`, {
+          file_content: base64,
+          file_name: receiptForm.file.name,
+          file_type: receiptForm.file.type,
+          reference: receiptForm.reference,
+          notes: receiptForm.notes
+        });
+        
+        toast.success("Comprobante enviado correctamente. Revisaremos tu pago pronto.");
+        setUploadReceiptDialogOpen(false);
+        setReceiptForm({ file: null, reference: "", notes: "" });
+        fetchData();
+        setUploadingReceipt(false);
+      };
+      
+      reader.onerror = () => {
+        toast.error("Error al leer el archivo");
+        setUploadingReceipt(false);
+      };
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al subir comprobante");
+      setUploadingReceipt(false);
+    }
+  };
+
+  const openUploadReceiptDialog = (invoice) => {
+    setSelectedInvoice(invoice);
+    setReceiptForm({ file: null, reference: "", notes: "" });
+    setUploadReceiptDialogOpen(true);
   };
 
   const getStatusInfo = (status) => {
@@ -616,16 +674,118 @@ const MySubscription = () => {
               </div>
             )}
 
-            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
-              <p className="text-sm text-amber-600 dark:text-amber-400">
-                <strong>Importante:</strong> Una vez realizada la transferencia, envía tu comprobante 
-                de pago a soporte para activar tu suscripción.
+            <Separator className="my-4" />
+
+            <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-lg p-4">
+              <h4 className="font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-2 mb-2">
+                <Upload className="h-4 w-4" />
+                ¿Ya realizaste la transferencia?
+              </h4>
+              <p className="text-sm text-muted-foreground mb-3">
+                Sube tu comprobante de pago para que podamos verificarlo y activar tu suscripción más rápido.
               </p>
+              <Button 
+                onClick={() => {
+                  setPaymentDialogOpen(false);
+                  openUploadReceiptDialog(selectedInvoice);
+                }}
+                className="w-full bg-emerald-600 hover:bg-emerald-700"
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                Subir Comprobante de Transferencia
+              </Button>
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPaymentDialogOpen(false)}>
               Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Upload Receipt Dialog */}
+      <Dialog open={uploadReceiptDialogOpen} onOpenChange={setUploadReceiptDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Upload className="h-5 w-5 text-emerald-500" />
+              Subir Comprobante de Transferencia
+            </DialogTitle>
+            <DialogDescription>
+              Sube una imagen o PDF de tu comprobante de transferencia para la factura{" "}
+              <strong>{selectedInvoice?.invoice_number}</strong>
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="receipt-file">Comprobante de pago *</Label>
+              <Input
+                id="receipt-file"
+                type="file"
+                accept="image/*,.pdf"
+                onChange={(e) => setReceiptForm({ ...receiptForm, file: e.target.files?.[0] })}
+              />
+              <p className="text-xs text-muted-foreground">
+                Formatos: JPG, PNG, PDF (máx. 5MB)
+              </p>
+              {receiptForm.file && (
+                <div className="flex items-center gap-2 text-sm text-emerald-600 bg-emerald-50 p-2 rounded">
+                  <Image className="h-4 w-4" />
+                  {receiptForm.file.name}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="reference">Número de referencia / confirmación</Label>
+              <Input
+                id="reference"
+                value={receiptForm.reference}
+                onChange={(e) => setReceiptForm({ ...receiptForm, reference: e.target.value })}
+                placeholder="Ej: 123456789"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="notes">Notas adicionales (opcional)</Label>
+              <Textarea
+                id="notes"
+                value={receiptForm.notes}
+                onChange={(e) => setReceiptForm({ ...receiptForm, notes: e.target.value })}
+                placeholder="Cualquier información adicional..."
+                rows={2}
+              />
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+              <p className="text-sm text-blue-700">
+                <strong>Monto a verificar:</strong> {selectedInvoice && formatCurrency(selectedInvoice.total)}
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUploadReceiptDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleUploadReceipt}
+              disabled={!receiptForm.file || uploadingReceipt}
+              className="bg-emerald-600 hover:bg-emerald-700"
+            >
+              {uploadingReceipt ? (
+                <>
+                  <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                  Subiendo...
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4 mr-2" />
+                  Enviar Comprobante
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
