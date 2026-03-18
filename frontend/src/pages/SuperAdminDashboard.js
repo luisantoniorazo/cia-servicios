@@ -73,6 +73,7 @@ import {
   TicketIcon,
   Mail,
   FileText,
+  CreditCard,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 
@@ -606,6 +607,16 @@ export const SuperAdminDashboard = () => {
             >
               <FileText className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
               <span className="hidden sm:inline">Facturama</span>
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              className="border-purple-500 text-purple-400 hover:bg-purple-500/20 text-xs sm:text-sm" 
+              onClick={() => navigate("/admin-portal/stripe")}
+              data-testid="stripe-config-btn"
+            >
+              <CreditCard className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Stripe</span>
             </Button>
             <Button 
               variant="outline" 

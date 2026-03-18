@@ -78,6 +78,9 @@ class BankAccountConfig(BaseModel):
 class SubscriptionBillingConfig(BaseModel):
     """Configuración global de facturación de suscripciones"""
     stripe_enabled: bool = True
+    stripe_api_key: Optional[str] = None  # Secret key (sk_test_... o sk_live_...)
+    stripe_webhook_secret: Optional[str] = None  # Webhook secret (whsec_...)
+    stripe_environment: str = "test"  # test o production
     bank_transfer_enabled: bool = True
     bank_accounts: List[BankAccountConfig] = []
     # Configuración de CFDI para suscripciones
@@ -261,6 +264,24 @@ async def save_subscription_config(
     )
     
     return {"message": "Configuración guardada", "config": config_dict}
+
+
+@router.get("/payments")
+async def list_subscription_payments(
+    current_user: dict = Depends(require_super_admin_sub)
+):
+    """List all subscription payments (Super Admin)"""
+    payments = await _db.subscription_history.find({}, {"_id": 0}).sort("date", -1).to_list(500)
+    
+    # Enrich with company names and invoice info
+    for payment in payments:
+        company = await _db.companies.find_one({"id": payment.get("company_id")}, {"_id": 0, "business_name": 1})
+        payment["company_name"] = company["business_name"] if company else "Desconocida"
+        
+        invoice = await _db.subscription_invoices.find_one({"id": payment.get("invoice_id")}, {"_id": 0, "invoice_number": 1})
+        payment["invoice_folio"] = invoice["invoice_number"] if invoice else "N/A"
+    
+    return {"payments": payments}
 
 @router.get("/invoices")
 async def list_all_subscription_invoices(

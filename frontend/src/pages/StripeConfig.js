@@ -1,0 +1,559 @@
+import React, { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import { Badge } from "../components/ui/badge";
+import { Switch } from "../components/ui/switch";
+import { Skeleton } from "../components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
+import { toast } from "sonner";
+import {
+  CreditCard,
+  ArrowLeft,
+  Settings,
+  Save,
+  Eye,
+  EyeOff,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  DollarSign,
+  TrendingUp,
+  Building2,
+  RefreshCw,
+  ExternalLink,
+  Info,
+} from "lucide-react";
+
+const formatCurrency = (amount) => {
+  return new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+  }).format(amount || 0);
+};
+
+const formatDate = (date) => {
+  if (!date) return "N/A";
+  return new Date(date).toLocaleDateString("es-MX", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+export const StripeConfig = () => {
+  const { api } = useAuth();
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [showKeys, setShowKeys] = useState(false);
+  const [configDialog, setConfigDialog] = useState(false);
+  const [payments, setPayments] = useState([]);
+  const [stats, setStats] = useState({
+    total_collected: 0,
+    total_pending: 0,
+    payments_count: 0,
+    this_month: 0,
+  });
+  
+  const [config, setConfig] = useState({
+    stripe_enabled: false,
+    stripe_api_key: "",
+    stripe_webhook_secret: "",
+    environment: "test",
+  });
+
+  const [formData, setFormData] = useState({
+    stripe_api_key: "",
+    stripe_webhook_secret: "",
+    environment: "test",
+  });
+
+  const fetchConfig = useCallback(async () => {
+    try {
+      const response = await api.get("/subscriptions/config");
+      const data = response.data;
+      setConfig({
+        stripe_enabled: data.stripe_enabled || false,
+        stripe_api_key: data.stripe_api_key || "",
+        stripe_webhook_secret: data.stripe_webhook_secret || "",
+        environment: data.stripe_environment || "test",
+      });
+      setFormData({
+        stripe_api_key: data.stripe_api_key || "",
+        stripe_webhook_secret: data.stripe_webhook_secret || "",
+        environment: data.stripe_environment || "test",
+      });
+    } catch (error) {
+      console.error("Error fetching config:", error);
+    }
+  }, [api]);
+
+  const fetchPayments = useCallback(async () => {
+    try {
+      const response = await api.get("/subscriptions/payments");
+      setPayments(response.data.payments || []);
+      
+      // Calculate stats
+      const stripePayments = (response.data.payments || []).filter(p => p.payment_method === "stripe");
+      const thisMonth = new Date().getMonth();
+      const thisYear = new Date().getFullYear();
+      
+      setStats({
+        total_collected: stripePayments.reduce((sum, p) => sum + (p.amount || 0), 0),
+        payments_count: stripePayments.length,
+        this_month: stripePayments
+          .filter(p => {
+            const d = new Date(p.created_at);
+            return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+          })
+          .reduce((sum, p) => sum + (p.amount || 0), 0),
+      });
+    } catch (error) {
+      console.error("Error fetching payments:", error);
+    }
+  }, [api]);
+
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
+      await Promise.all([fetchConfig(), fetchPayments()]);
+      setLoading(false);
+    };
+    loadData();
+  }, [fetchConfig, fetchPayments]);
+
+  const handleSaveConfig = async () => {
+    setSaving(true);
+    try {
+      await api.post("/subscriptions/config", {
+        stripe_enabled: config.stripe_enabled,
+        stripe_api_key: formData.stripe_api_key,
+        stripe_webhook_secret: formData.stripe_webhook_secret,
+        stripe_environment: formData.environment,
+      });
+      toast.success("Configuración de Stripe guardada");
+      setConfigDialog(false);
+      fetchConfig();
+    } catch (error) {
+      toast.error("Error al guardar configuración");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleStripe = async (enabled) => {
+    try {
+      await api.post("/subscriptions/config", {
+        ...config,
+        stripe_enabled: enabled,
+      });
+      setConfig({ ...config, stripe_enabled: enabled });
+      toast.success(enabled ? "Stripe habilitado" : "Stripe deshabilitado");
+    } catch (error) {
+      toast.error("Error al actualizar configuración");
+    }
+  };
+
+  const maskKey = (key) => {
+    if (!key) return "No configurado";
+    if (key.length < 12) return key;
+    return key.substring(0, 7) + "..." + key.substring(key.length - 4);
+  };
+
+  if (loading) {
+    return (
+      <div className="space-y-6 p-6">
+        <Skeleton className="h-10 w-64" />
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-32" />
+          ))}
+        </div>
+        <Skeleton className="h-96" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 p-6" data-testid="stripe-config-page">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => navigate("/admin-portal/dashboard")}
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-5 w-5" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold flex items-center gap-2">
+              <CreditCard className="h-6 w-6 text-purple-500" />
+              Configuración de Stripe
+            </h1>
+            <p className="text-muted-foreground">
+              Gestiona pagos con tarjeta para suscripciones
+            </p>
+          </div>
+        </div>
+        <Button onClick={() => setConfigDialog(true)}>
+          <Settings className="h-4 w-4 mr-2" />
+          Configurar
+        </Button>
+      </div>
+
+      {/* Status Alert */}
+      {!config.stripe_api_key && (
+        <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-amber-500 mt-0.5" />
+          <div>
+            <p className="font-medium text-amber-800">Stripe no configurado</p>
+            <p className="text-sm text-amber-700">
+              Configura tus credenciales de Stripe para habilitar pagos con tarjeta.
+              <a 
+                href="https://dashboard.stripe.com/apikeys" 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="ml-1 underline inline-flex items-center gap-1"
+              >
+                Obtener API Keys <ExternalLink className="h-3 w-3" />
+              </a>
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Estado</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                {config.stripe_enabled ? (
+                  <>
+                    <CheckCircle className="h-5 w-5 text-green-500" />
+                    <span className="font-medium text-green-600">Activo</span>
+                  </>
+                ) : (
+                  <>
+                    <XCircle className="h-5 w-5 text-red-500" />
+                    <span className="font-medium text-red-600">Inactivo</span>
+                  </>
+                )}
+              </div>
+              <Switch
+                checked={config.stripe_enabled}
+                onCheckedChange={handleToggleStripe}
+                disabled={!config.stripe_api_key}
+              />
+            </div>
+            <Badge variant="outline" className="mt-2">
+              {config.environment === "test" ? "Modo Test" : "Producción"}
+            </Badge>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Cobrado con Stripe</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-purple-600">
+              {formatCurrency(stats.total_collected)}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {stats.payments_count} pagos procesados
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>Este Mes</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-bold text-green-600">
+              {formatCurrency(stats.this_month)}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Pagos con tarjeta
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardDescription>API Key</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm font-mono text-muted-foreground">
+              {maskKey(config.stripe_api_key)}
+            </p>
+            <Badge 
+              variant={config.stripe_api_key?.startsWith("sk_live") ? "default" : "secondary"}
+              className="mt-2"
+            >
+              {config.stripe_api_key?.startsWith("sk_live") ? "Live Key" : "Test Key"}
+            </Badge>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Tabs */}
+      <Tabs defaultValue="payments" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="payments">
+            <DollarSign className="h-4 w-4 mr-2" />
+            Pagos Recibidos
+          </TabsTrigger>
+          <TabsTrigger value="info">
+            <Info className="h-4 w-4 mr-2" />
+            Información
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="payments">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <CardTitle>Historial de Pagos con Stripe</CardTitle>
+                <Button variant="outline" size="sm" onClick={fetchPayments}>
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  Actualizar
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {payments.filter(p => p.payment_method === "stripe").length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-20" />
+                  <p>No hay pagos con Stripe registrados</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>Empresa</TableHead>
+                      <TableHead>Factura</TableHead>
+                      <TableHead className="text-right">Monto</TableHead>
+                      <TableHead>Estado</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {payments
+                      .filter(p => p.payment_method === "stripe")
+                      .map((payment) => (
+                        <TableRow key={payment.id}>
+                          <TableCell>{formatDate(payment.created_at)}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Building2 className="h-4 w-4 text-muted-foreground" />
+                              {payment.company_name || "N/A"}
+                            </div>
+                          </TableCell>
+                          <TableCell>{payment.invoice_folio || "N/A"}</TableCell>
+                          <TableCell className="text-right font-medium">
+                            {formatCurrency(payment.amount)}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="success">
+                              <CheckCircle className="h-3 w-3 mr-1" />
+                              Pagado
+                            </Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="info">
+          <Card>
+            <CardHeader>
+              <CardTitle>Cómo Funciona</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <h3 className="font-semibold flex items-center gap-2">
+                    <span className="bg-purple-100 text-purple-600 rounded-full w-6 h-6 flex items-center justify-center text-sm">1</span>
+                    Obtén tus API Keys
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Ingresa a tu{" "}
+                    <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noopener noreferrer" className="text-purple-600 underline">
+                      Dashboard de Stripe
+                    </a>{" "}
+                    y copia tu Secret Key (sk_test_... o sk_live_...)
+                  </p>
+
+                  <h3 className="font-semibold flex items-center gap-2">
+                    <span className="bg-purple-100 text-purple-600 rounded-full w-6 h-6 flex items-center justify-center text-sm">2</span>
+                    Configura el Webhook
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    En Stripe, crea un webhook apuntando a:<br />
+                    <code className="bg-slate-100 px-2 py-1 rounded text-xs">
+                      https://tudominio.com/api/webhook/stripe
+                    </code>
+                  </p>
+
+                  <h3 className="font-semibold flex items-center gap-2">
+                    <span className="bg-purple-100 text-purple-600 rounded-full w-6 h-6 flex items-center justify-center text-sm">3</span>
+                    Habilita Stripe
+                  </h3>
+                  <p className="text-sm text-muted-foreground">
+                    Una vez configurado, activa el switch para que las empresas puedan pagar con tarjeta.
+                  </p>
+                </div>
+
+                <div className="bg-slate-50 rounded-lg p-4">
+                  <h3 className="font-semibold mb-3">Flujo de Pago</h3>
+                  <ol className="space-y-2 text-sm text-muted-foreground">
+                    <li className="flex items-start gap-2">
+                      <span className="bg-slate-200 rounded-full w-5 h-5 flex items-center justify-center text-xs flex-shrink-0">1</span>
+                      <span>Empresa ve su factura de suscripción pendiente</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="bg-slate-200 rounded-full w-5 h-5 flex items-center justify-center text-xs flex-shrink-0">2</span>
+                      <span>Hace clic en "Pagar con Tarjeta"</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="bg-slate-200 rounded-full w-5 h-5 flex items-center justify-center text-xs flex-shrink-0">3</span>
+                      <span>Es redirigido a Stripe Checkout (página segura)</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="bg-slate-200 rounded-full w-5 h-5 flex items-center justify-center text-xs flex-shrink-0">4</span>
+                      <span>Ingresa datos de tarjeta y paga</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="bg-slate-200 rounded-full w-5 h-5 flex items-center justify-center text-xs flex-shrink-0">5</span>
+                      <span>El sistema actualiza la factura como pagada automáticamente</span>
+                    </li>
+                    <li className="flex items-start gap-2">
+                      <span className="bg-green-200 rounded-full w-5 h-5 flex items-center justify-center text-xs flex-shrink-0">✓</span>
+                      <span className="text-green-700 font-medium">El dinero llega a tu cuenta de Stripe</span>
+                    </li>
+                  </ol>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Config Dialog */}
+      <Dialog open={configDialog} onOpenChange={setConfigDialog}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-purple-500" />
+              Configurar Stripe
+            </DialogTitle>
+            <DialogDescription>
+              Ingresa tus credenciales de Stripe para habilitar pagos con tarjeta
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="stripe_api_key">Secret API Key *</Label>
+              <div className="relative">
+                <Input
+                  id="stripe_api_key"
+                  type={showKeys ? "text" : "password"}
+                  value={formData.stripe_api_key}
+                  onChange={(e) => setFormData({ ...formData, stripe_api_key: e.target.value })}
+                  placeholder="sk_test_... o sk_live_..."
+                  className="pr-10"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="absolute right-0 top-0 h-full px-3"
+                  onClick={() => setShowKeys(!showKeys)}
+                >
+                  {showKeys ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Obtén tu key en{" "}
+                <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noopener noreferrer" className="text-purple-600 underline">
+                  Stripe Dashboard → API Keys
+                </a>
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="stripe_webhook_secret">Webhook Secret (opcional)</Label>
+              <Input
+                id="stripe_webhook_secret"
+                type={showKeys ? "text" : "password"}
+                value={formData.stripe_webhook_secret}
+                onChange={(e) => setFormData({ ...formData, stripe_webhook_secret: e.target.value })}
+                placeholder="whsec_..."
+              />
+              <p className="text-xs text-muted-foreground">
+                Para verificar webhooks de Stripe
+              </p>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+              <p className="text-sm text-amber-800">
+                <strong>Nota:</strong> Usa keys de prueba (sk_test_) para probar.
+                Cambia a keys de producción (sk_live_) cuando estés listo.
+              </p>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfigDialog(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveConfig} disabled={saving}>
+              {saving ? (
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 mr-2" />
+              )}
+              Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
+export default StripeConfig;
