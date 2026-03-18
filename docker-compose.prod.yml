@@ -1,0 +1,98 @@
+# ==========================================
+# Docker Compose para Producción
+# CIA SERVICIOS v3.6.1
+# ==========================================
+# 
+# USO:
+#   1. Copia este archivo a tu servidor
+#   2. Crea el archivo .env con tus variables
+#   3. Ejecuta: docker-compose -f docker-compose.prod.yml up -d
+#
+# ==========================================
+
+version: '3.8'
+
+services:
+  # ========== BASE DE DATOS ==========
+  mongodb:
+    image: mongo:6.0
+    container_name: cia-mongodb
+    restart: always
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_backup:/backup
+    environment:
+      - MONGO_INITDB_DATABASE=cia_servicios
+    networks:
+      - cia-network
+    # No exponer puerto externamente por seguridad
+    # Solo accesible desde otros contenedores
+
+  # ========== BACKEND (FastAPI) ==========
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: cia-backend
+    restart: always
+    depends_on:
+      - mongodb
+    environment:
+      # Base de datos
+      - MONGO_URL=mongodb://mongodb:27017/cia_servicios
+      - DB_NAME=cia_servicios
+      # Seguridad
+      - JWT_SECRET=${JWT_SECRET}
+      - SUPER_ADMIN_KEY=${SUPER_ADMIN_KEY}
+      # Stripe
+      - STRIPE_API_KEY=${STRIPE_API_KEY:-}
+      - STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET:-}
+      # Email
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY:-}
+      - EMAIL_FROM=${EMAIL_FROM:-}
+      # Facturama
+      - FACTURAMA_USER=${FACTURAMA_USER:-}
+      - FACTURAMA_PASSWORD=${FACTURAMA_PASSWORD:-}
+      - FACTURAMA_ENVIRONMENT=${FACTURAMA_ENVIRONMENT:-sandbox}
+      # URLs
+      - FRONTEND_URL=${FRONTEND_URL}
+      # OpenAI (si usas IA)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    ports:
+      - "8001:8001"
+    networks:
+      - cia-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ========== FRONTEND (React) ==========
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - REACT_APP_BACKEND_URL=${FRONTEND_URL}
+    container_name: cia-frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      - "3000:3000"
+    networks:
+      - cia-network
+
+# ========== VOLÚMENES ==========
+volumes:
+  mongodb_data:
+    name: cia-mongodb-data
+  mongodb_backup:
+    name: cia-mongodb-backup
+
+# ========== RED ==========
+networks:
+  cia-network:
+    name: cia-network
+    driver: bridge
