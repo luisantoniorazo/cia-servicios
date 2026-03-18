@@ -93,6 +93,7 @@ export const Settings = () => {
   });
   const [companyForm, setCompanyForm] = useState({
     business_name: "",
+    trade_name: "",
     rfc: "",
     address: "",
     phone: "",
@@ -119,6 +120,7 @@ export const Settings = () => {
     if (company?.id) {
       setCompanyForm({
         business_name: company.business_name || "",
+        trade_name: company.trade_name || "",
         rfc: company.rfc || "",
         address: company.address || "",
         phone: company.phone || "",
@@ -357,13 +359,26 @@ export const Settings = () => {
           <form onSubmit={handleUpdateCompany} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="grid gap-2">
+                <Label htmlFor="trade_name">Nombre Comercial</Label>
+                <Input
+                  id="trade_name"
+                  value={companyForm.trade_name}
+                  onChange={(e) => setCompanyForm({ ...companyForm, trade_name: e.target.value })}
+                  disabled={!isAdmin()}
+                  placeholder="Mi Empresa (marca)"
+                />
+                <p className="text-xs text-muted-foreground">Nombre con el que se conoce comercialmente. Aparece en cotizaciones, facturas y otros documentos.</p>
+              </div>
+              <div className="grid gap-2">
                 <Label htmlFor="business_name">Razón Social</Label>
                 <Input
                   id="business_name"
                   value={companyForm.business_name}
                   onChange={(e) => setCompanyForm({ ...companyForm, business_name: e.target.value })}
                   disabled={!isAdmin()}
+                  placeholder="Empresa S.A. de C.V."
                 />
+                <p className="text-xs text-muted-foreground">Nombre legal de la empresa.</p>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="rfc">RFC</Label>
@@ -393,7 +408,7 @@ export const Settings = () => {
                   disabled={!isAdmin()}
                 />
               </div>
-              <div className="col-span-full grid gap-2">
+              <div className="grid gap-2">
                 <Label htmlFor="address">Dirección</Label>
                 <Input
                   id="address"

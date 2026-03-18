@@ -1146,6 +1146,7 @@ async def get_company_by_slug(slug: str):
     return CompanyPublic(
         id=company["id"],
         business_name=company["business_name"],
+        trade_name=company.get("trade_name"),
         slug=company["slug"],
         logo_url=company.get("logo_url"),
         logo_file=company.get("logo_file")
@@ -1189,6 +1190,7 @@ async def company_login(slug: str, credentials: UserLogin):
         company=CompanyPublic(
             id=company["id"],
             business_name=company["business_name"],
+            trade_name=company.get("trade_name"),
             slug=company["slug"],
             logo_url=company.get("logo_url"),
             logo_file=company.get("logo_file")
@@ -2566,7 +2568,7 @@ async def update_company_info(
     current_user: dict = Depends(require_super_admin)
 ):
     """Actualizar información de empresa"""
-    allowed_fields = ["business_name", "rfc", "address", "phone", "email", "logo_url", "monthly_fee", "license_type", "max_users"]
+    allowed_fields = ["business_name", "trade_name", "rfc", "address", "phone", "email", "logo_url", "monthly_fee", "license_type", "max_users"]
     filtered_data = {k: v for k, v in update_data.items() if k in allowed_fields}
     filtered_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     
@@ -5108,7 +5110,7 @@ async def update_company(company_id: str, update_data: dict, current_user: dict 
     if current_user.get("company_id") != company_id:
         raise HTTPException(status_code=403, detail="Solo puedes editar tu empresa")
     
-    allowed_fields = ["address", "phone", "email", "logo_url", "logo_file"]
+    allowed_fields = ["business_name", "trade_name", "address", "phone", "email", "logo_url", "logo_file"]
     filtered_data = {k: v for k, v in update_data.items() if k in allowed_fields}
     filtered_data["updated_at"] = datetime.now(timezone.utc).isoformat()
     
