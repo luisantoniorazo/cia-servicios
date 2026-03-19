@@ -349,6 +349,8 @@ class QuoteBase(BaseModel):
     show_tax: bool = True  # Mostrar IVA en cotización
     denial_reason: Optional[str] = None  # Motivo de negación
     created_by_name: Optional[str] = None  # Nombre del usuario que creó
+    custom_field: Optional[str] = None  # Campo personalizable para OT, OC, etc.
+    custom_field_label: Optional[str] = None  # Etiqueta del campo personalizable
 
 class QuoteHistoryEntry(BaseModel):
     """Entry for quote version history"""
@@ -371,6 +373,8 @@ class QuoteUpdateData(BaseModel):
     show_tax: Optional[bool] = None
     status: Optional[QuoteStatus] = None
     valid_until: Optional[datetime] = None
+    custom_field: Optional[str] = None
+    custom_field_label: Optional[str] = None
 
 class QuoteCreate(QuoteBase):
     pass
@@ -5752,7 +5756,7 @@ async def update_quote(quote_id: str, update_data: QuoteUpdateData, current_user
         history.append(history_entry)
     
     # Prepare update
-    allowed_fields = ["title", "description", "items", "subtotal", "tax", "total", "client_id", "show_tax", "valid_until", "status"]
+    allowed_fields = ["title", "description", "items", "subtotal", "tax", "total", "client_id", "show_tax", "valid_until", "status", "custom_field", "custom_field_label"]
     filtered_update = {k: v for k, v in update_dict.items() if k in allowed_fields and v is not None}
     filtered_update["updated_at"] = datetime.now(timezone.utc).isoformat()
     filtered_update["version"] = current_version + 1
@@ -5798,11 +5802,32 @@ async def create_invoice(invoice_data: InvoiceCreate, current_user: dict = Depen
     
     invoice = Invoice(**invoice_data.model_dump())
     invoice_dict = invoice.model_dump()
+    
+    # Calculate totals from items
+    items = invoice_dict.get("items", [])
+    for item in items:
+        item["total"] = item.get("quantity", 1) * item.get("unit_price", 0)
+    
+    subtotal = sum(item.get("total", 0) for item in items)
+    tax = subtotal * 0.16
+    total = subtotal + tax
+    
+    invoice_dict["items"] = items
+    invoice_dict["subtotal"] = subtotal
+    invoice_dict["tax"] = tax
+    invoice_dict["total"] = total
+    
     invoice_dict["created_at"] = invoice_dict["created_at"].isoformat()
     invoice_dict["updated_at"] = invoice_dict["updated_at"].isoformat()
     if invoice_dict.get("due_date"):
         invoice_dict["due_date"] = invoice_dict["due_date"].isoformat()
     await db.invoices.insert_one(invoice_dict)
+    
+    # Return with calculated values
+    invoice.items = items
+    invoice.subtotal = subtotal
+    invoice.tax = tax
+    invoice.total = total
     return invoice
 
 @api_router.get("/invoices", response_model=List[Invoice])
@@ -5897,6 +5922,21 @@ async def update_invoice(invoice_id: str, invoice_data: InvoiceCreate, current_u
         raise HTTPException(status_code=403, detail="Acceso denegado")
     
     update_dict = invoice_data.model_dump()
+    
+    # Calculate totals from items
+    items = update_dict.get("items", [])
+    for item in items:
+        item["total"] = item.get("quantity", 1) * item.get("unit_price", 0)
+    
+    subtotal = sum(item.get("total", 0) for item in items)
+    tax = subtotal * 0.16
+    total = subtotal + tax
+    
+    update_dict["items"] = items
+    update_dict["subtotal"] = subtotal
+    update_dict["tax"] = tax
+    update_dict["total"] = total
+    
     update_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
     if update_dict.get("due_date"):
         update_dict["due_date"] = update_dict["due_date"].isoformat()
@@ -8982,18 +9022,28 @@ def generate_invoice_pdf(invoice: dict, company: dict, client: dict) -> bytes:
     razon_social = client.get('razon_social_fiscal') or trade_name
     client_ref = f" ({client.get('reference')})" if client.get('reference') else ""
     
+    # Format dates safely
+    def format_date_safe(date_val):
+        if not date_val:
+            return 'N/A'
+        if isinstance(date_val, datetime):
+            return date_val.strftime('%Y-%m-%d')
+        if isinstance(date_val, str):
+            return date_val[:10]
+        return str(date_val)
+    
     info_data = [
         [Paragraph("RECEPTOR", section_title_style), '', Paragraph("DATOS DE FACTURA", section_title_style), ''],
         [Paragraph("Nombre Comercial:", label_style), Paragraph(trade_name + client_ref, value_style),
-         Paragraph("Fecha Emisión:", label_style), Paragraph(invoice.get('invoice_date', '')[:10] if invoice.get('invoice_date') else '', value_style)],
+         Paragraph("Fecha Emisión:", label_style), Paragraph(format_date_safe(invoice.get('invoice_date')), value_style)],
         [Paragraph("Razón Social:", label_style), Paragraph(razon_social, value_style),
-         Paragraph("Fecha Vencimiento:", label_style), Paragraph(invoice.get('due_date', '')[:10] if invoice.get('due_date') else 'N/A', value_style)],
-        [Paragraph("RFC:", label_style), Paragraph(client.get('rfc', 'N/A'), value_style),
-         Paragraph("Condiciones:", label_style), Paragraph(invoice.get('payment_terms', 'Contado').replace('_', ' ').title(), value_style)],
-        [Paragraph("Régimen Fiscal:", label_style), Paragraph(client.get('regimen_fiscal', 'N/A'), value_style),
-         Paragraph("Referencia:", label_style), Paragraph(invoice.get('reference', '') or 'N/A', value_style)],
-        [Paragraph("Uso CFDI:", label_style), Paragraph(client.get('uso_cfdi', 'G03'), value_style),
-         Paragraph("Forma de Pago:", label_style), Paragraph(invoice.get('payment_method', '99 - Por definir'), value_style)],
+         Paragraph("Fecha Vencimiento:", label_style), Paragraph(format_date_safe(invoice.get('due_date')), value_style)],
+        [Paragraph("RFC:", label_style), Paragraph(client.get('rfc') or 'N/A', value_style),
+         Paragraph("Condiciones:", label_style), Paragraph((invoice.get('payment_terms') or 'Contado').replace('_', ' ').title(), value_style)],
+        [Paragraph("Régimen Fiscal:", label_style), Paragraph(client.get('regimen_fiscal') or 'N/A', value_style),
+         Paragraph("Referencia:", label_style), Paragraph(invoice.get('reference') or 'N/A', value_style)],
+        [Paragraph("Uso CFDI:", label_style), Paragraph(client.get('uso_cfdi') or 'G03', value_style),
+         Paragraph("Forma de Pago:", label_style), Paragraph(invoice.get('payment_method') or '99 - Por definir', value_style)],
     ]
     
     info_table = Table(info_data, colWidths=[1.1*inch, 2.2*inch, 1.1*inch, 2.2*inch])

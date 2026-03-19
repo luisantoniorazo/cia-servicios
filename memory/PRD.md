@@ -640,10 +640,15 @@ Company Admin (CIA Servicios Demo):
   - Análisis de ingresos, egresos y rentabilidad
   - Recomendaciones estratégicas personalizadas
 - ✨ **Filtros de fecha en rentabilidad**: Permite analizar períodos específicos
-- ✨ **Botón "Timbrar (Crear CFDI)"** en Cotizaciones autorizadas
-- ✨ Verifica plan de facturación activo antes de timbrar
 - 🔧 **Alineación de campos SAT**: Corregido layout de Clave SAT Producto y Clave Unidad SAT
 - 🔧 Placeholders de ejemplo (Ej: 01010101, Ej: H87) para guiar al usuario
+
+### v3.7.2 (Marzo 2026)
+- 🔧 **Flujo de Timbrado corregido**: Removido botón "Timbrar" de Cotizaciones
+- ✨ **Timbrar CFDI solo en Facturación**: El timbrado ahora está disponible únicamente en el módulo de Facturación
+- ✨ **Campo personalizable en Cotizaciones**: Agregados campos `custom_field` y `custom_field_label` que aparecen en el PDF
+- 🔧 **PDF de Factura corregido**: Arreglado error de fechas tipo datetime, ahora muestra conceptos correctamente
+- 🔧 **Cálculo de totales en facturas**: Ahora se calculan automáticamente al crear/editar facturas
 
 ### v2.0.0 (Marzo 2026)
 - Separación de portales

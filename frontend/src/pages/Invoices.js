@@ -1013,18 +1013,17 @@ export const Invoices = () => {
                                 </DropdownMenuItem>
                                 
                                 {/* CFDI Options */}
-                                {invoice.cfdi_status !== "stamped" && billingStatus?.can_stamp && (
-                                  <DropdownMenuItem onClick={() => handleStampInvoice(invoice.id)} disabled={stamping}>
-                                    <Stamp className="mr-2 h-4 w-4 text-green-500" />
-                                    {stamping ? "Timbrando..." : "Timbrar CFDI"}
-                                  </DropdownMenuItem>
-                                )}
-                                
-                                {invoice.cfdi_status !== "stamped" && !billingStatus?.can_stamp && (
-                                  <DropdownMenuItem onClick={() => openCfdiDialog(invoice)}>
-                                    <Upload className="mr-2 h-4 w-4 text-orange-500" />
-                                    Subir CFDI Manual
-                                  </DropdownMenuItem>
+                                {invoice.cfdi_status !== "stamped" && (
+                                  <>
+                                    <DropdownMenuItem onClick={() => handleStampInvoice(invoice.id)} disabled={stamping}>
+                                      <Stamp className="mr-2 h-4 w-4 text-green-500" />
+                                      {stamping ? "Timbrando..." : "Timbrar CFDI"}
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => openCfdiDialog(invoice)}>
+                                      <Upload className="mr-2 h-4 w-4 text-orange-500" />
+                                      Subir CFDI Manual
+                                    </DropdownMenuItem>
+                                  </>
                                 )}
                                 
                                 {invoice.cfdi_status === "stamped" && (
