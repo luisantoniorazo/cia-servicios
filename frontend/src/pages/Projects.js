@@ -311,18 +311,6 @@ export const Projects = () => {
     });
   };
 
-  const openProjectDetail = async (project) => {
-    try {
-      const res = await api.get(`/projects/${project.id}`);
-      setSelectedProject(res.data);
-      fetchProjectTasks(project.id);
-      fetchProjectProfitability(project.id);
-      setDetailDialogOpen(true);
-    } catch (error) {
-      toast.error("Error al cargar detalles");
-    }
-  };
-
   const getClientName = (clientId) => {
     const client = clients.find((c) => c.id === clientId);
     if (!client) return "N/A";

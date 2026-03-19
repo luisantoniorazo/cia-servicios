@@ -25,6 +25,7 @@ import {
   Activity,
   Palette,
   CreditCard,
+  TrendingUp,
 } from "lucide-react";
 import { Button } from "../ui/button";
 import { ScrollArea } from "../ui/scroll-area";
@@ -55,6 +56,7 @@ const menuItems = [
   { path: "/documents", label: "Documentos", icon: FileBox, moduleId: "documents" },
   { path: "/field-reports", label: "Reportes de Campo", icon: ClipboardList, moduleId: "field-reports" },
   { path: "/kpis", label: "Indicadores", icon: BarChart3, moduleId: "kpis" },
+  { path: "/profitability", label: "Rentabilidad", icon: TrendingUp, moduleId: "profitability" },
   { path: "/intelligence", label: "Inteligencia IA", icon: Sparkles, moduleId: "intelligence" },
   { path: "/tickets", label: "Soporte", icon: TicketIcon, moduleId: "tickets" },
   { path: "/reminders", label: "Recordatorios", icon: Bell, moduleId: "reminders" },

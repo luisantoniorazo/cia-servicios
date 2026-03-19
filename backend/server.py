@@ -4960,6 +4960,109 @@ async def get_tickets_stats(current_user: dict = Depends(require_super_admin)):
         "high_pending": high
     }
 
+@api_router.post("/tickets/{ticket_id}/ai-diagnosis")
+async def ai_diagnose_ticket(ticket_id: str, current_user: dict = Depends(require_super_admin)):
+    """
+    AI-powered ticket diagnosis that analyzes the issue and suggests solutions.
+    This does NOT modify any code - it only compares and suggests.
+    """
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="API key de IA no configurada")
+    
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket no encontrado")
+    
+    # Get company info
+    company = await db.companies.find_one({"id": ticket.get("company_id")}, {"_id": 0})
+    company_name = company.get("business_name") if company else "Desconocida"
+    
+    # Build context for AI analysis
+    ticket_context = f"""
+INFORMACIÓN DEL TICKET:
+- Número: {ticket.get('ticket_number', 'N/A')}
+- Título: {ticket.get('title', 'Sin título')}
+- Descripción: {ticket.get('description', 'Sin descripción')}
+- Categoría: {ticket.get('category', 'general')}
+- Prioridad: {ticket.get('priority', 'medium')}
+- Estado: {ticket.get('status', 'open')}
+- Empresa: {company_name}
+- Creado: {ticket.get('created_at', 'N/A')}
+
+COMENTARIOS PREVIOS:
+"""
+    
+    comments = ticket.get("comments", [])
+    if comments:
+        for comment in comments[-5:]:  # Last 5 comments
+            ticket_context += f"\n- {comment.get('author_name', 'Usuario')}: {comment.get('text', '')}"
+    else:
+        ticket_context += "\nNo hay comentarios previos."
+    
+    system_message = """Eres un asistente de diagnóstico técnico para CIA SERVICIOS, una plataforma de gestión empresarial.
+Tu rol es analizar tickets de soporte y proporcionar diagnósticos útiles.
+
+IMPORTANTE: NO modificas código ni sistemas. Solo analizas, diagnosticas y sugieres soluciones.
+
+Cuando analices un ticket:
+1. Identifica el tipo de problema (error de usuario, bug del sistema, configuración, etc.)
+2. Sugiere pasos para reproducir/verificar el problema
+3. Proporciona posibles soluciones ordenadas por probabilidad
+4. Si es un bug conocido, indica si requiere escalamiento a desarrollo
+5. Proporciona un nivel de confianza en tu diagnóstico (Alto/Medio/Bajo)
+
+Responde en español de manera clara y estructurada."""
+
+    try:
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"ticket-diagnosis-{ticket_id}",
+            system_message=system_message
+        ).with_model("openai", "gpt-5.2")
+        
+        user_message = UserMessage(text=f"""Por favor analiza el siguiente ticket y proporciona un diagnóstico detallado:
+
+{ticket_context}
+
+Proporciona:
+1. DIAGNÓSTICO: ¿Cuál es el problema?
+2. CAUSA PROBABLE: ¿Qué lo está causando?
+3. SOLUCIONES SUGERIDAS: Lista de pasos a seguir
+4. ESCALAMIENTO: ¿Requiere intervención de desarrollo?
+5. CONFIANZA: Nivel de confianza en este diagnóstico""")
+        
+        response = await chat.send_message(user_message)
+        
+        # Store the diagnosis in the ticket
+        diagnosis = {
+            "id": str(uuid.uuid4()),
+            "diagnosis": response,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_by": current_user.get("sub"),
+            "created_by_name": current_user.get("full_name", "Admin")
+        }
+        
+        await db.tickets.update_one(
+            {"id": ticket_id},
+            {
+                "$set": {
+                    "ai_diagnosis": diagnosis,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                }
+            }
+        )
+        
+        return {
+            "ticket_id": ticket_id,
+            "diagnosis": response,
+            "created_at": diagnosis["created_at"],
+            "message": "Diagnóstico generado exitosamente"
+        }
+        
+    except Exception as e:
+        logger.error(f"AI Ticket Diagnosis error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error en diagnóstico de IA: {str(e)}")
+
 # ============== COMPANY ADMIN - USER MANAGEMENT ==============
 @api_router.get("/admin/users")
 async def list_company_users(current_user: dict = Depends(require_admin)):

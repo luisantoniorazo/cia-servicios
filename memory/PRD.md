@@ -2,7 +2,7 @@
 
 ## Información General
 - **Nombre**: CIA SERVICIOS - Control Estratégico de Servicios y Proyectos
-- **Versión**: 3.6.0
+- **Versión**: 3.7.0
 - **Última Actualización**: Marzo 2026
 - **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2 + Facturama + Stripe
 
@@ -622,6 +622,13 @@ Company Admin (CIA Servicios Demo):
 - Integración de IA (GPT-5.2)
 - Generación de PDF
 - Almacenamiento de archivos
+
+### v3.7.0 (Marzo 2026)
+- ✨ Reportes de Rentabilidad General (Ventas vs Compras por período)
+- ✨ Diagnóstico con IA para Tickets de Soporte (Auto-análisis sin modificar código)
+- ✨ Nueva página de Rentabilidad accesible desde el sidebar
+- 🔧 Corrección de error de función duplicada en Projects.js
+- 🔧 Verificación de filtros de búsqueda funcionando correctamente
 
 ### v2.0.0 (Marzo 2026)
 - Separación de portales
