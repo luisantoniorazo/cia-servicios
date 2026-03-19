@@ -4963,7 +4963,8 @@ async def get_tickets_stats(current_user: dict = Depends(require_super_admin)):
 @api_router.post("/tickets/{ticket_id}/ai-diagnosis")
 async def ai_diagnose_ticket(ticket_id: str, current_user: dict = Depends(require_super_admin)):
     """
-    AI-powered ticket diagnosis that analyzes the issue and suggests solutions.
+    AI-powered ticket diagnosis that analyzes the issue, finds similar resolved tickets,
+    and suggests solutions with a ready-to-send response for the user.
     This does NOT modify any code - it only compares and suggests.
     """
     if not EMERGENT_LLM_KEY:
@@ -4977,9 +4978,20 @@ async def ai_diagnose_ticket(ticket_id: str, current_user: dict = Depends(requir
     company = await db.companies.find_one({"id": ticket.get("company_id")}, {"_id": 0})
     company_name = company.get("business_name") if company else "Desconocida"
     
+    # Find similar resolved tickets based on category and keywords
+    similar_tickets = await db.tickets.find(
+        {
+            "id": {"$ne": ticket_id},
+            "status": {"$in": ["resolved", "closed"]},
+            "category": ticket.get("category", "general"),
+            "resolution_notes": {"$exists": True, "$ne": None, "$ne": ""}
+        },
+        {"_id": 0, "title": 1, "description": 1, "resolution_notes": 1, "category": 1}
+    ).sort("resolved_at", -1).limit(5).to_list(5)
+    
     # Build context for AI analysis
     ticket_context = f"""
-INFORMACIÓN DEL TICKET:
+INFORMACIÓN DEL TICKET ACTUAL:
 - Número: {ticket.get('ticket_number', 'N/A')}
 - Título: {ticket.get('title', 'Sin título')}
 - Descripción: {ticket.get('description', 'Sin descripción')}
@@ -4994,21 +5006,34 @@ COMENTARIOS PREVIOS:
     
     comments = ticket.get("comments", [])
     if comments:
-        for comment in comments[-5:]:  # Last 5 comments
+        for comment in comments[-5:]:
             ticket_context += f"\n- {comment.get('author_name', 'Usuario')}: {comment.get('text', '')}"
     else:
         ticket_context += "\nNo hay comentarios previos."
     
+    # Add similar resolved tickets context
+    if similar_tickets:
+        ticket_context += "\n\nTICKETS SIMILARES RESUELTOS ANTERIORMENTE:"
+        for i, st in enumerate(similar_tickets, 1):
+            ticket_context += f"""
+--- Ticket Similar #{i} ---
+Título: {st.get('title', 'N/A')}
+Descripción: {st.get('description', 'N/A')[:200]}...
+Resolución aplicada: {st.get('resolution_notes', 'N/A')}
+"""
+    else:
+        ticket_context += "\n\nNo se encontraron tickets similares resueltos anteriormente."
+    
     system_message = """Eres un asistente de diagnóstico técnico para CIA SERVICIOS, una plataforma de gestión empresarial.
-Tu rol es analizar tickets de soporte y proporcionar diagnósticos útiles.
+Tu rol es analizar tickets de soporte, encontrar patrones en tickets similares resueltos, y proporcionar diagnósticos útiles.
 
 IMPORTANTE: NO modificas código ni sistemas. Solo analizas, diagnosticas y sugieres soluciones.
 
 Cuando analices un ticket:
 1. Identifica el tipo de problema (error de usuario, bug del sistema, configuración, etc.)
-2. Sugiere pasos para reproducir/verificar el problema
+2. Analiza tickets similares resueltos para encontrar patrones
 3. Proporciona posibles soluciones ordenadas por probabilidad
-4. Si es un bug conocido, indica si requiere escalamiento a desarrollo
+4. Genera una RESPUESTA SUGERIDA lista para enviar al usuario
 5. Proporciona un nivel de confianza en tu diagnóstico (Alto/Medio/Bajo)
 
 Responde en español de manera clara y estructurada."""
@@ -5024,12 +5049,28 @@ Responde en español de manera clara y estructurada."""
 
 {ticket_context}
 
-Proporciona:
-1. DIAGNÓSTICO: ¿Cuál es el problema?
-2. CAUSA PROBABLE: ¿Qué lo está causando?
-3. SOLUCIONES SUGERIDAS: Lista de pasos a seguir
-4. ESCALAMIENTO: ¿Requiere intervención de desarrollo?
-5. CONFIANZA: Nivel de confianza en este diagnóstico""")
+Proporciona en el siguiente formato:
+
+## 1. DIAGNÓSTICO
+¿Cuál es el problema identificado?
+
+## 2. CAUSA PROBABLE
+¿Qué lo está causando?
+
+## 3. TICKETS SIMILARES
+¿Hay patrones con tickets anteriores? ¿Qué soluciones funcionaron antes?
+
+## 4. SOLUCIONES SUGERIDAS
+Lista de pasos a seguir ordenados por probabilidad de éxito
+
+## 5. RESPUESTA SUGERIDA PARA EL USUARIO
+(Texto listo para copiar y enviar como respuesta al usuario, profesional y amigable)
+
+## 6. ESCALAMIENTO
+¿Requiere intervención de desarrollo? (Sí/No y por qué)
+
+## 7. CONFIANZA
+Nivel de confianza: Alto/Medio/Bajo""")
         
         response = await chat.send_message(user_message)
         
@@ -5037,6 +5078,7 @@ Proporciona:
         diagnosis = {
             "id": str(uuid.uuid4()),
             "diagnosis": response,
+            "similar_tickets_count": len(similar_tickets),
             "created_at": datetime.now(timezone.utc).isoformat(),
             "created_by": current_user.get("sub"),
             "created_by_name": current_user.get("full_name", "Admin")
@@ -5055,6 +5097,7 @@ Proporciona:
         return {
             "ticket_id": ticket_id,
             "diagnosis": response,
+            "similar_tickets_found": len(similar_tickets),
             "created_at": diagnosis["created_at"],
             "message": "Diagnóstico generado exitosamente"
         }

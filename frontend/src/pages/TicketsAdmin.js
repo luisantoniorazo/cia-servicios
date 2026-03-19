@@ -478,11 +478,25 @@ export const TicketsAdmin = () => {
                       </Button>
                     </div>
                     {selectedTicket.ai_diagnosis ? (
-                      <div className="space-y-2">
-                        <div className="p-3 bg-white rounded-md border">
-                          <p className="text-sm whitespace-pre-wrap text-slate-700">
-                            {selectedTicket.ai_diagnosis.diagnosis}
-                          </p>
+                      <div className="space-y-3">
+                        {selectedTicket.ai_diagnosis.similar_tickets_count > 0 && (
+                          <div className="flex items-center gap-2 text-xs text-purple-600 bg-purple-100 px-2 py-1 rounded">
+                            <Sparkles className="h-3 w-3" />
+                            Se encontraron {selectedTicket.ai_diagnosis.similar_tickets_count} tickets similares resueltos
+                          </div>
+                        )}
+                        <div className="p-3 bg-white rounded-md border max-h-[400px] overflow-y-auto">
+                          <div className="text-sm whitespace-pre-wrap text-slate-700 prose prose-sm max-w-none">
+                            {selectedTicket.ai_diagnosis.diagnosis.split('\n').map((line, i) => {
+                              if (line.startsWith('## ')) {
+                                return <h4 key={i} className="font-bold text-purple-800 mt-3 mb-1">{line.replace('## ', '')}</h4>;
+                              }
+                              if (line.startsWith('**') && line.endsWith('**')) {
+                                return <p key={i} className="font-semibold">{line.replace(/\*\*/g, '')}</p>;
+                              }
+                              return <p key={i} className="my-1">{line}</p>;
+                            })}
+                          </div>
                         </div>
                         <p className="text-xs text-purple-600">
                           Generado por {selectedTicket.ai_diagnosis.created_by_name} el{" "}
@@ -492,7 +506,7 @@ export const TicketsAdmin = () => {
                     ) : (
                       <p className="text-sm text-purple-700">
                         Haz clic en "Analizar con IA" para obtener un diagnóstico automático del problema.
-                        El sistema analizará el ticket y sugerirá posibles soluciones.
+                        El sistema buscará tickets similares resueltos y generará una respuesta sugerida.
                       </p>
                     )}
                   </div>

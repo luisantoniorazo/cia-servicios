@@ -626,6 +626,7 @@ Company Admin (CIA Servicios Demo):
 ### v3.7.0 (Marzo 2026)
 - ✨ Reportes de Rentabilidad General (Ventas vs Compras por período)
 - ✨ Diagnóstico con IA para Tickets de Soporte (Auto-análisis sin modificar código)
+- ✨ **Diagnóstico mejorado**: Busca tickets similares resueltos y genera respuesta sugerida lista para copiar
 - ✨ Nueva página de Rentabilidad accesible desde el sidebar
 - 🔧 Corrección de error de función duplicada en Projects.js
 - 🔧 Verificación de filtros de búsqueda funcionando correctamente
