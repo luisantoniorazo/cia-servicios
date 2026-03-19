@@ -631,6 +631,14 @@ Company Admin (CIA Servicios Demo):
 - 🔧 Corrección de error de función duplicada en Projects.js
 - 🔧 Verificación de filtros de búsqueda funcionando correctamente
 
+### v3.7.1 (Marzo 2026)
+- ✨ **Widget de Rentabilidad en Dashboard**: Solo visible para administradores
+- ✨ **Reporte Ejecutivo con IA**: Genera análisis profesional de rentabilidad
+- ✨ **Botón "Timbrar (Crear CFDI)"** en Cotizaciones autorizadas
+- ✨ Verifica plan de facturación activo antes de timbrar
+- 🔧 **Alineación de campos SAT**: Corregido layout de Clave SAT Producto y Clave Unidad SAT
+- 🔧 Placeholders de ejemplo (Ej: 01010101, Ej: H87) para guiar al usuario
+
 ### v2.0.0 (Marzo 2026)
 - Separación de portales
 - URLs únicas por empresa

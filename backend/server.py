@@ -7450,6 +7450,98 @@ async def get_general_profitability(
         }
     }
 
+class ExecutiveReportRequest(BaseModel):
+    profitability: dict
+    stats: Optional[dict] = None
+    company_name: str
+
+@api_router.post("/analytics/executive-report")
+async def generate_executive_report(request: ExecutiveReportRequest, current_user: dict = Depends(get_current_user)):
+    """Generate an AI-powered executive report based on profitability data"""
+    if current_user.get("role") not in [UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+        raise HTTPException(status_code=403, detail="Solo administradores pueden generar reportes ejecutivos")
+    
+    if not EMERGENT_LLM_KEY:
+        raise HTTPException(status_code=500, detail="API key de IA no configurada")
+    
+    try:
+        # Build context for AI analysis
+        report_context = f"""
+DATOS FINANCIEROS DE {request.company_name}
+Fecha del reporte: {datetime.now(timezone.utc).strftime('%d/%m/%Y')}
+
+VENTAS:
+- Total Facturado: ${request.profitability.get('sales', {}).get('total_invoiced', 0):,.2f} MXN
+- Total Cobrado: ${request.profitability.get('sales', {}).get('total_collected', 0):,.2f} MXN
+- Pendiente de Cobro: ${request.profitability.get('sales', {}).get('pending_collection', 0):,.2f} MXN
+- Número de Facturas: {request.profitability.get('sales', {}).get('invoices_count', 0)}
+
+COMPRAS:
+- Total de Compras: ${request.profitability.get('purchases', {}).get('total_purchases', 0):,.2f} MXN
+- Número de Órdenes: {request.profitability.get('purchases', {}).get('purchase_orders_count', 0)}
+
+RENTABILIDAD:
+- Utilidad Bruta: ${request.profitability.get('profitability', {}).get('gross_profit', 0):,.2f} MXN
+- Margen de Utilidad: {request.profitability.get('profitability', {}).get('profit_margin', 0):.1f}%
+"""
+        
+        if request.stats:
+            report_context += f"""
+ESTADÍSTICAS OPERATIVAS:
+- Proyectos Activos: {request.stats.get('projects', {}).get('active', 0)}
+- Proyectos Completados: {request.stats.get('projects', {}).get('completed', 0)}
+- Clientes Totales: {request.stats.get('clients', {}).get('total', 0)}
+- Tasa de Conversión: {request.stats.get('quotes', {}).get('conversion_rate', 0)}%
+"""
+
+        system_message = """Eres un analista financiero experto que genera reportes ejecutivos profesionales para empresas mexicanas.
+Tu rol es analizar datos financieros y proporcionar insights accionables.
+Responde siempre en español profesional, claro y conciso.
+Incluye recomendaciones específicas basadas en los datos."""
+
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"executive-report-{current_user.get('company_id')}",
+            system_message=system_message
+        ).with_model("openai", "gpt-5.2")
+        
+        user_message = UserMessage(text=f"""Por favor genera un reporte ejecutivo profesional con los siguientes datos:
+
+{report_context}
+
+El reporte debe incluir:
+1. RESUMEN EJECUTIVO (3-5 líneas)
+2. ANÁLISIS DE INGRESOS (facturación y cobranza)
+3. ANÁLISIS DE EGRESOS (compras)
+4. ANÁLISIS DE RENTABILIDAD
+5. INDICADORES CLAVE (KPIs principales)
+6. RECOMENDACIONES ESTRATÉGICAS (3-5 acciones concretas)
+7. PRÓXIMOS PASOS SUGERIDOS
+
+Formatea el reporte de manera profesional para ser presentado a directivos.""")
+        
+        response = await chat.send_message(user_message)
+        
+        # Format as a proper text report
+        report_header = f"""
+{'='*60}
+REPORTE EJECUTIVO DE RENTABILIDAD
+{'='*60}
+Empresa: {request.company_name}
+Fecha de Generación: {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC
+Generado por: IA Asistente CIA SERVICIOS
+{'='*60}
+
+"""
+        
+        full_report = report_header + response
+        
+        return {"report": full_report, "generated_at": datetime.now(timezone.utc).isoformat()}
+        
+    except Exception as e:
+        logger.error(f"Error generating executive report: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error al generar reporte: {str(e)}")
+
 # ============== USER PERMISSIONS ROUTES ==============
 @api_router.put("/admin/users/{user_id}/permissions")
 async def update_user_permissions(user_id: str, permissions: List[str], current_user: dict = Depends(get_current_user)):

@@ -1377,24 +1377,30 @@ export const Invoices = () => {
                       </div>
                     </div>
                     {/* SAT Keys */}
-                    <div className="grid grid-cols-12 gap-2 items-end border-t pt-2">
-                      <div className="col-span-6 md:col-span-5">
-                        <Label className="text-xs text-blue-600">Clave SAT Producto/Servicio</Label>
+                    <div className="flex flex-wrap gap-3 items-start border-t pt-3 mt-2">
+                      <div className="flex-1 min-w-[180px] max-w-[250px]">
+                        <Label className="text-xs text-blue-600 mb-1 block">Clave SAT Producto/Servicio</Label>
                         <SATProductSearch
                           value={item.clave_prod_serv || ""}
                           onChange={(val) => handleItemChange(index, "clave_prod_serv", val)}
                           placeholder="Buscar clave SAT..."
                         />
+                        {!item.clave_prod_serv && (
+                          <p className="text-[10px] text-slate-400 mt-1">Ej: 01010101</p>
+                        )}
                       </div>
-                      <div className="col-span-6 md:col-span-3">
-                        <Label className="text-xs text-blue-600">Clave Unidad SAT</Label>
+                      <div className="flex-1 min-w-[150px] max-w-[200px]">
+                        <Label className="text-xs text-blue-600 mb-1 block">Clave Unidad SAT</Label>
                         <SATUnitSearch
                           value={item.clave_unidad || ""}
                           onChange={(val) => handleItemChange(index, "clave_unidad", val)}
                         />
+                        {!item.clave_unidad && (
+                          <p className="text-[10px] text-slate-400 mt-1">Ej: H87</p>
+                        )}
                       </div>
-                      <div className="col-span-12 md:col-span-4">
-                        <p className="text-[10px] text-slate-400">Requeridos para facturación CFDI</p>
+                      <div className="flex items-center text-[10px] text-slate-400 pt-5">
+                        Requeridos para CFDI
                       </div>
                     </div>
                   </div>

@@ -63,6 +63,8 @@ import {
   X,
   History,
   Ban,
+  Stamp,
+  AlertCircle,
 } from "lucide-react";
 
 const QUOTE_STATUSES = [
@@ -84,6 +86,8 @@ export const Quotes = () => {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [denialDialogOpen, setDenialDialogOpen] = useState(false);
   const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [timbrarDialogOpen, setTimbrarDialogOpen] = useState(false);
+  const [timbrarLoading, setTimbrarLoading] = useState(false);
   const [selectedQuote, setSelectedQuote] = useState(null);
   const [denialReason, setDenialReason] = useState("");
   const [quoteHistory, setQuoteHistory] = useState([]);
@@ -299,6 +303,55 @@ export const Quotes = () => {
     } catch (error) {
       const detail = error.response?.data?.detail;
       toast.error(typeof detail === "string" ? detail : "Error al crear factura");
+    }
+  };
+
+  const handleOpenTimbrar = (quote) => {
+    setSelectedQuote(quote);
+    setTimbrarDialogOpen(true);
+  };
+
+  const handleTimbrar = async () => {
+    if (!selectedQuote) return;
+    setTimbrarLoading(true);
+    try {
+      // 1. Verificar plan de facturación activo
+      const planRes = await api.get(`/companies/${company.id}/subscription`);
+      const subscription = planRes.data;
+      
+      if (!subscription?.invoicing_plan?.is_active) {
+        toast.error("No tienes un plan de facturación activo. Activa tu plan para poder timbrar.");
+        setTimbrarLoading(false);
+        return;
+      }
+
+      // 2. Verificar que tenga folios disponibles
+      if ((subscription?.invoicing_plan?.stamps_remaining || 0) <= 0) {
+        toast.error("No tienes folios disponibles. Adquiere más folios para continuar.");
+        setTimbrarLoading(false);
+        return;
+      }
+
+      // 3. Crear factura desde cotización
+      const invoiceRes = await api.post(`/quotes/${selectedQuote.id}/to-invoice?due_days=30`);
+      const invoiceId = invoiceRes.data.id;
+      toast.success(`Factura ${invoiceRes.data.invoice_number} creada`);
+
+      // 4. Timbrar la factura
+      const stampRes = await api.post(`/invoices/${invoiceId}/stamp`);
+      
+      if (stampRes.data.success) {
+        toast.success(`¡Factura timbrada exitosamente! UUID: ${stampRes.data.uuid?.slice(0, 8)}...`);
+        setTimbrarDialogOpen(false);
+        fetchData();
+      } else {
+        toast.error(stampRes.data.error || "Error al timbrar la factura");
+      }
+    } catch (error) {
+      const detail = error.response?.data?.detail;
+      toast.error(typeof detail === "string" ? detail : "Error en el proceso de timbrado");
+    } finally {
+      setTimbrarLoading(false);
     }
   };
 
@@ -548,10 +601,16 @@ export const Quotes = () => {
                               Descargar PDF
                             </DropdownMenuItem>
                             {quote.status === "authorized" && (
-                              <DropdownMenuItem onClick={() => handleConvertToInvoice(quote.id)}>
-                                <Receipt className="mr-2 h-4 w-4 text-emerald-500" />
-                                Pasar a Facturación
-                              </DropdownMenuItem>
+                              <>
+                                <DropdownMenuItem onClick={() => handleConvertToInvoice(quote.id)}>
+                                  <Receipt className="mr-2 h-4 w-4 text-emerald-500" />
+                                  Pasar a Facturación
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleOpenTimbrar(quote)}>
+                                  <Stamp className="mr-2 h-4 w-4 text-violet-600" />
+                                  Timbrar (Crear CFDI)
+                                </DropdownMenuItem>
+                              </>
                             )}
                             <DropdownMenuSeparator />
                             <DropdownMenuItem onClick={() => handleStatusChange(quote.id, "authorized")}>
@@ -733,24 +792,30 @@ export const Quotes = () => {
                         </Button>
                       </div>
                     </div>
-                    <div className="grid grid-cols-12 gap-2 items-end border-t border-slate-200 pt-2">
-                      <div className="col-span-6 md:col-span-4">
-                        <Label className="text-xs text-blue-600">Clave SAT Producto</Label>
+                    <div className="flex flex-wrap gap-3 items-start border-t border-slate-200 pt-3 mt-2">
+                      <div className="flex-1 min-w-[180px] max-w-[250px]">
+                        <Label className="text-xs text-blue-600 mb-1 block">Clave SAT Producto</Label>
                         <SATProductSearch
                           value={item.clave_prod_serv || ""}
                           onChange={(val) => handleItemChange(index, "clave_prod_serv", val)}
                           placeholder="Buscar producto SAT..."
                         />
+                        {!item.clave_prod_serv && (
+                          <p className="text-[10px] text-slate-400 mt-1">Ej: 01010101</p>
+                        )}
                       </div>
-                      <div className="col-span-6 md:col-span-3">
-                        <Label className="text-xs text-blue-600">Clave Unidad SAT</Label>
+                      <div className="flex-1 min-w-[150px] max-w-[200px]">
+                        <Label className="text-xs text-blue-600 mb-1 block">Clave Unidad SAT</Label>
                         <SATUnitSearch
                           value={item.clave_unidad || ""}
                           onChange={(val) => handleItemChange(index, "clave_unidad", val)}
                         />
+                        {!item.clave_unidad && (
+                          <p className="text-[10px] text-slate-400 mt-1">Ej: H87</p>
+                        )}
                       </div>
-                      <div className="col-span-12 md:col-span-5">
-                        <p className="text-[10px] text-slate-400 mt-1">Claves SAT para CFDI</p>
+                      <div className="flex items-center text-[10px] text-slate-400 pt-5">
+                        Claves SAT para CFDI
                       </div>
                     </div>
                   </div>
@@ -923,24 +988,30 @@ export const Quotes = () => {
                         </Button>
                       </div>
                     </div>
-                    <div className="grid grid-cols-12 gap-2 items-end border-t border-slate-200 pt-2">
-                      <div className="col-span-6 md:col-span-4">
-                        <Label className="text-xs text-blue-600">Clave SAT Producto</Label>
+                    <div className="flex flex-wrap gap-3 items-start border-t border-slate-200 pt-3 mt-2">
+                      <div className="flex-1 min-w-[180px] max-w-[250px]">
+                        <Label className="text-xs text-blue-600 mb-1 block">Clave SAT Producto</Label>
                         <SATProductSearch
                           value={item.clave_prod_serv || ""}
                           onChange={(val) => handleItemChange(index, "clave_prod_serv", val)}
                           placeholder="Buscar producto SAT..."
                         />
+                        {!item.clave_prod_serv && (
+                          <p className="text-[10px] text-slate-400 mt-1">Ej: 01010101</p>
+                        )}
                       </div>
-                      <div className="col-span-6 md:col-span-3">
-                        <Label className="text-xs text-blue-600">Clave Unidad SAT</Label>
+                      <div className="flex-1 min-w-[150px] max-w-[200px]">
+                        <Label className="text-xs text-blue-600 mb-1 block">Clave Unidad SAT</Label>
                         <SATUnitSearch
                           value={item.clave_unidad || ""}
                           onChange={(val) => handleItemChange(index, "clave_unidad", val)}
                         />
+                        {!item.clave_unidad && (
+                          <p className="text-[10px] text-slate-400 mt-1">Ej: H87</p>
+                        )}
                       </div>
-                      <div className="col-span-12 md:col-span-5">
-                        <p className="text-[10px] text-slate-400 mt-1">Claves SAT para CFDI</p>
+                      <div className="flex items-center text-[10px] text-slate-400 pt-5">
+                        Claves SAT para CFDI
                       </div>
                     </div>
                   </div>
@@ -1091,6 +1162,69 @@ export const Quotes = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setHistoryDialogOpen(false)}>
               Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Timbrar Dialog */}
+      <Dialog open={timbrarDialogOpen} onOpenChange={setTimbrarDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Stamp className="h-5 w-5 text-violet-600" />
+              Timbrar Cotización - {selectedQuote?.quote_number}
+            </DialogTitle>
+            <DialogDescription>
+              Este proceso creará una factura y la timbrará ante el SAT
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4 space-y-4">
+            <div className="p-4 bg-violet-50 border border-violet-200 rounded-lg">
+              <h4 className="font-semibold text-violet-900 mb-2">Proceso de Timbrado:</h4>
+              <ol className="text-sm text-violet-800 space-y-1 list-decimal list-inside">
+                <li>Se verificará tu plan de facturación activo</li>
+                <li>Se creará una factura a partir de la cotización</li>
+                <li>Se enviará a timbrar al SAT vía Facturama</li>
+                <li>Recibirás el CFDI con UUID y sello digital</li>
+              </ol>
+            </div>
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="h-5 w-5 text-amber-600 mt-0.5" />
+                <div className="text-sm text-amber-800">
+                  <p className="font-semibold">Importante:</p>
+                  <p>Una vez timbrada, la factura no puede modificarse. Asegúrate de que los datos del cliente y los items sean correctos.</p>
+                </div>
+              </div>
+            </div>
+            {selectedQuote && (
+              <div className="text-sm">
+                <p><strong>Cliente:</strong> {getClientWithRef(selectedQuote.client_id)}</p>
+                <p><strong>Total:</strong> {formatCurrency(selectedQuote.total)}</p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTimbrarDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button 
+              onClick={handleTimbrar}
+              disabled={timbrarLoading}
+              className="bg-violet-600 hover:bg-violet-700 gap-2"
+            >
+              {timbrarLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Procesando...
+                </>
+              ) : (
+                <>
+                  <Stamp className="h-4 w-4" />
+                  Confirmar Timbrado
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

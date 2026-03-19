@@ -46,6 +46,11 @@ import {
   GripVertical,
   Eye,
   EyeOff,
+  TrendingDown,
+  ShoppingCart,
+  Download,
+  Loader2,
+  Sparkles,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -55,6 +60,7 @@ const COLORS = ["#004e92", "#f59e0b", "#10b981", "#64748b", "#8b5cf6", "#ef4444"
 const WIDGET_DEFINITIONS = [
   { id: "main_stats", label: "KPIs Principales", description: "Proyectos, facturación, clientes, conversión", default: true },
   { id: "secondary_stats", label: "Estadísticas Secundarias", description: "Pipeline, cotizaciones, completados", default: true },
+  { id: "profitability", label: "Rentabilidad", description: "Ventas vs Compras (Solo Admin)", default: true, adminOnly: true },
   { id: "project_progress", label: "Progreso de Proyectos", description: "Gráfico de barras de avance", default: true },
   { id: "quote_pipeline", label: "Pipeline de Cotizaciones", description: "Gráfico circular de estados", default: true },
   { id: "monthly_revenue", label: "Ingresos Mensuales", description: "Gráfico de líneas de facturación", default: true },
@@ -98,6 +104,8 @@ export const Dashboard = () => {
   const [quotePipeline, setQuotePipeline] = useState([]);
   const [overdueInvoices, setOverdueInvoices] = useState([]);
   const [pendingFollowups, setPendingFollowups] = useState([]);
+  const [profitability, setProfitability] = useState(null);
+  const [generatingReport, setGeneratingReport] = useState(false);
   const [loading, setLoading] = useState(true);
   const [configOpen, setConfigOpen] = useState(false);
   
@@ -134,14 +142,21 @@ export const Dashboard = () => {
 
   const fetchDashboardData = async () => {
     try {
-      const [statsRes, progressRes, revenueRes, pipelineRes, overdueRes, followupsRes] = await Promise.all([
+      const requests = [
         api.get(`/dashboard/stats?company_id=${company.id}`),
         api.get(`/dashboard/project-progress?company_id=${company.id}`),
         api.get(`/dashboard/monthly-revenue?company_id=${company.id}`),
         api.get(`/dashboard/quote-pipeline?company_id=${company.id}`),
         api.get(`/invoices/overdue?company_id=${company.id}`).catch(() => ({ data: { overdue: [], due_soon: [] } })),
         api.get(`/followups/pending?company_id=${company.id}`).catch(() => ({ data: [] })),
-      ]);
+      ];
+      
+      // Only fetch profitability for admin users
+      if (user?.role === "admin") {
+        requests.push(api.get(`/analytics/profitability`).catch(() => ({ data: null })));
+      }
+
+      const [statsRes, progressRes, revenueRes, pipelineRes, overdueRes, followupsRes, profitabilityRes] = await Promise.all(requests);
 
       setStats(statsRes.data);
       setProjectProgress(progressRes.data);
@@ -149,11 +164,47 @@ export const Dashboard = () => {
       setQuotePipeline(pipelineRes.data);
       setOverdueInvoices(overdueRes.data);
       setPendingFollowups(followupsRes.data);
+      if (profitabilityRes) {
+        setProfitability(profitabilityRes.data);
+      }
     } catch (error) {
       toast.error("Error al cargar datos del dashboard");
       console.error(error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const generateExecutiveReport = async () => {
+    if (!profitability) {
+      toast.error("No hay datos de rentabilidad para generar el reporte");
+      return;
+    }
+    setGeneratingReport(true);
+    try {
+      const response = await api.post("/analytics/executive-report", {
+        profitability,
+        stats,
+        company_name: company.business_name,
+      });
+      
+      // Create a downloadable report
+      const reportContent = response.data.report;
+      const blob = new Blob([reportContent], { type: "text/plain;charset=utf-8" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `Reporte_Ejecutivo_${company.business_name.replace(/\s/g, "_")}_${new Date().toISOString().split("T")[0]}.txt`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      
+      toast.success("Reporte ejecutivo generado exitosamente");
+    } catch (error) {
+      toast.error("Error al generar reporte ejecutivo");
+    } finally {
+      setGeneratingReport(false);
     }
   };
 
@@ -309,6 +360,99 @@ export const Dashboard = () => {
           color="purple-500"
         />
       </div>
+      )}
+
+      {/* Profitability Widget - Only for Admin */}
+      {widgetConfig.profitability && user?.role === "admin" && profitability && (
+        <Card className="border-2 border-emerald-200 bg-gradient-to-r from-emerald-50 to-blue-50" data-testid="profitability-widget">
+          <CardHeader className="p-4 sm:p-6 pb-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-emerald-100 rounded-lg">
+                  <TrendingUp className="h-5 w-5 text-emerald-600" />
+                </div>
+                <div>
+                  <CardTitle className="text-lg font-bold text-emerald-900">Rentabilidad</CardTitle>
+                  <CardDescription className="text-xs">Análisis de Ventas vs Compras</CardDescription>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                onClick={generateExecutiveReport}
+                disabled={generatingReport}
+                className="bg-emerald-600 hover:bg-emerald-700 gap-2"
+              >
+                {generatingReport ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Generando...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    Reporte Ejecutivo
+                  </>
+                )}
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent className="p-4 sm:p-6 pt-2">
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="p-3 bg-white rounded-lg border shadow-sm">
+                <div className="flex items-center gap-2 text-blue-600 mb-1">
+                  <FileText className="h-4 w-4" />
+                  <span className="text-xs font-medium">Facturado</span>
+                </div>
+                <p className="text-xl font-bold text-blue-700">
+                  {formatCurrency(profitability?.sales?.total_invoiced || 0)}
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  {profitability?.sales?.invoices_count || 0} facturas
+                </p>
+              </div>
+              <div className="p-3 bg-white rounded-lg border shadow-sm">
+                <div className="flex items-center gap-2 text-green-600 mb-1">
+                  <DollarSign className="h-4 w-4" />
+                  <span className="text-xs font-medium">Cobrado</span>
+                </div>
+                <p className="text-xl font-bold text-green-700">
+                  {formatCurrency(profitability?.sales?.total_collected || 0)}
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  Pendiente: {formatCurrency(profitability?.sales?.pending_collection || 0)}
+                </p>
+              </div>
+              <div className="p-3 bg-white rounded-lg border shadow-sm">
+                <div className="flex items-center gap-2 text-red-600 mb-1">
+                  <ShoppingCart className="h-4 w-4" />
+                  <span className="text-xs font-medium">Compras</span>
+                </div>
+                <p className="text-xl font-bold text-red-700">
+                  {formatCurrency(profitability?.purchases?.total_purchases || 0)}
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  {profitability?.purchases?.purchase_orders_count || 0} órdenes
+                </p>
+              </div>
+              <div className={`p-3 rounded-lg border shadow-sm ${(profitability?.profitability?.gross_profit || 0) >= 0 ? "bg-emerald-50 border-emerald-200" : "bg-orange-50 border-orange-200"}`}>
+                <div className={`flex items-center gap-2 mb-1 ${(profitability?.profitability?.gross_profit || 0) >= 0 ? "text-emerald-600" : "text-orange-600"}`}>
+                  {(profitability?.profitability?.gross_profit || 0) >= 0 ? (
+                    <TrendingUp className="h-4 w-4" />
+                  ) : (
+                    <TrendingDown className="h-4 w-4" />
+                  )}
+                  <span className="text-xs font-medium">Utilidad Bruta</span>
+                </div>
+                <p className={`text-xl font-bold ${(profitability?.profitability?.gross_profit || 0) >= 0 ? "text-emerald-700" : "text-orange-700"}`}>
+                  {formatCurrency(profitability?.profitability?.gross_profit || 0)}
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  Margen: {(profitability?.profitability?.profit_margin || 0).toFixed(1)}%
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Charts Row */}
