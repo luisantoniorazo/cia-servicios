@@ -8,6 +8,7 @@ import { Skeleton } from "../components/ui/skeleton";
 import { Button } from "../components/ui/button";
 import { Checkbox } from "../components/ui/checkbox";
 import { Label } from "../components/ui/label";
+import { Input } from "../components/ui/input";
 import {
   Sheet,
   SheetContent,
@@ -51,6 +52,9 @@ import {
   Download,
   Loader2,
   Sparkles,
+  Calendar,
+  Filter,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -106,6 +110,7 @@ export const Dashboard = () => {
   const [pendingFollowups, setPendingFollowups] = useState([]);
   const [profitability, setProfitability] = useState(null);
   const [generatingReport, setGeneratingReport] = useState(false);
+  const [profitDateRange, setProfitDateRange] = useState({ start_date: "", end_date: "" });
   const [loading, setLoading] = useState(true);
   const [configOpen, setConfigOpen] = useState(false);
   
@@ -182,29 +187,47 @@ export const Dashboard = () => {
     }
     setGeneratingReport(true);
     try {
-      const response = await api.post("/analytics/executive-report", {
+      const response = await api.post("/analytics/executive-report-pdf", {
         profitability,
         stats,
         company_name: company.business_name,
-      });
+        trade_name: company.trade_name || company.business_name,
+        start_date: profitDateRange.start_date || null,
+        end_date: profitDateRange.end_date || null,
+      }, { responseType: 'blob' });
       
-      // Create a downloadable report
-      const reportContent = response.data.report;
-      const blob = new Blob([reportContent], { type: "text/plain;charset=utf-8" });
+      // Create a downloadable PDF
+      const blob = new Blob([response.data], { type: "application/pdf" });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `Reporte_Ejecutivo_${company.business_name.replace(/\s/g, "_")}_${new Date().toISOString().split("T")[0]}.txt`;
+      a.download = `Reporte_Ejecutivo_${company.business_name.replace(/\s/g, "_")}_${new Date().toISOString().split("T")[0]}.pdf`;
       document.body.appendChild(a);
       a.click();
       window.URL.revokeObjectURL(url);
       document.body.removeChild(a);
       
-      toast.success("Reporte ejecutivo generado exitosamente");
+      toast.success("Reporte ejecutivo PDF generado exitosamente");
     } catch (error) {
       toast.error("Error al generar reporte ejecutivo");
     } finally {
       setGeneratingReport(false);
+    }
+  };
+
+  const fetchProfitabilityWithDates = async () => {
+    if (user?.role !== "admin") return;
+    try {
+      let url = "/analytics/profitability";
+      const params = new URLSearchParams();
+      if (profitDateRange.start_date) params.append("start_date", profitDateRange.start_date);
+      if (profitDateRange.end_date) params.append("end_date", profitDateRange.end_date);
+      if (params.toString()) url += `?${params.toString()}`;
+      
+      const response = await api.get(url);
+      setProfitability(response.data);
+    } catch (error) {
+      console.error("Error fetching profitability:", error);
     }
   };
 
@@ -366,34 +389,83 @@ export const Dashboard = () => {
       {widgetConfig.profitability && user?.role === "admin" && profitability && (
         <Card className="border-2 border-emerald-200 bg-gradient-to-r from-emerald-50 to-blue-50" data-testid="profitability-widget">
           <CardHeader className="p-4 sm:p-6 pb-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-emerald-100 rounded-lg">
-                  <TrendingUp className="h-5 w-5 text-emerald-600" />
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-emerald-100 rounded-lg">
+                    <TrendingUp className="h-5 w-5 text-emerald-600" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg font-bold text-emerald-900">Rentabilidad</CardTitle>
+                    <CardDescription className="text-xs">Análisis de Ventas vs Compras</CardDescription>
+                  </div>
                 </div>
-                <div>
-                  <CardTitle className="text-lg font-bold text-emerald-900">Rentabilidad</CardTitle>
-                  <CardDescription className="text-xs">Análisis de Ventas vs Compras</CardDescription>
-                </div>
+                <Button
+                  size="sm"
+                  onClick={generateExecutiveReport}
+                  disabled={generatingReport}
+                  className="bg-emerald-600 hover:bg-emerald-700 gap-2"
+                >
+                  {generatingReport ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Generando PDF...
+                    </>
+                  ) : (
+                    <>
+                      <Download className="h-4 w-4" />
+                      Reporte Ejecutivo PDF
+                    </>
+                  )}
+                </Button>
               </div>
-              <Button
-                size="sm"
-                onClick={generateExecutiveReport}
-                disabled={generatingReport}
-                className="bg-emerald-600 hover:bg-emerald-700 gap-2"
-              >
-                {generatingReport ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Generando...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4" />
-                    Reporte Ejecutivo
-                  </>
+              {/* Date Filters */}
+              <div className="flex flex-wrap items-center gap-3 p-3 bg-white/60 rounded-lg border border-emerald-100">
+                <div className="flex items-center gap-2">
+                  <Calendar className="h-4 w-4 text-emerald-600" />
+                  <span className="text-xs font-medium text-emerald-800">Período:</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="date"
+                    value={profitDateRange.start_date}
+                    onChange={(e) => setProfitDateRange(prev => ({ ...prev, start_date: e.target.value }))}
+                    className="h-8 text-xs w-[130px]"
+                    placeholder="Desde"
+                  />
+                  <span className="text-xs text-muted-foreground">a</span>
+                  <Input
+                    type="date"
+                    value={profitDateRange.end_date}
+                    onChange={(e) => setProfitDateRange(prev => ({ ...prev, end_date: e.target.value }))}
+                    className="h-8 text-xs w-[130px]"
+                    placeholder="Hasta"
+                  />
+                </div>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={fetchProfitabilityWithDates}
+                  className="h-8 gap-1 text-xs"
+                >
+                  <Filter className="h-3 w-3" />
+                  Filtrar
+                </Button>
+                {(profitDateRange.start_date || profitDateRange.end_date) && (
+                  <Button 
+                    size="sm" 
+                    variant="ghost" 
+                    onClick={() => {
+                      setProfitDateRange({ start_date: "", end_date: "" });
+                      fetchDashboardData();
+                    }}
+                    className="h-8 text-xs text-muted-foreground"
+                  >
+                    <RefreshCw className="h-3 w-3 mr-1" />
+                    Limpiar
+                  </Button>
                 )}
-              </Button>
+              </div>
             </div>
           </CardHeader>
           <CardContent className="p-4 sm:p-6 pt-2">

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, UploadFile, File, Query, Body
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, UploadFile, File, Query, Body, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -7541,6 +7541,245 @@ Generado por: IA Asistente CIA SERVICIOS
     except Exception as e:
         logger.error(f"Error generating executive report: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Error al generar reporte: {str(e)}")
+
+class ExecutiveReportPDFRequest(BaseModel):
+    profitability: dict
+    stats: Optional[dict] = None
+    company_name: str
+    trade_name: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+@api_router.post("/analytics/executive-report-pdf")
+async def generate_executive_report_pdf(request: ExecutiveReportPDFRequest, current_user: dict = Depends(get_current_user)):
+    """Generate a professional PDF executive report for profitability analysis"""
+    if current_user.get("role") not in [UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+        raise HTTPException(status_code=403, detail="Solo administradores pueden generar reportes ejecutivos")
+    
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image, HRFlowable
+    from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT, TA_JUSTIFY
+    import io
+    
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
+    
+    # Styles
+    styles = getSampleStyleSheet()
+    
+    title_style = ParagraphStyle(
+        'CustomTitle',
+        parent=styles['Heading1'],
+        fontSize=24,
+        spaceAfter=6,
+        textColor=colors.HexColor("#004e92"),
+        alignment=TA_CENTER,
+        fontName='Helvetica-Bold'
+    )
+    
+    subtitle_style = ParagraphStyle(
+        'CustomSubtitle',
+        parent=styles['Normal'],
+        fontSize=12,
+        textColor=colors.HexColor("#666666"),
+        alignment=TA_CENTER,
+        spaceAfter=20
+    )
+    
+    section_header_style = ParagraphStyle(
+        'SectionHeader',
+        parent=styles['Heading2'],
+        fontSize=14,
+        spaceBefore=20,
+        spaceAfter=10,
+        textColor=colors.HexColor("#004e92"),
+        borderPadding=5,
+        fontName='Helvetica-Bold'
+    )
+    
+    body_style = ParagraphStyle(
+        'CustomBody',
+        parent=styles['Normal'],
+        fontSize=10,
+        leading=14,
+        alignment=TA_JUSTIFY
+    )
+    
+    footer_style = ParagraphStyle(
+        'Footer',
+        parent=styles['Normal'],
+        fontSize=8,
+        textColor=colors.HexColor("#999999"),
+        alignment=TA_CENTER
+    )
+    
+    # Build content
+    elements = []
+    
+    # Header
+    elements.append(Paragraph("REPORTE EJECUTIVO", title_style))
+    elements.append(Paragraph("Análisis de Rentabilidad Empresarial", subtitle_style))
+    elements.append(HRFlowable(width="100%", thickness=2, color=colors.HexColor("#004e92"), spaceAfter=20))
+    
+    # Company Info
+    company_display = request.trade_name or request.company_name
+    elements.append(Paragraph(f"<b>Empresa:</b> {company_display}", body_style))
+    elements.append(Paragraph(f"<b>Razón Social:</b> {request.company_name}", body_style))
+    
+    # Period
+    period_text = "Todo el período"
+    if request.start_date and request.end_date:
+        period_text = f"Del {request.start_date} al {request.end_date}"
+    elif request.start_date:
+        period_text = f"Desde {request.start_date}"
+    elif request.end_date:
+        period_text = f"Hasta {request.end_date}"
+    elements.append(Paragraph(f"<b>Período de Análisis:</b> {period_text}", body_style))
+    elements.append(Paragraph(f"<b>Fecha de Generación:</b> {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC", body_style))
+    elements.append(Spacer(1, 20))
+    
+    # Executive Summary
+    elements.append(Paragraph("1. RESUMEN EJECUTIVO", section_header_style))
+    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e0e0e0"), spaceAfter=10))
+    
+    total_invoiced = request.profitability.get('sales', {}).get('total_invoiced', 0)
+    total_collected = request.profitability.get('sales', {}).get('total_collected', 0)
+    total_purchases = request.profitability.get('purchases', {}).get('total_purchases', 0)
+    gross_profit = request.profitability.get('profitability', {}).get('gross_profit', 0)
+    profit_margin = request.profitability.get('profitability', {}).get('profit_margin', 0)
+    invoices_count = request.profitability.get('sales', {}).get('invoices_count', 0)
+    
+    summary_text = f"""
+    Durante el período analizado, la empresa registró una facturación total de ${total_invoiced:,.2f} MXN 
+    a través de {invoices_count} facturas emitidas. Del total facturado, se ha logrado cobrar ${total_collected:,.2f} MXN, 
+    representando una tasa de cobranza del {(total_collected/total_invoiced*100) if total_invoiced > 0 else 0:.1f}%.
+    <br/><br/>
+    Los egresos por concepto de compras ascienden a ${total_purchases:,.2f} MXN, resultando en una 
+    <b>utilidad bruta de ${gross_profit:,.2f} MXN</b> con un <b>margen del {profit_margin:.1f}%</b>.
+    """
+    elements.append(Paragraph(summary_text, body_style))
+    elements.append(Spacer(1, 15))
+    
+    # Financial Summary Table
+    elements.append(Paragraph("2. INDICADORES FINANCIEROS CLAVE", section_header_style))
+    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e0e0e0"), spaceAfter=10))
+    
+    pending = request.profitability.get('sales', {}).get('pending_collection', 0)
+    po_count = request.profitability.get('purchases', {}).get('purchase_orders_count', 0)
+    
+    financial_data = [
+        ['CONCEPTO', 'VALOR', 'DETALLES'],
+        ['Total Facturado', f'${total_invoiced:,.2f}', f'{invoices_count} facturas emitidas'],
+        ['Total Cobrado', f'${total_collected:,.2f}', f'{(total_collected/total_invoiced*100) if total_invoiced > 0 else 0:.1f}% del facturado'],
+        ['Pendiente de Cobro', f'${pending:,.2f}', f'{(pending/total_invoiced*100) if total_invoiced > 0 else 0:.1f}% pendiente'],
+        ['Total Compras', f'${total_purchases:,.2f}', f'{po_count} órdenes de compra'],
+        ['UTILIDAD BRUTA', f'${gross_profit:,.2f}', f'Margen: {profit_margin:.1f}%'],
+    ]
+    
+    table = Table(financial_data, colWidths=[2.5*inch, 1.8*inch, 2.2*inch])
+    table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#004e92")),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -2), colors.HexColor("#f8f9fa")),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#d4edda") if gross_profit >= 0 else colors.HexColor("#f8d7da")),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor("#333333")),
+        ('GRID', (0, 0), (-1, -1), 1, colors.HexColor("#dee2e6")),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ROWHEIGHT', (0, 0), (-1, -1), 25),
+    ]))
+    elements.append(table)
+    elements.append(Spacer(1, 20))
+    
+    # Analysis Section
+    elements.append(Paragraph("3. ANÁLISIS DE INGRESOS", section_header_style))
+    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e0e0e0"), spaceAfter=10))
+    
+    collection_rate = (total_collected/total_invoiced*100) if total_invoiced > 0 else 0
+    collection_status = "excelente" if collection_rate >= 90 else "buena" if collection_rate >= 70 else "moderada" if collection_rate >= 50 else "baja"
+    
+    income_analysis = f"""
+    <b>Facturación:</b> Se emitieron {invoices_count} facturas por un monto total de ${total_invoiced:,.2f} MXN.
+    <br/><br/>
+    <b>Cobranza:</b> La tasa de cobranza es del {collection_rate:.1f}%, considerada como {collection_status}. 
+    Se han cobrado ${total_collected:,.2f} MXN, quedando pendientes ${pending:,.2f} MXN por recuperar.
+    """
+    elements.append(Paragraph(income_analysis, body_style))
+    elements.append(Spacer(1, 15))
+    
+    # Expenses Section
+    elements.append(Paragraph("4. ANÁLISIS DE EGRESOS", section_header_style))
+    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e0e0e0"), spaceAfter=10))
+    
+    expense_ratio = (total_purchases/total_invoiced*100) if total_invoiced > 0 else 0
+    expense_analysis = f"""
+    <b>Compras:</b> Se realizaron {po_count} órdenes de compra por un total de ${total_purchases:,.2f} MXN.
+    <br/><br/>
+    <b>Ratio de Gastos:</b> Los egresos representan el {expense_ratio:.1f}% del total facturado, 
+    lo que indica {"una estructura de costos eficiente" if expense_ratio < 70 else "una estructura de costos que puede optimizarse"}.
+    """
+    elements.append(Paragraph(expense_analysis, body_style))
+    elements.append(Spacer(1, 15))
+    
+    # Profitability Section
+    elements.append(Paragraph("5. ANÁLISIS DE RENTABILIDAD", section_header_style))
+    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e0e0e0"), spaceAfter=10))
+    
+    profit_status = "positiva" if gross_profit > 0 else "negativa" if gross_profit < 0 else "neutral"
+    margin_quality = "excelente" if profit_margin >= 30 else "bueno" if profit_margin >= 20 else "aceptable" if profit_margin >= 10 else "bajo"
+    
+    profit_analysis = f"""
+    <b>Utilidad Bruta:</b> La empresa registra una utilidad bruta {profit_status} de ${gross_profit:,.2f} MXN.
+    <br/><br/>
+    <b>Margen de Utilidad:</b> El margen de {profit_margin:.1f}% se considera {margin_quality} para el sector.
+    {"Se recomienda mantener esta tendencia." if gross_profit > 0 else "Se recomienda revisar la estructura de costos y estrategias de precio."}
+    """
+    elements.append(Paragraph(profit_analysis, body_style))
+    elements.append(Spacer(1, 20))
+    
+    # Recommendations
+    elements.append(Paragraph("6. RECOMENDACIONES ESTRATÉGICAS", section_header_style))
+    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#e0e0e0"), spaceAfter=10))
+    
+    recommendations = []
+    if pending > 0:
+        recommendations.append(f"• Implementar seguimiento activo de cobranza para recuperar ${pending:,.2f} MXN pendientes.")
+    if collection_rate < 80:
+        recommendations.append("• Revisar políticas de crédito y términos de pago con clientes.")
+    if profit_margin < 20:
+        recommendations.append("• Analizar oportunidades de optimización de costos operativos.")
+    if expense_ratio > 70:
+        recommendations.append("• Negociar mejores condiciones con proveedores clave.")
+    recommendations.append("• Mantener monitoreo continuo de indicadores financieros.")
+    recommendations.append("• Establecer metas de rentabilidad por proyecto/cliente.")
+    
+    for rec in recommendations[:5]:
+        elements.append(Paragraph(rec, body_style))
+    elements.append(Spacer(1, 30))
+    
+    # Footer
+    elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#004e92"), spaceBefore=20, spaceAfter=10))
+    elements.append(Paragraph("Documento generado automáticamente por CIA SERVICIOS", footer_style))
+    elements.append(Paragraph(f"Este reporte es confidencial y para uso interno de {company_display}", footer_style))
+    
+    # Build PDF
+    doc.build(elements)
+    buffer.seek(0)
+    
+    return Response(
+        content=buffer.getvalue(),
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f"attachment; filename=Reporte_Ejecutivo_{datetime.now().strftime('%Y%m%d')}.pdf"
+        }
+    )
 
 # ============== USER PERMISSIONS ROUTES ==============
 @api_router.put("/admin/users/{user_id}/permissions")

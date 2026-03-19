@@ -633,7 +633,13 @@ Company Admin (CIA Servicios Demo):
 
 ### v3.7.1 (Marzo 2026)
 - ✨ **Widget de Rentabilidad en Dashboard**: Solo visible para administradores
-- ✨ **Reporte Ejecutivo con IA**: Genera análisis profesional de rentabilidad
+- ✨ **Reporte Ejecutivo PDF profesional**: Formato ejecutivo para alta dirección con:
+  - Encabezado corporativo con nombre comercial y razón social
+  - Resumen ejecutivo analítico
+  - Tabla de indicadores financieros clave
+  - Análisis de ingresos, egresos y rentabilidad
+  - Recomendaciones estratégicas personalizadas
+- ✨ **Filtros de fecha en rentabilidad**: Permite analizar períodos específicos
 - ✨ **Botón "Timbrar (Crear CFDI)"** en Cotizaciones autorizadas
 - ✨ Verifica plan de facturación activo antes de timbrar
 - 🔧 **Alineación de campos SAT**: Corregido layout de Clave SAT Producto y Clave Unidad SAT
