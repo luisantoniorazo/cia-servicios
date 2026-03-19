@@ -51,6 +51,7 @@ import {
   AlertTriangle,
   Upload,
   Loader2,
+  Search,
 } from "lucide-react";
 
 const DOCUMENT_CATEGORIES = [
@@ -70,6 +71,7 @@ export const Documents = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [searchFilter, setSearchFilter] = useState("");
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState(null);
   const [formData, setFormData] = useState({
@@ -225,9 +227,20 @@ export const Documents = () => {
     }
   };
 
-  const filteredDocs = categoryFilter === "all" 
-    ? documents 
-    : documents.filter((d) => d.category === categoryFilter);
+  // Filtrar por categoría y búsqueda
+  const filteredDocs = documents.filter((d) => {
+    const matchesCategory = categoryFilter === "all" || d.category === categoryFilter;
+    if (!searchFilter.trim()) return matchesCategory;
+    
+    const search = searchFilter.toLowerCase();
+    const matchesSearch = 
+      d.name?.toLowerCase().includes(search) ||
+      d.notes?.toLowerCase().includes(search) ||
+      d.category?.toLowerCase().includes(search) ||
+      d.file_name?.toLowerCase().includes(search);
+    
+    return matchesCategory && matchesSearch;
+  });
 
   if (loading) {
     return (
@@ -252,28 +265,40 @@ export const Documents = () => {
         </Button>
       </div>
 
-      {/* Category Filter */}
-      <div className="flex flex-wrap gap-2">
-        <Button
-          variant={categoryFilter === "all" ? "default" : "outline"}
-          size="sm"
-          onClick={() => setCategoryFilter("all")}
-        >
-          Todos ({documents.length})
-        </Button>
-        {DOCUMENT_CATEGORIES.map((cat) => {
-          const count = documents.filter((d) => d.category === cat.value).length;
-          return (
-            <Button
-              key={cat.value}
-              variant={categoryFilter === cat.value ? "default" : "outline"}
-              size="sm"
-              onClick={() => setCategoryFilter(cat.value)}
-            >
-              {cat.label} ({count})
-            </Button>
-          );
-        })}
+      {/* Search and Category Filter */}
+      <div className="flex flex-col sm:flex-row gap-4">
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar documentos..."
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            className="pl-10"
+            data-testid="document-search-input"
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant={categoryFilter === "all" ? "default" : "outline"}
+            size="sm"
+            onClick={() => setCategoryFilter("all")}
+          >
+            Todos ({documents.length})
+          </Button>
+          {DOCUMENT_CATEGORIES.map((cat) => {
+            const count = documents.filter((d) => d.category === cat.value).length;
+            return (
+              <Button
+                key={cat.value}
+                variant={categoryFilter === cat.value ? "default" : "outline"}
+                size="sm"
+                onClick={() => setCategoryFilter(cat.value)}
+              >
+                {cat.label} ({count})
+              </Button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Documents Table */}

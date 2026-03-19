@@ -222,18 +222,24 @@ export const Intelligence = () => {
               <Badge variant="secondary" className="ml-1">{savedConversations.length}</Badge>
             )}
           </Button>
-          {messages.length > 0 && (
-            <>
-              <Button variant="outline" onClick={saveConversation} className="gap-2">
-                <Save className="h-4 w-4" />
-                Guardar
-              </Button>
-              <Button variant="outline" onClick={clearChat} className="gap-2">
-                <RefreshCw className="h-4 w-4" />
-                Nueva
-              </Button>
-            </>
-          )}
+          <Button 
+            variant="outline" 
+            onClick={saveConversation} 
+            className="gap-2"
+            disabled={messages.length === 0}
+          >
+            <Save className="h-4 w-4" />
+            Guardar
+          </Button>
+          <Button 
+            variant="outline" 
+            onClick={clearChat} 
+            className="gap-2"
+            disabled={messages.length === 0 && !currentConversationId}
+          >
+            <RefreshCw className="h-4 w-4" />
+            Nueva
+          </Button>
         </div>
       </div>
 

@@ -67,6 +67,7 @@ import {
   X,
   GanttChartSquare,
   LayoutList,
+  TrendingUp,
 } from "lucide-react";
 import { cn } from "../lib/utils";
 import { GanttChart } from "../components/GanttChart";
@@ -92,6 +93,7 @@ export const Projects = () => {
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [taskDialogOpen, setTaskDialogOpen] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
+  const [projectProfitability, setProjectProfitability] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [viewMode, setViewMode] = useState("list"); // list, gantt
   const [formData, setFormData] = useState({
@@ -208,6 +210,23 @@ export const Projects = () => {
     }
   };
 
+  const fetchProjectProfitability = async (projectId) => {
+    try {
+      const res = await api.get(`/projects/${projectId}/profitability`);
+      setProjectProfitability(res.data);
+    } catch (error) {
+      console.error("Error fetching profitability:", error);
+      setProjectProfitability(null);
+    }
+  };
+
+  const openProjectDetail = async (project) => {
+    setSelectedProject(project);
+    setDetailDialogOpen(true);
+    fetchTasks(project.id);
+    fetchProjectProfitability(project.id);
+  };
+
   const handleDeleteProject = async (projectId) => {
     if (!window.confirm("¿Estás seguro de eliminar este proyecto?")) return;
     try {
@@ -292,16 +311,23 @@ export const Projects = () => {
     });
   };
 
-  const openProjectDetail = (project) => {
-    setSelectedProject(project);
-    fetchProjectTasks(project.id);
-    setDetailDialogOpen(true);
+  const openProjectDetail = async (project) => {
+    try {
+      const res = await api.get(`/projects/${project.id}`);
+      setSelectedProject(res.data);
+      fetchProjectTasks(project.id);
+      fetchProjectProfitability(project.id);
+      setDetailDialogOpen(true);
+    } catch (error) {
+      toast.error("Error al cargar detalles");
+    }
   };
 
   const getClientName = (clientId) => {
     const client = clients.find((c) => c.id === clientId);
     if (!client) return "N/A";
-    return client.reference ? `${client.name} (${client.reference})` : client.name;
+    const displayName = client.trade_name || client.name;
+    return client.reference ? `${displayName} (${client.reference})` : displayName;
   };
 
   const baseFilteredProjects = statusFilter === "all" 
@@ -309,16 +335,6 @@ export const Projects = () => {
     : projects.filter((p) => p.status === statusFilter);
   
   const filteredProjects = getFilteredProjects(baseFilteredProjects);
-
-  const openDetailDialog = async (project) => {
-    try {
-      const res = await api.get(`/projects/${project.id}`);
-      setSelectedProject(res.data);
-      setDetailDialogOpen(true);
-    } catch (error) {
-      toast.error("Error al cargar detalles");
-    }
-  };
 
   if (loading) {
     return (
@@ -806,6 +822,52 @@ export const Projects = () => {
                   </div>
                 ))}
               </div>
+
+              {/* Rentabilidad del Proyecto */}
+              {projectProfitability && (
+                <div className="space-y-4">
+                  <h4 className="font-semibold flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4" />
+                    Rentabilidad del Proyecto
+                  </h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                      <div className="text-xs text-blue-600 font-medium">Facturado</div>
+                      <div className="text-lg font-bold text-blue-700">{formatCurrency(projectProfitability.total_invoiced)}</div>
+                      <div className="text-xs text-blue-500">{projectProfitability.invoices_count} facturas</div>
+                    </div>
+                    <div className="p-3 bg-green-50 rounded-lg border border-green-200">
+                      <div className="text-xs text-green-600 font-medium">Cobrado</div>
+                      <div className="text-lg font-bold text-green-700">{formatCurrency(projectProfitability.total_collected)}</div>
+                      <div className="text-xs text-green-500">Pendiente: {formatCurrency(projectProfitability.pending_collection)}</div>
+                    </div>
+                    <div className="p-3 bg-red-50 rounded-lg border border-red-200">
+                      <div className="text-xs text-red-600 font-medium">Compras/Gastos</div>
+                      <div className="text-lg font-bold text-red-700">{formatCurrency(projectProfitability.total_purchases)}</div>
+                      <div className="text-xs text-red-500">{projectProfitability.purchase_orders_count} órdenes</div>
+                    </div>
+                    <div className={`p-3 rounded-lg border ${projectProfitability.gross_profit >= 0 ? 'bg-emerald-50 border-emerald-200' : 'bg-orange-50 border-orange-200'}`}>
+                      <div className={`text-xs font-medium ${projectProfitability.gross_profit >= 0 ? 'text-emerald-600' : 'text-orange-600'}`}>Utilidad Bruta</div>
+                      <div className={`text-lg font-bold ${projectProfitability.gross_profit >= 0 ? 'text-emerald-700' : 'text-orange-700'}`}>
+                        {formatCurrency(projectProfitability.gross_profit)}
+                      </div>
+                      <div className={`text-xs ${projectProfitability.gross_profit >= 0 ? 'text-emerald-500' : 'text-orange-500'}`}>
+                        Margen: {projectProfitability.profit_margin}%
+                      </div>
+                    </div>
+                  </div>
+                  {projectProfitability.contract_amount > 0 && (
+                    <div className="p-3 bg-slate-50 rounded-lg border">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">Utilidad vs Contrato:</span>
+                        <span className={`font-bold ${projectProfitability.contract_profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                          {formatCurrency(projectProfitability.contract_profit)} ({projectProfitability.contract_margin}%)
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Tasks Section */}
               <div className="space-y-4">

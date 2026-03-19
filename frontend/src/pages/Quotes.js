@@ -95,6 +95,8 @@ export const Quotes = () => {
     description: "",
     status: "prospect",
     show_tax: true,
+    custom_field: "",  // Campo personalizable alfanumérico
+    custom_field_label: "",  // Etiqueta del campo personalizado
     items: [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0, clave_prod_serv: "", clave_unidad: "" }],
   });
 
@@ -649,6 +651,27 @@ export const Quotes = () => {
                   placeholder="Descripción general..."
                   rows={2}
                 />
+              </div>
+
+              {/* Campo Personalizado */}
+              <div className="grid grid-cols-2 gap-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="grid gap-2">
+                  <Label className="text-blue-700">Etiqueta del Campo (opcional)</Label>
+                  <Input
+                    value={formData.custom_field_label}
+                    onChange={(e) => setFormData({ ...formData, custom_field_label: e.target.value })}
+                    placeholder="Ej: No. de Proyecto, Referencia, Código"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label className="text-blue-700">Valor del Campo</Label>
+                  <Input
+                    value={formData.custom_field}
+                    onChange={(e) => setFormData({ ...formData, custom_field: e.target.value })}
+                    placeholder="Ej: PROY-2024-001"
+                  />
+                </div>
+                <p className="col-span-2 text-xs text-blue-600">Este campo aparecerá en el PDF de la cotización</p>
               </div>
 
               {/* Items */}

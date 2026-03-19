@@ -369,7 +369,7 @@ export const CRM = () => {
               Nuevo Cliente/Prospecto
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
+          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
             <form onSubmit={handleSubmit}>
               <DialogHeader>
                 <DialogTitle>{editingClient ? "Editar" : "Nuevo"} Cliente/Prospecto</DialogTitle>
@@ -377,7 +377,7 @@ export const CRM = () => {
                   Ingresa los datos del contacto comercial
                 </DialogDescription>
               </DialogHeader>
-              <div className="grid gap-4 py-4">
+              <div className="grid gap-3 py-4">
                 <div className="grid grid-cols-3 gap-4">
                   <div className="col-span-2 grid gap-2">
                     <Label htmlFor="trade_name" className="flex items-center gap-1">

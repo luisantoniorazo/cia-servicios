@@ -137,6 +137,8 @@ export const Invoices = () => {
     client_id: "",
     project_id: "",
     invoice_number: "",
+    reference: "",  // OC Cliente / Orden de Trabajo
+    payment_terms: "contado",
     items: [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0, clave_prod_serv: "", clave_unidad: "" }],
     subtotal: 0,
     tax: 0,
@@ -551,6 +553,8 @@ export const Invoices = () => {
       client_id: "",
       project_id: "",
       invoice_number: generateInvoiceNumber(),
+      reference: "",
+      payment_terms: "contado",
       items: [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0, clave_prod_serv: "", clave_unidad: "" }],
       subtotal: 0,
       tax: 0,
@@ -1280,6 +1284,32 @@ export const Invoices = () => {
                       {projects.map((p) => (
                         <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                       ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Referencia (OC Cliente / Orden de Trabajo)</Label>
+                  <Input
+                    value={formData.reference}
+                    onChange={(e) => setFormData({ ...formData, reference: e.target.value })}
+                    placeholder="Ej: OC-2024-001, OT-123"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>Condiciones de Pago</Label>
+                  <Select
+                    value={formData.payment_terms || "contado"}
+                    onValueChange={(value) => setFormData({ ...formData, payment_terms: value })}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="contado">Contado</SelectItem>
+                      <SelectItem value="credito_15">Crédito 15 días</SelectItem>
+                      <SelectItem value="credito_30">Crédito 30 días</SelectItem>
+                      <SelectItem value="credito_45">Crédito 45 días</SelectItem>
+                      <SelectItem value="credito_60">Crédito 60 días</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

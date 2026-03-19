@@ -7197,6 +7197,113 @@ async def delete_project_task(project_id: str, task_id: str, current_user: dict 
     await db.project_tasks.delete_one({"id": task_id})
     return {"message": "Tarea eliminada"}
 
+@api_router.get("/projects/{project_id}/profitability")
+async def get_project_profitability(project_id: str, current_user: dict = Depends(get_current_user)):
+    """Get profitability analysis for a project (income vs purchases)"""
+    project = await db.projects.find_one({"id": project_id}, {"_id": 0})
+    if not project:
+        raise HTTPException(status_code=404, detail="Proyecto no encontrado")
+    
+    if current_user.get("company_id") != project.get("company_id") and current_user.get("role") != UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    
+    company_id = project.get("company_id")
+    
+    # Get invoices for this project
+    invoices = await db.invoices.find({
+        "company_id": company_id,
+        "project_id": project_id
+    }, {"_id": 0, "total": 1, "paid_amount": 1, "status": 1}).to_list(1000)
+    
+    total_invoiced = sum(inv.get("total", 0) for inv in invoices)
+    total_collected = sum(inv.get("paid_amount", 0) for inv in invoices)
+    
+    # Get purchase orders for this project
+    purchase_orders = await db.purchase_orders.find({
+        "company_id": company_id,
+        "project_id": project_id
+    }, {"_id": 0, "total": 1, "status": 1}).to_list(1000)
+    
+    total_purchases = sum(po.get("total", 0) for po in purchase_orders)
+    
+    # Calculate profitability
+    contract_amount = project.get("contract_amount", 0) or 0
+    gross_profit = total_invoiced - total_purchases
+    profit_margin = (gross_profit / total_invoiced * 100) if total_invoiced > 0 else 0
+    contract_profit = contract_amount - total_purchases
+    contract_margin = (contract_profit / contract_amount * 100) if contract_amount > 0 else 0
+    
+    return {
+        "project_id": project_id,
+        "project_name": project.get("name"),
+        "contract_amount": contract_amount,
+        "total_invoiced": total_invoiced,
+        "total_collected": total_collected,
+        "pending_collection": total_invoiced - total_collected,
+        "total_purchases": total_purchases,
+        "gross_profit": gross_profit,
+        "profit_margin": round(profit_margin, 2),
+        "contract_profit": contract_profit,
+        "contract_margin": round(contract_margin, 2),
+        "invoices_count": len(invoices),
+        "purchase_orders_count": len(purchase_orders)
+    }
+
+@api_router.get("/analytics/profitability")
+async def get_general_profitability(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get general profitability analysis (sales vs purchases by period)"""
+    company_id = current_user.get("company_id")
+    
+    # Build date filter
+    date_filter = {"company_id": company_id}
+    if start_date:
+        date_filter["created_at"] = {"$gte": start_date}
+    if end_date:
+        if "created_at" in date_filter:
+            date_filter["created_at"]["$lte"] = end_date
+        else:
+            date_filter["created_at"] = {"$lte": end_date}
+    
+    # Get all invoices in period
+    invoices = await db.invoices.find(date_filter, {"_id": 0, "total": 1, "paid_amount": 1, "status": 1, "created_at": 1}).to_list(10000)
+    
+    total_invoiced = sum(inv.get("total", 0) for inv in invoices)
+    total_collected = sum(inv.get("paid_amount", 0) for inv in invoices)
+    
+    # Get all purchase orders in period
+    purchase_orders = await db.purchase_orders.find(date_filter, {"_id": 0, "total": 1, "status": 1, "created_at": 1}).to_list(10000)
+    
+    total_purchases = sum(po.get("total", 0) for po in purchase_orders)
+    
+    # Calculate profitability
+    gross_profit = total_invoiced - total_purchases
+    profit_margin = (gross_profit / total_invoiced * 100) if total_invoiced > 0 else 0
+    
+    return {
+        "period": {
+            "start_date": start_date,
+            "end_date": end_date
+        },
+        "sales": {
+            "total_invoiced": total_invoiced,
+            "total_collected": total_collected,
+            "pending_collection": total_invoiced - total_collected,
+            "invoices_count": len(invoices)
+        },
+        "purchases": {
+            "total_purchases": total_purchases,
+            "purchase_orders_count": len(purchase_orders)
+        },
+        "profitability": {
+            "gross_profit": gross_profit,
+            "profit_margin": round(profit_margin, 2)
+        }
+    }
+
 # ============== USER PERMISSIONS ROUTES ==============
 @api_router.put("/admin/users/{user_id}/permissions")
 async def update_user_permissions(user_id: str, permissions: List[str], current_user: dict = Depends(get_current_user)):
@@ -8233,6 +8340,14 @@ def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
             elements.append(Paragraph(quote.get('description'), desc_style))
         elements.append(Spacer(1, 0.15*inch))
     
+    # Campo personalizado
+    if quote.get('custom_field'):
+        custom_label = quote.get('custom_field_label') or 'Referencia'
+        custom_value = quote.get('custom_field')
+        custom_style = ParagraphStyle('Custom', fontSize=10, fontName='Helvetica-Bold', textColor=colors.HexColor('#2b6cb0'))
+        elements.append(Paragraph(f"{custom_label}: {custom_value}", custom_style))
+        elements.append(Spacer(1, 0.1*inch))
+    
     # Items table with auto-adjusting cells
     items = quote.get('items', [])
     show_tax = quote.get('show_tax', True)
@@ -8357,67 +8472,168 @@ def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
     return buffer.getvalue()
 
 def generate_invoice_pdf(invoice: dict, company: dict, client: dict) -> bytes:
-    """Generate PDF for an invoice"""
+    """Generate PDF for an invoice with fiscal data"""
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.5*inch, bottomMargin=0.5*inch)
+    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.4*inch, bottomMargin=0.4*inch, leftMargin=0.5*inch, rightMargin=0.5*inch)
     styles = getSampleStyleSheet()
     
-    title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#004e92'), alignment=TA_LEFT)
+    # Colors
+    PRIMARY = '#1a365d'
+    TEXT_DARK = '#2d3748'
+    TEXT_MUTED = '#718096'
+    
+    title_style = ParagraphStyle('Title', fontSize=14, fontName='Helvetica-Bold', textColor=colors.HexColor(PRIMARY))
+    section_title_style = ParagraphStyle('SectionTitle', fontSize=10, fontName='Helvetica-Bold', textColor=colors.HexColor(PRIMARY), spaceAfter=6)
+    label_style = ParagraphStyle('Label', fontSize=8, fontName='Helvetica-Bold', textColor=colors.HexColor(TEXT_MUTED))
+    value_style = ParagraphStyle('Value', fontSize=9, fontName='Helvetica', textColor=colors.HexColor(TEXT_DARK))
     
     elements = []
     
     # Header with logo
     add_company_header_to_pdf(elements, company, styles, title_style)
     
-    # Invoice title
-    elements.append(Paragraph(f"FACTURA {invoice.get('invoice_number', '')}", styles['Heading2']))
-    elements.append(Spacer(1, 0.2*inch))
+    # Invoice title with number
+    cfdi_info = invoice.get('cfdi_info', {}) or {}
+    is_stamped = cfdi_info.get('uuid') is not None
+    status_text = "CFDI TIMBRADO" if is_stamped else "FACTURA (PENDIENTE DE TIMBRAR)"
     
-    # Usar nombre comercial y razón social
+    elements.append(Paragraph(f"{status_text} - {invoice.get('invoice_number', '')}", title_style))
+    elements.append(Spacer(1, 0.15*inch))
+    
+    # Two-column layout: Client info | Invoice info
     trade_name = client.get('trade_name') or client.get('name') or 'N/A'
-    razon_social = client.get('razon_social_fiscal') or ''
+    razon_social = client.get('razon_social_fiscal') or trade_name
     client_ref = f" ({client.get('reference')})" if client.get('reference') else ""
     
-    # Info table
     info_data = [
-        ['Nombre Comercial:', trade_name + client_ref, 'Fecha:', invoice.get('created_at', '')[:10] if invoice.get('created_at') else ''],
-        ['Razón Social:', razon_social or 'N/A', 'Vencimiento:', invoice.get('due_date', '')[:10] if invoice.get('due_date') else 'N/A'],
-        ['RFC:', client.get('rfc', 'N/A'), 'Estado:', invoice.get('status', 'pending').upper()],
+        [Paragraph("RECEPTOR", section_title_style), '', Paragraph("DATOS DE FACTURA", section_title_style), ''],
+        [Paragraph("Nombre Comercial:", label_style), Paragraph(trade_name + client_ref, value_style),
+         Paragraph("Fecha Emisión:", label_style), Paragraph(invoice.get('invoice_date', '')[:10] if invoice.get('invoice_date') else '', value_style)],
+        [Paragraph("Razón Social:", label_style), Paragraph(razon_social, value_style),
+         Paragraph("Fecha Vencimiento:", label_style), Paragraph(invoice.get('due_date', '')[:10] if invoice.get('due_date') else 'N/A', value_style)],
+        [Paragraph("RFC:", label_style), Paragraph(client.get('rfc', 'N/A'), value_style),
+         Paragraph("Condiciones:", label_style), Paragraph(invoice.get('payment_terms', 'Contado').replace('_', ' ').title(), value_style)],
+        [Paragraph("Régimen Fiscal:", label_style), Paragraph(client.get('regimen_fiscal', 'N/A'), value_style),
+         Paragraph("Referencia:", label_style), Paragraph(invoice.get('reference', '') or 'N/A', value_style)],
+        [Paragraph("Uso CFDI:", label_style), Paragraph(client.get('uso_cfdi', 'G03'), value_style),
+         Paragraph("Forma de Pago:", label_style), Paragraph(invoice.get('payment_method', '99 - Por definir'), value_style)],
     ]
-    info_table = Table(info_data, colWidths=[1.2*inch, 2.3*inch, 1*inch, 2*inch])
+    
+    info_table = Table(info_data, colWidths=[1.1*inch, 2.2*inch, 1.1*inch, 2.2*inch])
     info_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f7fafc')),
     ]))
     elements.append(info_table)
-    elements.append(Spacer(1, 0.3*inch))
+    elements.append(Spacer(1, 0.2*inch))
     
-    # Concept
-    elements.append(Paragraph(f"<b>Concepto:</b> {invoice.get('concept', '')}", styles['Normal']))
-    elements.append(Spacer(1, 0.3*inch))
+    # Items table
+    items = invoice.get('items', [])
+    elements.append(Paragraph("CONCEPTOS", section_title_style))
     
-    # Amounts
-    amounts_data = [
-        ['Subtotal:', f"${invoice.get('subtotal', 0):,.2f}"],
-        ['IVA (16%):', f"${invoice.get('tax', 0):,.2f}"],
-        ['TOTAL:', f"${invoice.get('total', 0):,.2f}"],
-        ['Pagado:', f"${invoice.get('paid_amount', 0):,.2f}"],
-        ['Saldo:', f"${invoice.get('total', 0) - invoice.get('paid_amount', 0):,.2f}"],
+    if items:
+        item_data = [['Clave', 'Descripción', 'Cantidad', 'Unidad', 'P. Unit.', 'Importe']]
+        for item in items:
+            item_data.append([
+                item.get('clave_prod_serv', ''),
+                Paragraph(item.get('description', ''), value_style),
+                f"{item.get('quantity', 1):.2f}",
+                item.get('unit', 'PZA'),
+                f"${item.get('unit_price', 0):,.2f}",
+                f"${item.get('total', item.get('quantity', 1) * item.get('unit_price', 0)):,.2f}"
+            ])
+        
+        items_table = Table(item_data, colWidths=[0.8*inch, 2.8*inch, 0.7*inch, 0.5*inch, 0.9*inch, 1*inch])
+        items_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 8),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e2e8f0')),
+            ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e0')),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(items_table)
+    
+    elements.append(Spacer(1, 0.15*inch))
+    
+    # Totals (without paid/balance)
+    totals_data = [
+        ['', '', 'Subtotal:', f"${invoice.get('subtotal', 0):,.2f}"],
+        ['', '', 'IVA (16%):', f"${invoice.get('tax', 0):,.2f}"],
+        ['', '', 'TOTAL:', f"${invoice.get('total', 0):,.2f}"],
     ]
-    amounts_table = Table(amounts_data, colWidths=[4*inch, 2*inch])
-    amounts_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 11),
-        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-        ('BACKGROUND', (0, 2), (-1, 2), colors.HexColor('#e6f0fa')),
-        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#ffe6e6') if invoice.get('total', 0) > invoice.get('paid_amount', 0) else colors.HexColor('#e6ffe6')),
+    totals_table = Table(totals_data, colWidths=[2.5*inch, 2*inch, 1.2*inch, 1*inch])
+    totals_table.setStyle(TableStyle([
+        ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),
+        ('FONTNAME', (2, -1), (3, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
+        ('BACKGROUND', (2, -1), (-1, -1), colors.HexColor('#e6f0fa')),
+        ('BOX', (2, -1), (-1, -1), 1, colors.HexColor(PRIMARY)),
     ]))
-    elements.append(amounts_table)
+    elements.append(totals_table)
+    
+    # CFDI Fiscal Data Section
+    if is_stamped:
+        elements.append(Spacer(1, 0.2*inch))
+        elements.append(Paragraph("DATOS FISCALES CFDI", section_title_style))
+        
+        fiscal_data = [
+            ['UUID:', cfdi_info.get('uuid', 'N/A')],
+            ['Fecha Timbrado:', cfdi_info.get('fecha_timbrado', 'N/A')],
+            ['No. Certificado Emisor:', cfdi_info.get('no_certificado_emisor', 'N/A')],
+            ['No. Certificado SAT:', cfdi_info.get('no_certificado_sat', 'N/A')],
+        ]
+        fiscal_table = Table(fiscal_data, colWidths=[1.5*inch, 5.2*inch])
+        fiscal_table.setStyle(TableStyle([
+            ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 7),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f7fafc')),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ]))
+        elements.append(fiscal_table)
+        
+        # Sello Digital del Emisor
+        if cfdi_info.get('sello_emisor'):
+            elements.append(Spacer(1, 0.1*inch))
+            elements.append(Paragraph("Sello Digital del Emisor:", label_style))
+            sello_style = ParagraphStyle('Sello', fontSize=5, fontName='Courier', textColor=colors.HexColor(TEXT_MUTED), leading=6, wordWrap='CJK')
+            elements.append(Paragraph(cfdi_info.get('sello_emisor', '')[:200] + '...', sello_style))
+        
+        # Sello Digital del SAT
+        if cfdi_info.get('sello_sat'):
+            elements.append(Spacer(1, 0.05*inch))
+            elements.append(Paragraph("Sello Digital del SAT:", label_style))
+            elements.append(Paragraph(cfdi_info.get('sello_sat', '')[:200] + '...', sello_style))
+        
+        # Cadena Original
+        if cfdi_info.get('cadena_original'):
+            elements.append(Spacer(1, 0.05*inch))
+            elements.append(Paragraph("Cadena Original del Timbre:", label_style))
+            elements.append(Paragraph(cfdi_info.get('cadena_original', '')[:300] + '...', sello_style))
+        
+        # QR Code placeholder (would need actual QR generation)
+        elements.append(Spacer(1, 0.1*inch))
+        qr_note_style = ParagraphStyle('QRNote', fontSize=7, textColor=colors.HexColor(TEXT_MUTED), alignment=TA_CENTER)
+        elements.append(Paragraph("Este documento es una representación impresa de un CFDI", qr_note_style))
+    else:
+        # Not stamped - show pending message
+        elements.append(Spacer(1, 0.2*inch))
+        pending_style = ParagraphStyle('Pending', fontSize=10, fontName='Helvetica-Bold', textColor=colors.HexColor('#c53030'), alignment=TA_CENTER)
+        elements.append(Paragraph("⚠ DOCUMENTO PENDIENTE DE TIMBRAR", pending_style))
+        elements.append(Paragraph("Este documento NO tiene validez fiscal hasta ser timbrado ante el SAT", qr_note_style if 'qr_note_style' in dir() else ParagraphStyle('Note', fontSize=8, textColor=colors.HexColor(TEXT_MUTED), alignment=TA_CENTER)))
     
     # Footer
-    elements.append(Spacer(1, 0.5*inch))
-    elements.append(Paragraph("Este documento es una representación impresa.", styles['Normal']))
+    elements.append(Spacer(1, 0.3*inch))
+    footer_style = ParagraphStyle('Footer', fontSize=7, textColor=colors.HexColor(TEXT_MUTED), alignment=TA_CENTER)
+    elements.append(Paragraph(f"Documento generado el {datetime.now().strftime('%d/%m/%Y %H:%M')}", footer_style))
     
     doc.build(elements)
     return buffer.getvalue()
