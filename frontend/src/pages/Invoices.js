@@ -145,6 +145,8 @@ export const Invoices = () => {
     total: 0,
     invoice_date: new Date().toISOString().split("T")[0],
     due_date: "",
+    custom_field: "",
+    custom_field_label: "",
   });
   
   const [paymentForm, setPaymentForm] = useState({
@@ -561,6 +563,8 @@ export const Invoices = () => {
       total: 0,
       invoice_date: new Date().toISOString().split("T")[0],
       due_date: "",
+      custom_field: "",
+      custom_field_label: "",
     });
   };
 
@@ -1311,6 +1315,26 @@ export const Invoices = () => {
                       <SelectItem value="credito_60">Crédito 60 días</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+              
+              {/* Campo Personalizado */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Etiqueta del Campo Personalizado</Label>
+                  <Input
+                    value={formData.custom_field_label}
+                    onChange={(e) => setFormData({ ...formData, custom_field_label: e.target.value })}
+                    placeholder="Ej: Orden de Trabajo, Pedido, Contrato"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>{formData.custom_field_label || "Campo Personalizado"}</Label>
+                  <Input
+                    value={formData.custom_field}
+                    onChange={(e) => setFormData({ ...formData, custom_field: e.target.value })}
+                    placeholder={formData.custom_field_label ? `Ingrese ${formData.custom_field_label}` : "Valor del campo personalizado"}
+                  />
                 </div>
               </div>
 

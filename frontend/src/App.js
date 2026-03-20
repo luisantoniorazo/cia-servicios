@@ -36,7 +36,6 @@ import FiscalSettings from "./pages/FiscalSettings";
 import SubscriptionBilling from "./pages/SubscriptionBilling";
 import MySubscription from "./pages/MySubscription";
 import PendingReceipts from "./pages/PendingReceipts";
-import ProfitabilityReports from "./pages/ProfitabilityReports";
 
 // Layout
 import MainLayout from "./components/Layout/MainLayout";
@@ -280,7 +279,6 @@ function AppRoutes() {
         <Route path="activity-logs" element={<ActivityLogs />} />
         <Route path="fiscal-settings" element={<FiscalSettings />} />
         <Route path="subscription" element={<MySubscription />} />
-        <Route path="profitability" element={<ProfitabilityReports />} />
       </Route>
 
       {/* Catch all */}

@@ -471,6 +471,9 @@ class InvoiceBase(BaseModel):
     status: InvoiceStatus = InvoiceStatus.PENDING
     invoice_date: Optional[datetime] = None  # Fecha de emisión de la factura
     due_date: Optional[datetime] = None
+    # Custom field for OT, OC, etc.
+    custom_field: Optional[str] = None
+    custom_field_label: Optional[str] = None
     # SAT Invoice data
     sat_invoice_uuid: Optional[str] = None
     sat_invoice_file: Optional[str] = None  # Base64 of PDF/XML
@@ -8989,35 +8992,101 @@ def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
     return buffer.getvalue()
 
 def generate_invoice_pdf(invoice: dict, company: dict, client: dict) -> bytes:
-    """Generate PDF for an invoice with fiscal data"""
+    """Generate professional executive PDF for an invoice with fiscal data"""
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, topMargin=0.4*inch, bottomMargin=0.4*inch, leftMargin=0.5*inch, rightMargin=0.5*inch)
-    styles = getSampleStyleSheet()
+    doc = SimpleDocTemplate(
+        buffer, 
+        pagesize=letter, 
+        topMargin=0.4*inch, 
+        bottomMargin=0.5*inch,
+        leftMargin=0.6*inch,
+        rightMargin=0.6*inch
+    )
     
-    # Colors
+    # Professional color scheme
     PRIMARY = '#1a365d'
+    SECONDARY = '#2b6cb0'
+    ACCENT = '#4299e1'
+    LIGHT_BG = '#ebf8ff'
     TEXT_DARK = '#2d3748'
     TEXT_MUTED = '#718096'
+    SUCCESS = '#38a169'
+    WARNING = '#c53030'
     
-    title_style = ParagraphStyle('Title', fontSize=14, fontName='Helvetica-Bold', textColor=colors.HexColor(PRIMARY))
-    section_title_style = ParagraphStyle('SectionTitle', fontSize=10, fontName='Helvetica-Bold', textColor=colors.HexColor(PRIMARY), spaceAfter=6)
-    label_style = ParagraphStyle('Label', fontSize=8, fontName='Helvetica-Bold', textColor=colors.HexColor(TEXT_MUTED))
-    value_style = ParagraphStyle('Value', fontSize=9, fontName='Helvetica', textColor=colors.HexColor(TEXT_DARK))
+    styles = getSampleStyleSheet()
+    
+    section_title_style = ParagraphStyle(
+        'SectionTitle',
+        fontSize=11,
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor(PRIMARY),
+        spaceBefore=6,
+        spaceAfter=4
+    )
+    
+    label_style = ParagraphStyle(
+        'Label',
+        fontSize=9,
+        fontName='Helvetica-Bold',
+        textColor=colors.HexColor(TEXT_MUTED),
+        leading=11
+    )
+    
+    value_style = ParagraphStyle(
+        'Value',
+        fontSize=10,
+        fontName='Helvetica',
+        textColor=colors.HexColor(TEXT_DARK),
+        leading=12
+    )
+    
+    cell_desc_style = ParagraphStyle(
+        'CellDesc',
+        fontSize=9,
+        fontName='Helvetica',
+        textColor=colors.HexColor(TEXT_DARK),
+        leading=12,
+        wordWrap='CJK',
+        splitLongWords=True
+    )
     
     elements = []
     
-    # Header with logo
-    add_company_header_to_pdf(elements, company, styles, title_style)
-    
-    # Invoice title with number
+    # CFDI info check
     cfdi_info = invoice.get('cfdi_info', {}) or {}
     is_stamped = cfdi_info.get('uuid') is not None
-    status_text = "CFDI TIMBRADO" if is_stamped else "FACTURA (PENDIENTE DE TIMBRAR)"
     
-    elements.append(Paragraph(f"{status_text} - {invoice.get('invoice_number', '')}", title_style))
+    # Professional header
+    doc_date = invoice.get('invoice_date', '')
+    if isinstance(doc_date, datetime):
+        doc_date = doc_date.strftime('%Y-%m-%d')
+    elif doc_date:
+        doc_date = str(doc_date)[:10]
+    else:
+        doc_date = datetime.now().strftime('%Y-%m-%d')
+    
+    add_professional_header(elements, company, 'invoice', invoice.get('invoice_number', ''), doc_date)
+    
+    # Status banner
+    if is_stamped:
+        status_style = ParagraphStyle('Status', fontSize=10, fontName='Helvetica-Bold', textColor=colors.HexColor(SUCCESS), alignment=TA_CENTER)
+        elements.append(Paragraph("CFDI TIMBRADO - DOCUMENTO CON VALIDEZ FISCAL", status_style))
+    else:
+        status_style = ParagraphStyle('Status', fontSize=10, fontName='Helvetica-Bold', textColor=colors.HexColor(WARNING), alignment=TA_CENTER)
+        elements.append(Paragraph("PREFACTURA - PENDIENTE DE TIMBRAR", status_style))
     elements.append(Spacer(1, 0.15*inch))
     
-    # Two-column layout: Client info | Invoice info
+    # Custom field (if exists)
+    if invoice.get('custom_field'):
+        custom_label = invoice.get('custom_field_label') or 'Referencia'
+        custom_value = invoice.get('custom_field')
+        custom_style = ParagraphStyle('Custom', fontSize=10, fontName='Helvetica-Bold', textColor=colors.HexColor(SECONDARY))
+        elements.append(Paragraph(f"{custom_label}: {custom_value}", custom_style))
+        elements.append(Spacer(1, 0.1*inch))
+    
+    # Client & Invoice info section
+    elements.append(Paragraph("DATOS DEL RECEPTOR (CLIENTE)", section_title_style))
+    
     trade_name = client.get('trade_name') or client.get('name') or 'N/A'
     razon_social = client.get('razon_social_fiscal') or trade_name
     client_ref = f" ({client.get('reference')})" if client.get('reference') else ""
@@ -9027,138 +9096,213 @@ def generate_invoice_pdf(invoice: dict, company: dict, client: dict) -> bytes:
         if not date_val:
             return 'N/A'
         if isinstance(date_val, datetime):
-            return date_val.strftime('%Y-%m-%d')
+            return date_val.strftime('%d/%m/%Y')
         if isinstance(date_val, str):
             return date_val[:10]
         return str(date_val)
     
-    info_data = [
-        [Paragraph("RECEPTOR", section_title_style), '', Paragraph("DATOS DE FACTURA", section_title_style), ''],
-        [Paragraph("Nombre Comercial:", label_style), Paragraph(trade_name + client_ref, value_style),
-         Paragraph("Fecha Emisión:", label_style), Paragraph(format_date_safe(invoice.get('invoice_date')), value_style)],
-        [Paragraph("Razón Social:", label_style), Paragraph(razon_social, value_style),
-         Paragraph("Fecha Vencimiento:", label_style), Paragraph(format_date_safe(invoice.get('due_date')), value_style)],
-        [Paragraph("RFC:", label_style), Paragraph(client.get('rfc') or 'N/A', value_style),
-         Paragraph("Condiciones:", label_style), Paragraph((invoice.get('payment_terms') or 'Contado').replace('_', ' ').title(), value_style)],
-        [Paragraph("Régimen Fiscal:", label_style), Paragraph(client.get('regimen_fiscal') or 'N/A', value_style),
-         Paragraph("Referencia:", label_style), Paragraph(invoice.get('reference') or 'N/A', value_style)],
-        [Paragraph("Uso CFDI:", label_style), Paragraph(client.get('uso_cfdi') or 'G03', value_style),
-         Paragraph("Forma de Pago:", label_style), Paragraph(invoice.get('payment_method') or '99 - Por definir', value_style)],
+    client_info_data = [
+        [Paragraph("Nombre Comercial", label_style), Paragraph(trade_name + client_ref, value_style), 
+         Paragraph("RFC", label_style), Paragraph(client.get('rfc') or 'N/A', value_style)],
+        [Paragraph("Razón Social Fiscal", label_style), Paragraph(razon_social, value_style),
+         Paragraph("Régimen Fiscal", label_style), Paragraph(client.get('regimen_fiscal') or 'N/A', value_style)],
+        [Paragraph("Domicilio Fiscal", label_style), Paragraph(client.get('domicilio_fiscal') or client.get('address') or 'N/A', value_style),
+         Paragraph("Uso CFDI", label_style), Paragraph(client.get('uso_cfdi') or 'G03', value_style)],
     ]
     
-    info_table = Table(info_data, colWidths=[1.1*inch, 2.2*inch, 1.1*inch, 2.2*inch])
-    info_table.setStyle(TableStyle([
+    client_table = Table(client_info_data, colWidths=[1.0*inch, 2.3*inch, 0.9*inch, 2.3*inch])
+    client_table.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('TOPPADDING', (0, 0), (-1, -1), 3),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f7fafc')),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f7fafc')),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
     ]))
-    elements.append(info_table)
-    elements.append(Spacer(1, 0.2*inch))
+    elements.append(client_table)
+    elements.append(Spacer(1, 0.15*inch))
+    
+    # Invoice details
+    elements.append(Paragraph("DATOS DE LA FACTURA", section_title_style))
+    
+    invoice_info_data = [
+        [Paragraph("Fecha Emisión", label_style), Paragraph(format_date_safe(invoice.get('invoice_date')), value_style),
+         Paragraph("Fecha Vencimiento", label_style), Paragraph(format_date_safe(invoice.get('due_date')), value_style)],
+        [Paragraph("Condiciones de Pago", label_style), Paragraph((invoice.get('payment_terms') or 'Contado').replace('_', ' ').title(), value_style),
+         Paragraph("Forma de Pago", label_style), Paragraph(invoice.get('payment_method') or '99 - Por definir', value_style)],
+        [Paragraph("Método de Pago", label_style), Paragraph(invoice.get('metodo_pago') or 'PUE - Pago en una sola exhibición', value_style),
+         Paragraph("Referencia", label_style), Paragraph(invoice.get('reference') or 'N/A', value_style)],
+    ]
+    
+    invoice_table = Table(invoice_info_data, colWidths=[1.0*inch, 2.3*inch, 0.9*inch, 2.3*inch])
+    invoice_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#faf5ff')),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
+    ]))
+    elements.append(invoice_table)
+    elements.append(Spacer(1, 0.15*inch))
+    
+    # Concept/description
+    if invoice.get('concept'):
+        elements.append(Paragraph("CONCEPTO", section_title_style))
+        desc_style = ParagraphStyle('Desc', fontSize=10, textColor=colors.HexColor(TEXT_DARK), leading=14)
+        elements.append(Paragraph(invoice.get('concept'), desc_style))
+        elements.append(Spacer(1, 0.1*inch))
     
     # Items table
     items = invoice.get('items', [])
-    elements.append(Paragraph("CONCEPTOS", section_title_style))
     
     if items:
-        item_data = [['Clave', 'Descripción', 'Cantidad', 'Unidad', 'P. Unit.', 'Importe']]
-        for item in items:
-            item_data.append([
-                item.get('clave_prod_serv', ''),
-                Paragraph(item.get('description', ''), value_style),
+        elements.append(Paragraph("PARTIDAS / CONCEPTOS", section_title_style))
+        
+        table_data = [['#', 'Clave SAT', 'Descripción', 'Cant.', 'Unidad', 'P. Unit.', 'Importe']]
+        
+        for i, item in enumerate(items, 1):
+            desc_text = item.get('description', '')
+            desc_paragraph = Paragraph(desc_text, cell_desc_style)
+            
+            table_data.append([
+                str(i),
+                item.get('clave_prod_serv', 'N/A'),
+                desc_paragraph,
                 f"{item.get('quantity', 1):.2f}",
                 item.get('unit', 'PZA'),
                 f"${item.get('unit_price', 0):,.2f}",
                 f"${item.get('total', item.get('quantity', 1) * item.get('unit_price', 0)):,.2f}"
             ])
         
-        items_table = Table(item_data, colWidths=[0.8*inch, 2.8*inch, 0.7*inch, 0.5*inch, 0.9*inch, 1*inch])
+        items_table = Table(table_data, colWidths=[0.3*inch, 0.7*inch, 2.5*inch, 0.5*inch, 0.6*inch, 0.9*inch, 0.9*inch])
         items_table.setStyle(TableStyle([
+            # Header styling
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(SECONDARY)),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 8),
+            ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+            
+            # Data rows alignment
+            ('ALIGN', (0, 1), (0, -1), 'CENTER'),
+            ('ALIGN', (1, 1), (1, -1), 'CENTER'),
+            ('ALIGN', (3, 1), (3, -1), 'CENTER'),
+            ('ALIGN', (4, 1), (4, -1), 'CENTER'),
+            ('ALIGN', (5, 1), (-1, -1), 'RIGHT'),
+            
+            # Font for data rows
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
             ('FONTSIZE', (0, 1), (-1, -1), 8),
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e2e8f0')),
-            ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e0')),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            
+            # Alternating row colors
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f7fafc')]),
+            
+            # Borders
+            ('BOX', (0, 0), (-1, -1), 1, colors.HexColor(SECONDARY)),
+            ('LINEBELOW', (0, 0), (-1, 0), 1.5, colors.HexColor(PRIMARY)),
+            ('LINEBELOW', (0, 1), (-1, -2), 0.5, colors.HexColor('#e2e8f0')),
+            
+            # Alignment
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('VALIGN', (2, 1), (2, -1), 'TOP'),
+            
+            # Padding
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+            ('TOPPADDING', (0, 0), (-1, 0), 8),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+            ('TOPPADDING', (0, 1), (-1, -1), 6),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4),
         ]))
         elements.append(items_table)
+    else:
+        elements.append(Paragraph("PARTIDAS / CONCEPTOS", section_title_style))
+        no_items_style = ParagraphStyle('NoItems', fontSize=9, textColor=colors.HexColor(TEXT_MUTED), fontStyle='italic')
+        elements.append(Paragraph("Sin partidas detalladas", no_items_style))
     
     elements.append(Spacer(1, 0.15*inch))
     
-    # Totals (without paid/balance)
+    # Totals section - professional right-aligned box
+    total_label_style = ParagraphStyle('TotalLabel', fontSize=10, fontName='Helvetica', textColor=colors.HexColor(TEXT_DARK), alignment=TA_RIGHT)
+    total_value_style = ParagraphStyle('TotalValue', fontSize=10, fontName='Helvetica', textColor=colors.HexColor(TEXT_DARK), alignment=TA_RIGHT)
+    total_final_label = ParagraphStyle('TotalFinalLabel', fontSize=12, fontName='Helvetica-Bold', textColor=colors.HexColor(PRIMARY), alignment=TA_RIGHT)
+    total_final_value = ParagraphStyle('TotalFinalValue', fontSize=14, fontName='Helvetica-Bold', textColor=colors.HexColor(PRIMARY), alignment=TA_RIGHT)
+    
     totals_data = [
-        ['', '', 'Subtotal:', f"${invoice.get('subtotal', 0):,.2f}"],
-        ['', '', 'IVA (16%):', f"${invoice.get('tax', 0):,.2f}"],
-        ['', '', 'TOTAL:', f"${invoice.get('total', 0):,.2f}"],
+        [Paragraph('Subtotal:', total_label_style), Paragraph(f"${invoice.get('subtotal', 0):,.2f}", total_value_style)],
+        [Paragraph('IVA (16%):', total_label_style), Paragraph(f"${invoice.get('tax', 0):,.2f}", total_value_style)],
+        [Paragraph('TOTAL MXN:', total_final_label), Paragraph(f"${invoice.get('total', 0):,.2f}", total_final_value)],
     ]
-    totals_table = Table(totals_data, colWidths=[2.5*inch, 2*inch, 1.2*inch, 1*inch])
-    totals_table.setStyle(TableStyle([
-        ('FONTNAME', (2, 0), (2, -1), 'Helvetica-Bold'),
-        ('FONTNAME', (2, -1), (3, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
-        ('BACKGROUND', (2, -1), (-1, -1), colors.HexColor('#e6f0fa')),
-        ('BOX', (2, -1), (-1, -1), 1, colors.HexColor(PRIMARY)),
+    
+    totals_inner = Table(totals_data, colWidths=[1.2*inch, 1.3*inch])
+    totals_inner.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'RIGHT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor(LIGHT_BG)),
+        ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#e2e8f0')),
     ]))
-    elements.append(totals_table)
+    
+    totals_wrapper = Table([[Spacer(1, 1), totals_inner]], colWidths=[4.2*inch, 2.5*inch])
+    elements.append(totals_wrapper)
     
     # CFDI Fiscal Data Section
     if is_stamped:
         elements.append(Spacer(1, 0.2*inch))
-        elements.append(Paragraph("DATOS FISCALES CFDI", section_title_style))
+        elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor(SUCCESS), spaceAfter=0.1*inch))
+        elements.append(Paragraph("DATOS FISCALES DEL CFDI", section_title_style))
         
         fiscal_data = [
-            ['UUID:', cfdi_info.get('uuid', 'N/A')],
-            ['Fecha Timbrado:', cfdi_info.get('fecha_timbrado', 'N/A')],
+            ['Folio Fiscal (UUID):', cfdi_info.get('uuid', 'N/A')],
+            ['Fecha y Hora de Timbrado:', cfdi_info.get('fecha_timbrado', 'N/A')],
             ['No. Certificado Emisor:', cfdi_info.get('no_certificado_emisor', 'N/A')],
             ['No. Certificado SAT:', cfdi_info.get('no_certificado_sat', 'N/A')],
         ]
-        fiscal_table = Table(fiscal_data, colWidths=[1.5*inch, 5.2*inch])
+        fiscal_table = Table(fiscal_data, colWidths=[1.6*inch, 5.1*inch])
         fiscal_table.setStyle(TableStyle([
             ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 7),
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f7fafc')),
-            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
-            ('TOPPADDING', (0, 0), (-1, -1), 2),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f0fff4')),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor(SUCCESS)),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
         ]))
         elements.append(fiscal_table)
         
+        sello_style = ParagraphStyle('Sello', fontSize=5, fontName='Courier', textColor=colors.HexColor(TEXT_MUTED), leading=6, wordWrap='CJK')
+        
         # Sello Digital del Emisor
         if cfdi_info.get('sello_emisor'):
-            elements.append(Spacer(1, 0.1*inch))
+            elements.append(Spacer(1, 0.08*inch))
             elements.append(Paragraph("Sello Digital del Emisor:", label_style))
-            sello_style = ParagraphStyle('Sello', fontSize=5, fontName='Courier', textColor=colors.HexColor(TEXT_MUTED), leading=6, wordWrap='CJK')
-            elements.append(Paragraph(cfdi_info.get('sello_emisor', '')[:200] + '...', sello_style))
+            elements.append(Paragraph(cfdi_info.get('sello_emisor', '')[:300] + '...', sello_style))
         
         # Sello Digital del SAT
         if cfdi_info.get('sello_sat'):
             elements.append(Spacer(1, 0.05*inch))
             elements.append(Paragraph("Sello Digital del SAT:", label_style))
-            elements.append(Paragraph(cfdi_info.get('sello_sat', '')[:200] + '...', sello_style))
+            elements.append(Paragraph(cfdi_info.get('sello_sat', '')[:300] + '...', sello_style))
         
         # Cadena Original
         if cfdi_info.get('cadena_original'):
             elements.append(Spacer(1, 0.05*inch))
-            elements.append(Paragraph("Cadena Original del Timbre:", label_style))
-            elements.append(Paragraph(cfdi_info.get('cadena_original', '')[:300] + '...', sello_style))
+            elements.append(Paragraph("Cadena Original del Complemento de Certificación Digital del SAT:", label_style))
+            elements.append(Paragraph(cfdi_info.get('cadena_original', '')[:400] + '...', sello_style))
         
-        # QR Code placeholder (would need actual QR generation)
         elements.append(Spacer(1, 0.1*inch))
-        qr_note_style = ParagraphStyle('QRNote', fontSize=7, textColor=colors.HexColor(TEXT_MUTED), alignment=TA_CENTER)
-        elements.append(Paragraph("Este documento es una representación impresa de un CFDI", qr_note_style))
+        qr_note_style = ParagraphStyle('QRNote', fontSize=8, textColor=colors.HexColor(TEXT_MUTED), alignment=TA_CENTER)
+        elements.append(Paragraph("Este documento es una representación impresa de un CFDI versión 4.0", qr_note_style))
     else:
         # Not stamped - show pending message
         elements.append(Spacer(1, 0.2*inch))
-        pending_style = ParagraphStyle('Pending', fontSize=10, fontName='Helvetica-Bold', textColor=colors.HexColor('#c53030'), alignment=TA_CENTER)
-        elements.append(Paragraph("⚠ DOCUMENTO PENDIENTE DE TIMBRAR", pending_style))
-        elements.append(Paragraph("Este documento NO tiene validez fiscal hasta ser timbrado ante el SAT", qr_note_style if 'qr_note_style' in dir() else ParagraphStyle('Note', fontSize=8, textColor=colors.HexColor(TEXT_MUTED), alignment=TA_CENTER)))
+        elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor(WARNING), spaceAfter=0.1*inch))
+        pending_box_style = ParagraphStyle('PendingBox', fontSize=9, fontName='Helvetica', textColor=colors.HexColor(WARNING), alignment=TA_CENTER, leading=14)
+        elements.append(Paragraph("<b>DOCUMENTO PENDIENTE DE TIMBRAR</b>", pending_box_style))
+        elements.append(Paragraph("Este documento NO tiene validez fiscal hasta ser timbrado ante el SAT", pending_box_style))
     
     # Footer
-    elements.append(Spacer(1, 0.3*inch))
+    elements.append(Spacer(1, 0.2*inch))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor('#e2e8f0'), spaceAfter=0.1*inch))
     footer_style = ParagraphStyle('Footer', fontSize=7, textColor=colors.HexColor(TEXT_MUTED), alignment=TA_CENTER)
     elements.append(Paragraph(f"Documento generado el {datetime.now().strftime('%d/%m/%Y %H:%M')}", footer_style))
     

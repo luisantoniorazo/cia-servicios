@@ -99,9 +99,10 @@ export const CompanyLogin = () => {
             {(companyInfo?.logo_url || companyInfo?.logo_file) ? (
               <div className="bg-white/10 backdrop-blur-sm p-3 sm:p-4 rounded-lg">
                 <img
-                  src={companyInfo.logo_url || companyInfo.logo_file}
+                  src={companyInfo.logo_url || (companyInfo.logo_file ? `data:image/jpeg;base64,${companyInfo.logo_file}` : '')}
                   alt={companyInfo.business_name}
                   className="h-12 sm:h-16 w-auto"
+                  data-testid="company-logo"
                 />
               </div>
             ) : (
