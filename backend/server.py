@@ -8198,8 +8198,33 @@ async def get_project_progress(company_id: str, current_user: dict = Depends(get
     ).to_list(100)
     
     for p in projects:
+        # Get client name
         client = await db.clients.find_one({"id": p.get("client_id")}, {"_id": 0, "name": 1, "trade_name": 1})
         p["client_name"] = client.get("trade_name") or client.get("name") if client else "N/A"
+        
+        # Get purchases linked to this project
+        project_purchases = await db.purchase_orders.find(
+            {"company_id": company_id, "project_id": p.get("id")},
+            {"_id": 0, "total": 1}
+        ).to_list(1000)
+        
+        total_purchases = sum(po.get("total", 0) for po in project_purchases)
+        contract_amount = p.get("contract_amount", 0) or 0
+        
+        # Calculate profitability
+        p["total_purchases"] = total_purchases
+        p["purchases_count"] = len(project_purchases)
+        
+        if contract_amount > 0:
+            purchases_percentage = (total_purchases / contract_amount) * 100
+            profit_margin = ((contract_amount - total_purchases) / contract_amount) * 100
+        else:
+            purchases_percentage = 0
+            profit_margin = 100
+        
+        p["purchases_percentage"] = round(purchases_percentage, 1)
+        p["profit_margin"] = round(profit_margin, 1)
+        p["estimated_profit"] = contract_amount - total_purchases
     
     return projects
 

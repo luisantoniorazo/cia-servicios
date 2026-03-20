@@ -632,6 +632,33 @@ export const Dashboard = () => {
                     </div>
                   </div>
                   <Progress value={project.total_progress} className="h-2" />
+                  
+                  {/* Profitability Section */}
+                  <div className="grid grid-cols-3 gap-2 p-2 bg-white rounded border">
+                    <div className="text-center">
+                      <p className="text-xs text-muted-foreground">Compras</p>
+                      <p className="text-sm font-semibold text-red-600">{formatCurrency(project.total_purchases || 0)}</p>
+                      <p className="text-xs text-red-500">({project.purchases_count || 0} órdenes)</p>
+                    </div>
+                    <div className="text-center border-x">
+                      <p className="text-xs text-muted-foreground">% Compras</p>
+                      <p className={`text-sm font-bold ${(project.purchases_percentage || 0) > 70 ? 'text-red-600' : (project.purchases_percentage || 0) > 50 ? 'text-amber-600' : 'text-green-600'}`}>
+                        {project.purchases_percentage || 0}%
+                      </p>
+                      <Progress 
+                        value={Math.min(project.purchases_percentage || 0, 100)} 
+                        className={`h-1 mt-1 ${(project.purchases_percentage || 0) > 70 ? '[&>div]:bg-red-500' : (project.purchases_percentage || 0) > 50 ? '[&>div]:bg-amber-500' : '[&>div]:bg-green-500'}`}
+                      />
+                    </div>
+                    <div className="text-center">
+                      <p className="text-xs text-muted-foreground">Margen</p>
+                      <p className={`text-sm font-bold ${(project.profit_margin || 0) < 30 ? 'text-red-600' : (project.profit_margin || 0) < 50 ? 'text-amber-600' : 'text-green-600'}`}>
+                        {project.profit_margin || 0}%
+                      </p>
+                      <p className="text-xs text-green-600">{formatCurrency(project.estimated_profit || 0)}</p>
+                    </div>
+                  </div>
+                  
                   <div className="grid grid-cols-4 gap-2">
                     {project.phases?.map((phase, idx) => (
                       <div key={idx} className="text-center">
