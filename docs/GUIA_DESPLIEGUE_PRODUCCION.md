@@ -15,8 +15,10 @@
 4. [Stripe - Cobro de Suscripciones](#4-stripe---cobro-de-suscripciones)
 5. [Despliegue en Emergent](#5-despliegue-en-emergent)
 6. [Configurar Dominio sistemacia.com](#6-configurar-dominio-sistemaciacom)
-7. [Verificación Final](#7-verificación-final)
-8. [Costos Estimados](#8-costos-estimados)
+7. [Certificado SSL - Conexión Segura (HTTPS)](#7-certificado-ssl---conexión-segura-https)
+8. [Verificación Final](#8-verificación-final)
+9. [Costos Estimados](#9-costos-estimados)
+10. [Solución de Problemas Comunes](#10-solución-de-problemas-comunes)
 
 ---
 
@@ -503,26 +505,187 @@ Antes de desplegar, asegúrate de que:
 
 ---
 
-## 7. VERIFICACIÓN FINAL
+## 7. CERTIFICADO SSL - CONEXIÓN SEGURA (HTTPS)
+
+### ¿Qué es SSL y por qué es importante?
+
+SSL (Secure Sockets Layer) es el **candadito verde** 🔒 que ves en la barra de direcciones de tu navegador. Significa que la conexión entre el usuario y tu servidor está **encriptada y es segura**.
+
+**Sin SSL:** `http://sistemacia.com` → ⚠️ Chrome muestra "No seguro"  
+**Con SSL:** `https://sistemacia.com` → 🔒 Candado verde = Conexión segura
+
+### ¿Por qué es CRÍTICO tener SSL?
+
+| Razón | Consecuencia SIN SSL |
+|-------|---------------------|
+| **Seguridad** | Contraseñas y datos pueden ser interceptados |
+| **Confianza** | Chrome muestra "No seguro" y asusta a los usuarios |
+| **SEO** | Google penaliza sitios sin HTTPS en los resultados de búsqueda |
+| **Pagos** | Stripe y Facturama **REQUIEREN** HTTPS para funcionar |
+| **Cumplimiento** | Necesario para cumplir con leyes de protección de datos |
+
+---
+
+### Tipos de Certificados SSL
+
+| Tipo | Validación | Costo | Recomendado para |
+|------|-----------|-------|------------------|
+| **DV** (Domain Validated) | Solo dominio | Gratis - $50/año | Blogs, apps pequeñas |
+| **OV** (Organization Validated) | Dominio + empresa | $100 - $200/año | Empresas medianas |
+| **EV** (Extended Validation) | Verificación completa | $200 - $500/año | Bancos, e-commerce grande |
+| **Wildcard** | Dominios + subdominios | $100 - $300/año | Múltiples subdominios |
+
+**Para tu sistema:** Un certificado **DV gratuito** es suficiente y profesional.
+
+---
+
+### OPCIÓN A: SSL Automático con Emergent (RECOMENDADO)
+
+**¡Buenas noticias!** Emergent incluye **SSL gratuito automáticamente** cuando conectas un dominio personalizado. No necesitas hacer nada adicional.
+
+#### ¿Cómo funciona?
+
+1. Cuando conectas tu dominio en Emergent (Sección 6)
+2. Emergent solicita automáticamente un certificado SSL de **Let's Encrypt**
+3. El certificado se instala y **renueva automáticamente** cada 90 días
+4. Tu sitio estará disponible en `https://tudominio.com`
+
+#### Verificar que SSL está activo:
+
+1. **Abre tu navegador** (Chrome recomendado)
+
+2. **Escribe tu dominio:** `https://sistemacia.com`
+
+3. **Verifica el candado:**
+   - 🔒 **Candado cerrado** = SSL funcionando correctamente
+   - ⚠️ **Triángulo amarillo** = SSL con problemas menores
+   - 🔓 **Candado abierto/tachado** = Sin SSL o error
+
+4. **Clic en el candado** para ver detalles:
+   - "La conexión es segura"
+   - Certificado emitido por: Let's Encrypt
+   - Válido hasta: [fecha]
+
+---
+
+### OPCIÓN B: SSL Manual (Si NO usas Emergent)
+
+Si decides hospedar tu aplicación en otro proveedor (DigitalOcean, AWS, etc.), necesitarás configurar SSL manualmente.
+
+---
+
+#### Método 1: Let's Encrypt + Certbot (Gratis)
+
+**¿Qué es Let's Encrypt?**  
+Es una autoridad certificadora **gratuita y automatizada**. Certbot es la herramienta que instala y renueva los certificados automáticamente.
+
+**Requisitos:**
+- Un servidor con acceso SSH (DigitalOcean, Linode, AWS EC2, etc.)
+- Dominio apuntando a tu servidor
+- Puerto 80 y 443 abiertos
+
+**Pasos para Ubuntu/Debian:**
+
+```bash
+# 1. Instalar Certbot
+sudo apt update
+sudo apt install certbot python3-certbot-nginx
+
+# 2. Obtener certificado (reemplaza tudominio.com)
+sudo certbot --nginx -d tudominio.com -d www.tudominio.com
+
+# 3. Seguir las instrucciones en pantalla:
+#    - Ingresa tu email
+#    - Acepta los términos
+#    - Elige redireccionar HTTP a HTTPS (opción 2)
+
+# 4. Verificar renovación automática
+sudo certbot renew --dry-run
+```
+
+**Nota:** El certificado se renovará automáticamente antes de expirar (~cada 60 días).
+
+---
+
+#### Método 2: Cloudflare (Gratis y Fácil)
+
+**¿Qué es Cloudflare?**  
+Es un servicio de CDN y seguridad que incluye **SSL gratuito**. Es la opción más fácil si no quieres tocar servidores.
+
+**Pasos:**
+
+1. **Crea cuenta** en https://cloudflare.com
+
+2. **Agrega tu dominio** y sigue el asistente
+
+3. **Cloudflare te dará nuevos nameservers (NS)**
+
+4. **En tu proveedor de dominio**, cambia los nameservers a los de Cloudflare
+
+5. **En Cloudflare → SSL/TLS → Modo:** Selecciona "Full (strict)"
+
+6. **Activa "Always Use HTTPS"**
+
+**Modos de SSL en Cloudflare:**
+
+| Modo | Descripción | ¿Recomendado? |
+|------|-------------|---------------|
+| Off | Sin encriptación | ❌ Nunca |
+| Flexible | SSL solo usuario-Cloudflare | ⚠️ No recomendado |
+| Full | SSL completo (acepta self-signed) | ✅ Aceptable |
+| Full (strict) | SSL completo (requiere cert válido) | ✅ **Mejor opción** |
+
+---
+
+### Problemas Comunes de SSL y Soluciones
+
+| Problema | Causa Probable | Solución |
+|----------|----------------|----------|
+| "No seguro" en Chrome | SSL no instalado o expirado | Verificar certificado, renovar si es necesario |
+| Contenido mixto | Recursos HTTP en página HTTPS | Cambiar todos los enlaces a HTTPS |
+| Error de certificado | Dominio no coincide | Regenerar certificado con dominio correcto |
+| ERR_SSL_PROTOCOL_ERROR | Puerto 443 bloqueado | Abrir puerto 443 en firewall |
+| Certificado no confiable | Certificado autofirmado | Usar Let's Encrypt o CA reconocida |
+| Cadena incompleta | Falta certificado intermedio | Instalar cadena completa de certificados |
+
+---
+
+### Herramientas para Verificar SSL
+
+1. **SSL Labs** (Más completo)
+   - URL: https://www.ssllabs.com/ssltest/
+   - Te da una calificación de A+ a F y muestra todos los problemas
+
+2. **Why No Padlock**
+   - URL: https://www.whynopadlock.com/
+   - Detecta contenido mixto (HTTP en páginas HTTPS)
+
+3. **SSL Checker**
+   - URL: https://www.sslshopper.com/ssl-checker.html
+   - Verifica fechas de expiración y cadena de certificados
+
+---
+
+## 8. VERIFICACIÓN FINAL
 
 ### Lista de Verificación Post-Despliegue
 
 | # | Verificación | ¿Funciona? |
 |---|--------------|------------|
 | 1 | Puedo acceder a sistemacia.com | ☐ |
-| 2 | Puedo iniciar sesión como SuperAdmin | ☐ |
-| 3 | Puedo crear una nueva empresa | ☐ |
-| 4 | Un usuario puede registrarse | ☐ |
-| 5 | Puedo crear clientes | ☐ |
-| 6 | Puedo crear cotizaciones | ☐ |
-| 7 | Puedo crear facturas | ☐ |
-| 8 | El timbrado CFDI funciona (Facturama) | ☐ |
-| 9 | Los pagos con Stripe funcionan | ☐ |
-| 10 | Los correos de notificación se envían | ☐ |
+| 2 | Veo el candado de SSL (HTTPS funciona) | ☐ |
+| 3 | Puedo iniciar sesión como SuperAdmin | ☐ |
+| 4 | Puedo crear una nueva empresa | ☐ |
+| 5 | Un usuario puede registrarse | ☐ |
+| 6 | Puedo crear clientes | ☐ |
+| 7 | Puedo crear cotizaciones | ☐ |
+| 8 | Puedo crear facturas | ☐ |
+| 9 | El timbrado CFDI funciona (Facturama) | ☐ |
+| 10 | Los pagos con Stripe funcionan | ☐ |
 
 ---
 
-## 8. COSTOS ESTIMADOS
+## 9. COSTOS ESTIMADOS
 
 ### Resumen de Costos Mensuales
 
@@ -533,6 +696,7 @@ Antes de desplegar, asegúrate de que:
 | Stripe | Por transacción | 3.6% + $3 MXN |
 | Emergent | Despliegue | 50 créditos |
 | Dominio | Anual | ~$17 MXN/mes |
+| SSL | Incluido en Emergent | $0 |
 
 ### Costo Total Estimado para Inicio
 
@@ -541,6 +705,7 @@ MongoDB:     $0 USD (plan gratis)
 Facturama:   $499 MXN
 Emergent:    50 créditos
 Dominio:     ~$17 MXN
+SSL:         $0 (incluido)
 ─────────────────────────────
 TOTAL:       ~$516 MXN + 50 créditos/mes
 ```
@@ -553,9 +718,23 @@ Facturama:   $799 MXN (plan PyME)
 Stripe:      Variable (por transacción)
 Emergent:    50 créditos
 Dominio:     ~$17 MXN
+SSL:         $0 (incluido)
 ─────────────────────────────
 TOTAL:       ~$1,816 MXN + 50 créditos/mes
 ```
+
+---
+
+## 10. SOLUCIÓN DE PROBLEMAS COMUNES
+
+| Problema | Posible Causa | Solución |
+|----------|---------------|----------|
+| No carga el sitio | DNS no propagado | Esperar 24h, verificar en dnschecker.org |
+| Error de conexión DB | IP no autorizada | Agregar IP en MongoDB Network Access |
+| Facturación falla | Credenciales incorrectas | Verificar Usuario/Contraseña API de Facturama |
+| Pagos no funcionan | Cuenta Stripe no activada | Completar verificación de identidad en Stripe |
+| SSL no funciona | Dominio mal configurado | Verificar registros DNS, esperar propagación |
+| "Error 500" | Error interno del servidor | Revisar logs, contactar soporte |
 
 ---
 
@@ -578,4 +757,4 @@ Si tienes problemas durante algún paso:
 
 **¡Éxito con tu lanzamiento!** 🚀
 
-*Documento creado para CIA Servicios - Marzo 2026*
+*Documento creado para CIA Servicios - Diciembre 2025*

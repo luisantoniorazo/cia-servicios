@@ -2,8 +2,8 @@
 
 ## Información General
 - **Nombre**: CIA SERVICIOS - Control Estratégico de Servicios y Proyectos
-- **Versión**: 3.7.0
-- **Última Actualización**: Marzo 2026
+- **Versión**: 3.8.0
+- **Última Actualización**: Diciembre 2025
 - **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2 + Facturama + Stripe
 
 ## Problem Statement Original
@@ -66,6 +66,10 @@ Ver `/app/backend/REFACTORING_PLAN.md` para detalles completos.
 - **Guía de configuración** - `/docs/tutoriales/01_GUIA_CONFIGURACION.md`
 - **Primeros pasos empresa** - `/docs/tutoriales/02_PRIMEROS_PASOS_EMPRESA.md`
 - **Guía de producción** - `/docs/GUIA_PRODUCCION.md`
+- **Guía de Despliegue Completa v2.0** ✨ NEW v3.8.0
+  - Markdown: `/app/docs/GUIA_DESPLIEGUE_PRODUCCION.md`
+  - PDF: `/app/docs/GUIA_DESPLIEGUE_PRODUCCION.pdf`
+  - Incluye: MongoDB Atlas, Facturama, Stripe, Emergent, DNS, SSL
 
 ## Módulos Implementados ✅
 
