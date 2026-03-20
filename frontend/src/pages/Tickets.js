@@ -281,6 +281,19 @@ export const Tickets = () => {
     }
   };
 
+  const handleCloseTicket = async () => {
+    try {
+      await api.post(`/tickets/${selectedTicket.id}/confirm-resolution`, { resolved: true });
+      toast.success("¡Ticket cerrado exitosamente!");
+      // Refresh ticket details
+      const response = await api.get(`/tickets/${selectedTicket.id}`);
+      setSelectedTicket(response.data);
+      fetchTickets();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Error al cerrar ticket"));
+    }
+  };
+
   const getPriorityBadge = (priority) => {
     const config = PRIORITIES.find(p => p.value === priority) || PRIORITIES[1];
     return <Badge className={`${config.color} text-white`}>{config.label}</Badge>;
@@ -632,31 +645,6 @@ export const Tickets = () => {
                   </div>
                 )}
                 
-                {/* Awaiting User Confirmation */}
-                {selectedTicket.awaiting_user_confirmation && selectedTicket.status !== "resolved" && (
-                  <div className="p-4 bg-amber-50 rounded-sm border border-amber-200">
-                    <h4 className="font-semibold text-amber-800 mb-2">¿Se resolvió tu problema?</h4>
-                    <p className="text-sm text-amber-700 mb-3">Por favor confirma si la solución proporcionada funcionó.</p>
-                    <div className="flex gap-2">
-                      <Button 
-                        onClick={() => handleConfirmResolution(true)}
-                        className="bg-green-600 hover:bg-green-700"
-                      >
-                        <CheckCircle className="h-4 w-4 mr-2" />
-                        Sí, está resuelto
-                      </Button>
-                      <Button 
-                        onClick={() => handleConfirmResolution(false)}
-                        variant="outline"
-                        className="border-red-300 text-red-700 hover:bg-red-50"
-                      >
-                        <XCircle className="h-4 w-4 mr-2" />
-                        No funcionó
-                      </Button>
-                    </div>
-                  </div>
-                )}
-                
                 {/* Resolution */}
                 {selectedTicket.resolution_notes && (
                   <div className="p-3 bg-emerald-50 rounded-sm border border-emerald-200">
@@ -737,8 +725,21 @@ export const Tickets = () => {
                         </div>
                       ))
                     )}
-                    )}
                   </div>
+                  
+                  {/* Close Ticket Button - Always visible when not closed */}
+                  {!["closed", "resolved"].includes(selectedTicket.status) && (
+                    <div className="flex justify-end mt-3 pt-3 border-t">
+                      <Button 
+                        variant="outline"
+                        className="text-green-700 border-green-300 hover:bg-green-50"
+                        onClick={() => handleCloseTicket()}
+                      >
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                        Cerrar Ticket (Problema Resuelto)
+                      </Button>
+                    </div>
+                  )}
                   
                   {/* Add Comment with Attachments */}
                   {!["closed"].includes(selectedTicket.status) && (
