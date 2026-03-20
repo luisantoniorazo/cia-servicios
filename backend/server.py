@@ -8854,33 +8854,42 @@ def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
     doc_date = quote.get('created_at', '')[:10] if quote.get('created_at') else datetime.now().strftime('%Y-%m-%d')
     add_professional_header(elements, company, 'quote', quote.get('quote_number', ''), doc_date)
     
-    # Client information section
-    elements.append(Paragraph("INFORMACIÓN DEL CLIENTE", section_title_style))
-    
+    # Client information section - with proper SPAN headers
     client_ref = f" ({client.get('reference')})" if client.get('reference') else ""
-    # Usar nombre comercial, luego razón social, luego name como fallback
     trade_name = client.get('trade_name') or client.get('name') or 'N/A'
     razon_social = client.get('razon_social_fiscal') or ''
     
+    # Styles for info boxes
+    info_label = ParagraphStyle('InfoLabel', fontSize=7, fontName='Helvetica-Bold', textColor=colors.HexColor(TEXT_MUTED), leading=9)
+    info_value = ParagraphStyle('InfoValue', fontSize=8, fontName='Helvetica', textColor=colors.HexColor(TEXT_DARK), leading=10)
+    section_header = ParagraphStyle('SectionHeader', fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, leading=11)
+    
     client_info_data = [
-        [Paragraph("Nombre Comercial", label_style), Paragraph(trade_name + client_ref, value_style), 
-         Paragraph("RFC", label_style), Paragraph(client.get('rfc') or 'N/A', value_style)],
-        [Paragraph("Razón Social", label_style), Paragraph(razon_social or 'N/A', value_style),
-         Paragraph("Email", label_style), Paragraph(client.get('email') or 'N/A', value_style)],
-        [Paragraph("Contacto", label_style), Paragraph(client.get('contact_name') or 'N/A', value_style),
-         Paragraph("Elaboró", label_style), Paragraph(quote.get('created_by_name') or 'N/A', value_style)],
+        [Paragraph("INFORMACIÓN DEL CLIENTE", section_header), '', '', ''],  # Header - merged
+        [Paragraph("Nombre:", info_label), Paragraph(trade_name + client_ref, info_value), 
+         Paragraph("RFC:", info_label), Paragraph(client.get('rfc') or 'N/A', info_value)],
+        [Paragraph("Razón Social:", info_label), Paragraph(razon_social or 'N/A', info_value),
+         Paragraph("Email:", info_label), Paragraph(client.get('email') or 'N/A', info_value)],
+        [Paragraph("Contacto:", info_label), Paragraph(client.get('contact_name') or 'N/A', info_value),
+         Paragraph("Elaboró:", info_label), Paragraph(quote.get('created_by_name') or 'N/A', info_value)],
     ]
     
-    client_table = Table(client_info_data, colWidths=[0.8*inch, 2.5*inch, 0.8*inch, 2.5*inch])
+    client_table = Table(client_info_data, colWidths=[0.7*inch, 2.5*inch, 0.7*inch, 2.6*inch])
     client_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        # Merge header row
+        ('SPAN', (0, 0), (-1, 0)),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(SECONDARY)),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        # Data rows
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8fafc')),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
         ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f7fafc')),
         ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
+        ('LINEBELOW', (0, 0), (-1, 0), 1, colors.HexColor(PRIMARY)),
     ]))
     elements.append(client_table)
-    elements.append(Spacer(1, 0.15*inch))
+    elements.append(Spacer(1, 0.1*inch))
     
     # Quote concept/description
     if quote.get('title') or quote.get('description'):
@@ -9128,46 +9137,67 @@ def generate_invoice_pdf(invoice: dict, company: dict, client: dict) -> bytes:
     
     trade_name = client.get('trade_name') or client.get('name') or 'N/A'
     razon_social = client.get('razon_social_fiscal') or trade_name
-    client_ref = f" ({client.get('reference')})" if client.get('reference') else ""
     
-    # Compact label style for tables
-    compact_label = ParagraphStyle('CompactLabel', fontSize=7, fontName='Helvetica-Bold', textColor=colors.HexColor(TEXT_MUTED), leading=9)
-    compact_value = ParagraphStyle('CompactValue', fontSize=8, fontName='Helvetica', textColor=colors.HexColor(TEXT_DARK), leading=10)
+    # Styles for compact info boxes
+    info_label = ParagraphStyle('InfoLabel', fontSize=7, fontName='Helvetica-Bold', textColor=colors.HexColor(TEXT_MUTED), leading=9)
+    info_value = ParagraphStyle('InfoValue', fontSize=8, fontName='Helvetica', textColor=colors.HexColor(TEXT_DARK), leading=10)
+    section_header = ParagraphStyle('SectionHeader', fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, leading=11)
     
-    # Combined Receptor + Invoice Data in one compact table
-    combined_data = [
-        # Headers
-        [Paragraph("<b>RECEPTOR (CLIENTE)</b>", ParagraphStyle('H', fontSize=8, fontName='Helvetica-Bold', textColor=colors.HexColor(PRIMARY))), '', '',
-         Paragraph("<b>DATOS DE FACTURA</b>", ParagraphStyle('H', fontSize=8, fontName='Helvetica-Bold', textColor=colors.HexColor(PRIMARY))), '', ''],
-        # Row 1: Name/RFC | Date/Due
-        [Paragraph("Nombre:", compact_label), Paragraph(trade_name[:35] + ('...' if len(trade_name) > 35 else ''), compact_value), Paragraph(f"RFC: {client.get('rfc') or 'N/A'}", compact_value),
-         Paragraph("Emisión:", compact_label), Paragraph(format_date_safe(invoice.get('invoice_date')), compact_value), Paragraph(f"Vence: {format_date_safe(invoice.get('due_date'))}", compact_value)],
-        # Row 2: Razon Social/Regimen | Condiciones/Forma
-        [Paragraph("Razón Social:", compact_label), Paragraph(razon_social[:35] + ('...' if len(razon_social) > 35 else ''), compact_value), Paragraph(f"Rég: {client.get('regimen_fiscal') or 'N/A'}", compact_value),
-         Paragraph("Cond:", compact_label), Paragraph((invoice.get('payment_terms') or 'Contado').replace('_', ' ').title(), compact_value), Paragraph(f"Forma: {(invoice.get('payment_method') or '99')[:15]}", compact_value)],
-        # Row 3: Domicilio/Uso CFDI | Metodo/Ref
-        [Paragraph("Domicilio:", compact_label), Paragraph((client.get('domicilio_fiscal') or client.get('address') or 'N/A')[:35], compact_value), Paragraph(f"CFDI: {client.get('uso_cfdi') or 'G03'}", compact_value),
-         Paragraph("Método:", compact_label), Paragraph((invoice.get('metodo_pago') or 'PUE')[:20], compact_value), Paragraph(f"Ref: {(invoice.get('reference') or 'N/A')[:15]}", compact_value)],
+    # RECEPTOR (CLIENTE) - Single table with header spanning all columns
+    receptor_data = [
+        [Paragraph("RECEPTOR (CLIENTE)", section_header), '', '', ''],  # Header row - will be merged
+        [Paragraph("Nombre:", info_label), Paragraph(trade_name, info_value), 
+         Paragraph("RFC:", info_label), Paragraph(client.get('rfc') or 'N/A', info_value)],
+        [Paragraph("Razón Social:", info_label), Paragraph(razon_social, info_value),
+         Paragraph("Régimen:", info_label), Paragraph(client.get('regimen_fiscal') or 'N/A', info_value)],
+        [Paragraph("Domicilio:", info_label), Paragraph(client.get('domicilio_fiscal') or client.get('address') or 'N/A', info_value),
+         Paragraph("Uso CFDI:", info_label), Paragraph(client.get('uso_cfdi') or 'G03', info_value)],
     ]
     
-    combined_table = Table(combined_data, colWidths=[0.6*inch, 1.5*inch, 1.1*inch, 0.5*inch, 1.3*inch, 1.5*inch])
-    combined_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
-        ('TOPPADDING', (0, 0), (-1, -1), 2),
-        # Header row background
-        ('BACKGROUND', (0, 0), (2, 0), colors.HexColor('#f7fafc')),
-        ('BACKGROUND', (3, 0), (-1, 0), colors.HexColor('#faf5ff')),
+    receptor_table = Table(receptor_data, colWidths=[0.7*inch, 2.5*inch, 0.7*inch, 2.6*inch])
+    receptor_table.setStyle(TableStyle([
+        # Merge header row
+        ('SPAN', (0, 0), (-1, 0)),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(SECONDARY)),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
         # Data rows
-        ('BACKGROUND', (0, 1), (2, -1), colors.HexColor('#fafafa')),
-        ('BACKGROUND', (3, 1), (-1, -1), colors.HexColor('#fefcff')),
-        # Borders
-        ('BOX', (0, 0), (2, -1), 0.5, colors.HexColor('#e2e8f0')),
-        ('BOX', (3, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
-        ('LINEBELOW', (0, 0), (-1, 0), 0.5, colors.HexColor('#cbd5e0')),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f8fafc')),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
+        ('LINEBELOW', (0, 0), (-1, 0), 1, colors.HexColor(PRIMARY)),
     ]))
-    elements.append(combined_table)
-    elements.append(Spacer(1, 0.1*inch))
+    elements.append(receptor_table)
+    elements.append(Spacer(1, 0.08*inch))
+    
+    # DATOS DE FACTURA - Single table with header spanning all columns
+    factura_data = [
+        [Paragraph("DATOS DE FACTURA", section_header), '', '', ''],  # Header row - will be merged
+        [Paragraph("Emisión:", info_label), Paragraph(format_date_safe(invoice.get('invoice_date')), info_value),
+         Paragraph("Vencimiento:", info_label), Paragraph(format_date_safe(invoice.get('due_date')), info_value)],
+        [Paragraph("Condiciones:", info_label), Paragraph((invoice.get('payment_terms') or 'Contado').replace('_', ' ').title(), info_value),
+         Paragraph("Forma Pago:", info_label), Paragraph(invoice.get('payment_method') or '99 - Por definir', info_value)],
+        [Paragraph("Método:", info_label), Paragraph(invoice.get('metodo_pago') or 'PUE', info_value),
+         Paragraph("Referencia:", info_label), Paragraph(invoice.get('reference') or 'N/A', info_value)],
+    ]
+    
+    factura_table = Table(factura_data, colWidths=[0.7*inch, 2.5*inch, 0.7*inch, 2.6*inch])
+    factura_table.setStyle(TableStyle([
+        # Merge header row
+        ('SPAN', (0, 0), (-1, 0)),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#7c3aed')),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        # Data rows
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#faf5ff')),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
+        ('LINEBELOW', (0, 0), (-1, 0), 1, colors.HexColor('#5b21b6')),
+    ]))
+    elements.append(factura_table)
+    elements.append(Spacer(1, 0.08*inch))
     
     # Concept/description (inline, compact)
     if invoice.get('concept'):
@@ -9450,28 +9480,38 @@ def generate_purchase_order_pdf(po: dict, company: dict, supplier: dict) -> byte
     doc_date = po.get('created_at', '')[:10] if po.get('created_at') else datetime.now().strftime('%Y-%m-%d')
     add_professional_header(elements, company, 'purchase_order', po.get('order_number', ''), doc_date)
     
-    # Supplier information section
-    elements.append(Paragraph("INFORMACIÓN DEL PROVEEDOR", section_title_style))
+    # Styles for info boxes
+    info_label = ParagraphStyle('InfoLabel', fontSize=7, fontName='Helvetica-Bold', textColor=colors.HexColor(TEXT_MUTED), leading=9)
+    info_value = ParagraphStyle('InfoValue', fontSize=8, fontName='Helvetica', textColor=colors.HexColor(TEXT_DARK), leading=10)
+    section_header = ParagraphStyle('SectionHeader', fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, leading=11)
     
+    # Supplier information section with proper SPAN
     supplier_info_data = [
-        [Paragraph("Proveedor", label_style), Paragraph(supplier.get('name') or 'N/A', value_style), 
-         Paragraph("RFC", label_style), Paragraph(supplier.get('rfc') or 'N/A', value_style)],
-        [Paragraph("Contacto", label_style), Paragraph(supplier.get('contact_name') or 'N/A', value_style),
-         Paragraph("Email", label_style), Paragraph(supplier.get('email') or 'N/A', value_style)],
-        [Paragraph("Teléfono", label_style), Paragraph(supplier.get('phone') or 'N/A', value_style),
-         Paragraph("Entrega Est.", label_style), Paragraph(po.get('expected_delivery', '')[:10] if po.get('expected_delivery') else 'N/A', value_style)],
+        [Paragraph("INFORMACIÓN DEL PROVEEDOR", section_header), '', '', ''],  # Header - merged
+        [Paragraph("Proveedor:", info_label), Paragraph(supplier.get('name') or 'N/A', info_value), 
+         Paragraph("RFC:", info_label), Paragraph(supplier.get('rfc') or 'N/A', info_value)],
+        [Paragraph("Contacto:", info_label), Paragraph(supplier.get('contact_name') or 'N/A', info_value),
+         Paragraph("Email:", info_label), Paragraph(supplier.get('email') or 'N/A', info_value)],
+        [Paragraph("Teléfono:", info_label), Paragraph(supplier.get('phone') or 'N/A', info_value),
+         Paragraph("Entrega:", info_label), Paragraph(po.get('expected_delivery', '')[:10] if po.get('expected_delivery') else 'N/A', info_value)],
     ]
     
-    supplier_table = Table(supplier_info_data, colWidths=[0.85*inch, 2.45*inch, 0.85*inch, 2.45*inch])
+    supplier_table = Table(supplier_info_data, colWidths=[0.7*inch, 2.5*inch, 0.7*inch, 2.6*inch])
     supplier_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        # Merge header row
+        ('SPAN', (0, 0), (-1, 0)),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(SECONDARY)),
+        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+        # Data rows
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f7fff7')),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
         ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f7fff7')),
         ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#c6f6d5')),
+        ('LINEBELOW', (0, 0), (-1, 0), 1, colors.HexColor(PRIMARY)),
     ]))
     elements.append(supplier_table)
-    elements.append(Spacer(1, 0.15*inch))
+    elements.append(Spacer(1, 0.1*inch))
     
     # Description
     if po.get('description'):
