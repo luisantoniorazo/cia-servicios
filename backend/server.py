@@ -5158,10 +5158,23 @@ async def add_ticket_comment(
     comment_data: dict,
     current_user: dict = Depends(get_current_user)
 ):
-    """Add comment to ticket"""
+    """Add comment to ticket with optional file attachments"""
     ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
     if not ticket:
         raise HTTPException(status_code=404, detail="Ticket no encontrado")
+    
+    # Process attachments (base64 encoded files)
+    attachments = []
+    if comment_data.get("attachments"):
+        for att in comment_data.get("attachments", []):
+            attachment = {
+                "id": str(uuid.uuid4()),
+                "filename": att.get("filename", "archivo"),
+                "file_type": att.get("file_type", "application/octet-stream"),
+                "file_data": att.get("file_data", ""),  # Base64 encoded
+                "uploaded_at": datetime.now(timezone.utc).isoformat()
+            }
+            attachments.append(attachment)
     
     comment = {
         "id": str(uuid.uuid4()),
@@ -5169,6 +5182,7 @@ async def add_ticket_comment(
         "author_id": current_user.get("sub"),
         "author_name": current_user.get("full_name", "Usuario"),
         "is_admin": current_user.get("role") == UserRole.SUPER_ADMIN,
+        "attachments": attachments,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     

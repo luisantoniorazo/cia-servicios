@@ -45,6 +45,10 @@ import {
   Loader2,
   Image as ImageIcon,
   X,
+  Paperclip,
+  FileText,
+  Download,
+  File,
 } from "lucide-react";
 
 const PRIORITIES = [
@@ -76,6 +80,7 @@ export const Tickets = () => {
   const [detailDialogOpen, setDetailDialogOpen] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState(null);
   const [newComment, setNewComment] = useState("");
+  const [commentAttachments, setCommentAttachments] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [screenshots, setScreenshots] = useState([]);
   const [formData, setFormData] = useState({
@@ -195,11 +200,24 @@ export const Tickets = () => {
   };
 
   const handleAddComment = async () => {
-    if (!newComment.trim() || !selectedTicket) return;
+    if (!newComment.trim() && commentAttachments.length === 0) return;
+    if (!selectedTicket) return;
+    
     try {
-      await api.post(`/tickets/${selectedTicket.id}/comment`, { text: newComment });
+      // Process attachments
+      const attachments = commentAttachments.map(att => ({
+        filename: att.name,
+        file_type: att.type,
+        file_data: att.data.split(",")[1] || att.data  // Remove data URL prefix
+      }));
+      
+      await api.post(`/tickets/${selectedTicket.id}/comment`, { 
+        text: newComment,
+        attachments: attachments
+      });
       toast.success("Comentario agregado");
       setNewComment("");
+      setCommentAttachments([]);
       // Refresh ticket details
       const response = await api.get(`/tickets/${selectedTicket.id}`);
       setSelectedTicket(response.data);
@@ -207,6 +225,27 @@ export const Tickets = () => {
     } catch (error) {
       toast.error("Error al agregar comentario");
     }
+  };
+
+  const handleCommentFileUpload = (e) => {
+    const files = Array.from(e.target.files);
+    files.forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setCommentAttachments(prev => [...prev, {
+          name: file.name,
+          type: file.type,
+          data: event.target.result,
+          size: file.size
+        }]);
+      };
+      reader.readAsDataURL(file);
+    });
+    e.target.value = ""; // Reset input
+  };
+
+  const removeCommentAttachment = (index) => {
+    setCommentAttachments(prev => prev.filter((_, i) => i !== index));
   };
 
   const resetForm = () => {
@@ -634,7 +673,7 @@ export const Tickets = () => {
                 {/* Comments */}
                 <div>
                   <h4 className="font-semibold mb-2">Conversación</h4>
-                  <div className="space-y-3 max-h-[200px] overflow-y-auto">
+                  <div className="space-y-3 max-h-[250px] overflow-y-auto">
                     {selectedTicket.comments?.length === 0 ? (
                       <p className="text-sm text-muted-foreground">No hay comentarios aún</p>
                     ) : (
@@ -661,23 +700,98 @@ export const Tickets = () => {
                             <span className="text-muted-foreground">{formatDate(comment.created_at)}</span>
                           </div>
                           <p className="text-sm whitespace-pre-wrap">{comment.text}</p>
+                          
+                          {/* Attachments */}
+                          {comment.attachments && comment.attachments.length > 0 && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                              {comment.attachments.map((att, idx) => (
+                                <div key={idx} className="relative">
+                                  {att.file_type?.startsWith("image/") ? (
+                                    <a 
+                                      href={`data:${att.file_type};base64,${att.file_data}`} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer"
+                                      className="block"
+                                    >
+                                      <img 
+                                        src={`data:${att.file_type};base64,${att.file_data}`} 
+                                        alt={att.filename}
+                                        className="h-20 w-auto rounded border hover:opacity-90 transition-opacity cursor-pointer"
+                                      />
+                                    </a>
+                                  ) : (
+                                    <a 
+                                      href={`data:${att.file_type};base64,${att.file_data}`}
+                                      download={att.filename}
+                                      className="flex items-center gap-2 p-2 bg-white rounded border text-xs hover:bg-slate-50"
+                                    >
+                                      <FileText className="h-4 w-4 text-blue-500" />
+                                      <span className="max-w-[120px] truncate">{att.filename}</span>
+                                      <Download className="h-3 w-3 text-slate-400" />
+                                    </a>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       ))
                     )}
+                    )}
                   </div>
                   
-                  {/* Add Comment */}
+                  {/* Add Comment with Attachments */}
                   {!["closed"].includes(selectedTicket.status) && (
-                    <div className="flex gap-2 mt-3">
-                      <Input
-                        value={newComment}
-                        onChange={(e) => setNewComment(e.target.value)}
-                        placeholder="Escribe un comentario..."
-                        onKeyPress={(e) => e.key === "Enter" && handleAddComment()}
-                      />
-                      <Button onClick={handleAddComment} disabled={!newComment.trim()}>
-                        <Send className="h-4 w-4" />
-                      </Button>
+                    <div className="space-y-2 mt-3">
+                      {/* Attachment Previews */}
+                      {commentAttachments.length > 0 && (
+                        <div className="flex flex-wrap gap-2 p-2 bg-slate-50 rounded">
+                          {commentAttachments.map((att, index) => (
+                            <div key={index} className="flex items-center gap-2 bg-white p-2 rounded border text-xs">
+                              {att.type.startsWith("image/") ? (
+                                <img src={att.data} alt={att.name} className="h-8 w-8 object-cover rounded" />
+                              ) : (
+                                <File className="h-4 w-4 text-slate-500" />
+                              )}
+                              <span className="max-w-[100px] truncate">{att.name}</span>
+                              <button onClick={() => removeCommentAttachment(index)} className="text-red-500 hover:text-red-700">
+                                <X className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      
+                      <div className="flex gap-2">
+                        <Input
+                          value={newComment}
+                          onChange={(e) => setNewComment(e.target.value)}
+                          placeholder="Escribe un comentario..."
+                          onKeyPress={(e) => e.key === "Enter" && !e.shiftKey && handleAddComment()}
+                          className="flex-1"
+                        />
+                        <input
+                          type="file"
+                          id="comment-file-upload"
+                          multiple
+                          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
+                          onChange={handleCommentFileUpload}
+                          className="hidden"
+                        />
+                        <Button 
+                          variant="outline" 
+                          onClick={() => document.getElementById("comment-file-upload").click()}
+                          title="Adjuntar archivo"
+                        >
+                          <Paperclip className="h-4 w-4" />
+                        </Button>
+                        <Button 
+                          onClick={handleAddComment} 
+                          disabled={!newComment.trim() && commentAttachments.length === 0}
+                        >
+                          <Send className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
                   )}
                 </div>
