@@ -650,6 +650,20 @@ Company Admin (CIA Servicios Demo):
 - 🔧 **PDF de Factura corregido**: Arreglado error de fechas tipo datetime, ahora muestra conceptos correctamente
 - 🔧 **Cálculo de totales en facturas**: Ahora se calculan automáticamente al crear/editar facturas
 
+### v3.7.3 (Marzo 2026)
+- 🔧 **Logo de empresa en login**: Corregido problema donde el logo no aparecía (faltaba prefijo `data:image/jpeg;base64,` para imágenes base64)
+- ✨ **Campo personalizable en Facturas**: Agregados campos `custom_field` y `custom_field_label` al modelo y formulario de facturas
+- ✨ **PDF de Factura rediseñado**: Nuevo formato profesional ejecutivo con:
+  - Banner de estado (CFDI Timbrado vs Prefactura Pendiente)
+  - Campo personalizado destacado
+  - Sección de datos del receptor con información fiscal completa
+  - Sección de datos de la factura (fechas, condiciones, formas de pago)
+  - Tabla de conceptos/partidas con claves SAT
+  - Totales alineados a la derecha con diseño profesional
+  - Sección de datos fiscales CFDI (UUID, sellos, cadena original)
+  - Mensajes de advertencia para documentos sin timbrar
+- 🔧 **Limpieza de código**: Eliminado archivo `ProfitabilityReports.js` sin usar y referencias en `App.js`
+
 ### v2.0.0 (Marzo 2026)
 - Separación de portales
 - URLs únicas por empresa
