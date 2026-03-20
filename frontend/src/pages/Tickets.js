@@ -741,8 +741,8 @@ export const Tickets = () => {
                     </div>
                   )}
                   
-                  {/* Add Comment with Attachments */}
-                  {!["closed"].includes(selectedTicket.status) && (
+                  {/* Add Comment with Attachments - Only if not closed */}
+                  {!["closed", "resolved"].includes(selectedTicket.status) && (
                     <div className="space-y-2 mt-3">
                       {/* Attachment Previews */}
                       {commentAttachments.length > 0 && (
@@ -793,6 +793,15 @@ export const Tickets = () => {
                           <Send className="h-4 w-4" />
                         </Button>
                       </div>
+                    </div>
+                  )}
+                  
+                  {/* Closed ticket message */}
+                  {["closed", "resolved"].includes(selectedTicket.status) && (
+                    <div className="mt-4 p-4 bg-green-50 rounded-lg border border-green-200 text-center">
+                      <CheckCircle className="h-8 w-8 text-green-600 mx-auto mb-2" />
+                      <p className="font-semibold text-green-800">Ticket Cerrado</p>
+                      <p className="text-sm text-green-600">Este ticket ha sido resuelto y cerrado. Si necesitas ayuda adicional, puedes crear un nuevo ticket.</p>
                     </div>
                   )}
                 </div>
