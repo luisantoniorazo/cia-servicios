@@ -4839,17 +4839,18 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
     ticket_dict["created_at"] = ticket_dict["created_at"].isoformat()
     ticket_dict["updated_at"] = ticket_dict["updated_at"].isoformat()
     
-    # Add automatic response comment
+    # Add automatic response comment - humanized, no mention of AI
     auto_comment = {
         "id": str(uuid.uuid4()),
-        "text": f"Gracias por reportar este problema. Nuestro sistema de inteligencia artificial está analizando tu ticket automáticamente. Te notificaremos en breve con una solución o con más información.",
-        "author_id": "system",
-        "author_name": "Sistema Automático",
+        "text": f"¡Hola! Gracias por contactarnos. Ya recibimos tu reporte y en este momento estamos revisando el problema. Te mantendremos informado.",
+        "author_id": "support-agent",
+        "author_name": "Equipo de Soporte",
         "is_internal": False,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     ticket_dict["comments"] = [auto_comment]
     ticket_dict["ai_processing"] = True
+    ticket_dict["status"] = "in_progress"  # Set to in_progress immediately
     
     # Insert ticket
     await db.tickets.insert_one({**ticket_dict})
@@ -4861,7 +4862,7 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
 
 
 async def process_ticket_with_ai(ticket_id: str, user_info: dict):
-    """Background task to process ticket with AI - auto-diagnose and auto-resolve if possible"""
+    """Background task to process ticket with AI - humanized responses, requires user confirmation"""
     try:
         if not EMERGENT_LLM_KEY:
             logger.error("AI key not configured for ticket auto-processing")
@@ -4887,66 +4888,70 @@ async def process_ticket_with_ai(ticket_id: str, user_info: dict):
         
         # Build context
         ticket_context = f"""
-TICKET NUEVO A RESOLVER:
-- Número: {ticket.get('ticket_number', 'N/A')}
+TICKET A RESOLVER:
 - Título: {ticket.get('title', 'Sin título')}
 - Descripción: {ticket.get('description', 'Sin descripción')}
 - Categoría: {ticket.get('category', 'general')}
-- Prioridad: {ticket.get('priority', 'medium')}
-- Empresa: {company_name}
 - Usuario: {ticket.get('created_by_name', 'Usuario')}
 """
         
         if similar_tickets:
-            ticket_context += "\n\nTICKETS SIMILARES RESUELTOS ANTERIORMENTE:"
+            ticket_context += "\n\nCASOS SIMILARES RESUELTOS:"
             for i, st in enumerate(similar_tickets, 1):
                 ticket_context += f"""
---- Caso #{i} ---
-Problema: {st.get('title', 'N/A')}
-Descripción: {st.get('description', 'N/A')[:300]}
-SOLUCIÓN APLICADA: {st.get('resolution_notes', 'N/A')}
+Caso {i}: {st.get('title', 'N/A')}
+Solución: {st.get('resolution_notes', 'N/A')}
 """
         
-        system_message = """Eres un asistente de soporte técnico autónomo para CIA SERVICIOS.
-Tu rol es RESOLVER tickets de soporte automáticamente cuando sea posible.
+        system_message = """Eres un agente de soporte técnico HUMANO de CIA SERVICIOS. 
+NUNCA reveles que eres una inteligencia artificial o un bot.
+Siempre responde como si fueras una persona real del equipo de soporte.
 
-IMPORTANTE:
-- Analiza el problema y busca patrones en tickets similares resueltos
-- Si encuentras una solución clara con alta confianza, proporciona instrucciones paso a paso
-- Si la solución requiere acción del usuario, dala claramente
-- Si requiere intervención técnica, indica qué se debe hacer
+Tu trabajo es:
+1. Analizar el problema del usuario
+2. Encontrar una solución basada en casos similares
+3. Proporcionar instrucciones claras y sencillas
+4. Pedir al usuario que pruebe la solución y confirme si funcionó
 
-SIEMPRE responde en español de forma clara, amigable y profesional.
-Imagina que estás hablando directamente con el usuario que reportó el problema."""
+REGLAS ESTRICTAS:
+- NUNCA uses frases como "como IA", "sistema automático", "inteligencia artificial"
+- Usa un tono cálido, profesional y empático
+- Sé breve y directo en tus respuestas
+- Si tienes una solución, pide al usuario que la pruebe
+- Si no puedes resolver, indica que escalarás el caso
+- Usa frases como "Estoy revisando...", "Encontré que...", "Por favor prueba...", "Avísame si funcionó"
+"""
 
         chat = LlmChat(
             api_key=EMERGENT_LLM_KEY,
-            session_id=f"ticket-auto-{ticket_id}",
+            session_id=f"ticket-{ticket_id}",
             system_message=system_message
         ).with_model("openai", "gpt-5.2")
         
-        user_message = UserMessage(text=f"""Analiza y resuelve este ticket de soporte:
+        user_message = UserMessage(text=f"""Analiza este ticket de soporte y proporciona una respuesta humanizada:
 
 {ticket_context}
 
-Proporciona tu respuesta en el siguiente formato JSON:
+Responde en JSON con este formato:
 {{
-    "puede_resolver": true/false,
+    "tiene_solucion": true/false,
     "confianza": "alta/media/baja",
-    "diagnostico": "descripción del problema identificado",
-    "solucion": "pasos detallados para resolver el problema",
-    "respuesta_usuario": "mensaje amigable y completo para el usuario con la solución o información",
-    "requiere_escalamiento": true/false,
-    "notas_internas": "información adicional para el equipo técnico"
+    "mensaje_usuario": "Tu respuesta humanizada al usuario (máximo 3 oraciones). Si tienes solución, incluye los pasos y pide que pruebe. Termina pidiendo confirmación.",
+    "solucion_tecnica": "Pasos técnicos de la solución (solo para registro interno)",
+    "requiere_escalamiento": true/false
 }}
 
-Responde SOLO con el JSON, sin texto adicional.""")
+Ejemplos de buenos mensajes:
+- "Revisé tu caso y creo que el problema está en X. Por favor intenta hacer Y y Z. ¿Me confirmas si esto resolvió el problema?"
+- "Ya identifiqué lo que puede estar pasando. Prueba reiniciando la sesión y volviendo a intentar. Quedo atento a tu respuesta."
+- "Estoy trabajando en tu solicitud. Mientras tanto, ¿podrías verificar si tienes la última versión actualizada?"
+
+Responde SOLO el JSON.""")
         
         response = await chat.send_message(user_message)
         
         # Parse AI response
         try:
-            # Clean response and parse JSON
             clean_response = response.strip()
             if clean_response.startswith("```"):
                 clean_response = clean_response.split("```")[1]
@@ -4956,110 +4961,69 @@ Responde SOLO con el JSON, sin texto adicional.""")
             import json
             ai_result = json.loads(clean_response)
         except:
-            # If parsing fails, create a generic response
             ai_result = {
-                "puede_resolver": False,
+                "tiene_solucion": False,
                 "confianza": "baja",
-                "diagnostico": "No se pudo analizar el ticket automáticamente",
-                "solucion": "",
-                "respuesta_usuario": f"Hemos recibido tu ticket #{ticket.get('ticket_number')}. Un miembro de nuestro equipo lo revisará pronto y te contactará con más información.",
-                "requiere_escalamiento": True,
-                "notas_internas": f"Error al procesar respuesta de IA: {response[:200]}"
+                "mensaje_usuario": "Ya estamos revisando tu caso. Te contactaremos pronto con más información. Gracias por tu paciencia.",
+                "solucion_tecnica": "",
+                "requiere_escalamiento": True
             }
         
-        # Add AI response as comment
-        ai_comment = {
+        # Create humanized comment - NO mention of AI
+        support_comment = {
             "id": str(uuid.uuid4()),
-            "text": ai_result.get("respuesta_usuario", "Estamos revisando tu solicitud."),
-            "author_id": "ai-assistant",
-            "author_name": "Asistente IA",
+            "text": ai_result.get("mensaje_usuario", "Estamos trabajando en tu solicitud. Te mantendremos informado."),
+            "author_id": "support-agent",
+            "author_name": "Equipo de Soporte",
             "is_internal": False,
             "created_at": datetime.now(timezone.utc).isoformat()
         }
         
-        # Prepare update
+        # Internal note with technical details (only visible to admins)
+        internal_note = {
+            "id": str(uuid.uuid4()),
+            "text": f"[DIAGNÓSTICO INTERNO]\nConfianza: {ai_result.get('confianza', 'N/A')}\nSolución técnica: {ai_result.get('solucion_tecnica', 'N/A')}\nCasos similares encontrados: {len(similar_tickets)}",
+            "author_id": "system",
+            "author_name": "Sistema",
+            "is_internal": True,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Update ticket - NEVER auto-close, always stays in_progress until user confirms
         update_data = {
             "ai_processing": False,
+            "status": "in_progress",  # Always in_progress, user must confirm to close
             "ai_diagnosis": {
                 "id": str(uuid.uuid4()),
-                "diagnosis": ai_result.get("diagnostico", ""),
-                "solution": ai_result.get("solucion", ""),
+                "diagnosis": ai_result.get("solucion_tecnica", ""),
                 "confidence": ai_result.get("confianza", "baja"),
-                "can_resolve": ai_result.get("puede_resolver", False),
+                "has_solution": ai_result.get("tiene_solucion", False),
                 "requires_escalation": ai_result.get("requiere_escalamiento", True),
-                "internal_notes": ai_result.get("notas_internas", ""),
                 "similar_tickets_found": len(similar_tickets),
                 "created_at": datetime.now(timezone.utc).isoformat()
             },
+            "awaiting_user_confirmation": ai_result.get("tiene_solucion", False),
             "updated_at": datetime.now(timezone.utc).isoformat()
         }
         
-        # If AI can resolve with high confidence, mark as resolved
-        if ai_result.get("puede_resolver") and ai_result.get("confianza") == "alta":
-            update_data["status"] = "resolved"
-            update_data["resolved_at"] = datetime.now(timezone.utc).isoformat()
-            update_data["resolved_by"] = "ai-assistant"
-            update_data["resolved_by_name"] = "Asistente IA"
-            update_data["resolution_notes"] = ai_result.get("solucion", "Resuelto automáticamente por IA")
-            
-            # Add resolution comment
-            resolution_comment = {
-                "id": str(uuid.uuid4()),
-                "text": "✅ Este ticket ha sido resuelto automáticamente por nuestro sistema de IA. Si necesitas más ayuda, no dudes en contactarnos.",
-                "author_id": "ai-assistant",
-                "author_name": "Asistente IA",
-                "is_internal": False,
-                "created_at": datetime.now(timezone.utc).isoformat()
+        await db.tickets.update_one(
+            {"id": ticket_id},
+            {
+                "$set": update_data,
+                "$push": {"comments": {"$each": [support_comment, internal_note]}}
             }
-            
-            await db.tickets.update_one(
-                {"id": ticket_id},
-                {
-                    "$set": update_data,
-                    "$push": {"comments": {"$each": [ai_comment, resolution_comment]}}
-                }
-            )
-        else:
-            # Not auto-resolved - add diagnosis and escalate if needed
-            if ai_result.get("requiere_escalamiento"):
-                update_data["status"] = "in_progress"
-                
-                # Add internal note for admin
-                internal_comment = {
-                    "id": str(uuid.uuid4()),
-                    "text": f"[NOTA INTERNA] {ai_result.get('notas_internas', 'Requiere revisión manual')}",
-                    "author_id": "ai-assistant",
-                    "author_name": "Sistema IA",
-                    "is_internal": True,
-                    "created_at": datetime.now(timezone.utc).isoformat()
-                }
-                
-                await db.tickets.update_one(
-                    {"id": ticket_id},
-                    {
-                        "$set": update_data,
-                        "$push": {"comments": {"$each": [ai_comment, internal_comment]}}
-                    }
-                )
-            else:
-                await db.tickets.update_one(
-                    {"id": ticket_id},
-                    {
-                        "$set": update_data,
-                        "$push": {"comments": ai_comment}
-                    }
-                )
+        )
         
-        logger.info(f"AI processed ticket {ticket_id}: confidence={ai_result.get('confianza')}, resolved={ai_result.get('puede_resolver')}")
+        logger.info(f"Ticket {ticket_id} processed: confidence={ai_result.get('confianza')}, has_solution={ai_result.get('tiene_solucion')}")
         
     except Exception as e:
-        logger.error(f"Error in AI ticket processing: {str(e)}")
-        # Add error comment
+        logger.error(f"Error in ticket processing: {str(e)}")
+        # Add humanized error comment
         error_comment = {
             "id": str(uuid.uuid4()),
-            "text": "Nuestro equipo ha sido notificado y revisará tu ticket pronto. Disculpa las molestias.",
-            "author_id": "system",
-            "author_name": "Sistema",
+            "text": "Gracias por tu paciencia. Estamos revisando tu caso y te contactaremos pronto.",
+            "author_id": "support-agent",
+            "author_name": "Equipo de Soporte",
             "is_internal": False,
             "created_at": datetime.now(timezone.utc).isoformat()
         }
@@ -5067,10 +5031,83 @@ Responde SOLO con el JSON, sin texto adicional.""")
         await db.tickets.update_one(
             {"id": ticket_id},
             {
-                "$set": {"ai_processing": False, "updated_at": datetime.now(timezone.utc).isoformat()},
+                "$set": {"ai_processing": False, "status": "in_progress", "updated_at": datetime.now(timezone.utc).isoformat()},
                 "$push": {"comments": error_comment}
             }
         )
+
+
+@api_router.post("/tickets/{ticket_id}/confirm-resolution")
+async def confirm_ticket_resolution(ticket_id: str, resolved: bool = Body(..., embed=True), current_user: dict = Depends(get_current_user)):
+    """User confirms if the suggested solution worked - only then can ticket be closed"""
+    ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket no encontrado")
+    
+    # Verify user owns this ticket or is admin
+    if ticket.get("created_by") != current_user.get("sub") and current_user.get("role") not in [UserRole.ADMIN, UserRole.SUPER_ADMIN]:
+        raise HTTPException(status_code=403, detail="No tienes permiso para confirmar este ticket")
+    
+    if resolved:
+        # User confirmed the solution worked
+        confirmation_comment = {
+            "id": str(uuid.uuid4()),
+            "text": "¡Perfecto! Me alegra que se haya resuelto tu problema. Si necesitas algo más, no dudes en contactarnos. ¡Que tengas un excelente día!",
+            "author_id": "support-agent",
+            "author_name": "Equipo de Soporte",
+            "is_internal": False,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        await db.tickets.update_one(
+            {"id": ticket_id},
+            {
+                "$set": {
+                    "status": "resolved",
+                    "resolved_at": datetime.now(timezone.utc).isoformat(),
+                    "resolved_by": current_user.get("sub"),
+                    "resolved_by_name": f"Confirmado por {current_user.get('full_name', 'Usuario')}",
+                    "awaiting_user_confirmation": False,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                },
+                "$push": {"comments": confirmation_comment}
+            }
+        )
+        return {"message": "Ticket cerrado exitosamente", "status": "resolved"}
+    else:
+        # User says solution didn't work
+        followup_comment = {
+            "id": str(uuid.uuid4()),
+            "text": "Entendido, lamento que la solución no haya funcionado. Estoy escalando tu caso para revisarlo más a fondo. Un especialista te contactará pronto.",
+            "author_id": "support-agent",
+            "author_name": "Equipo de Soporte",
+            "is_internal": False,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        internal_note = {
+            "id": str(uuid.uuid4()),
+            "text": "[ESCALAMIENTO] El usuario indicó que la solución sugerida no funcionó. Requiere atención manual.",
+            "author_id": "system",
+            "author_name": "Sistema",
+            "is_internal": True,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        await db.tickets.update_one(
+            {"id": ticket_id},
+            {
+                "$set": {
+                    "status": "in_progress",
+                    "awaiting_user_confirmation": False,
+                    "requires_manual_review": True,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                },
+                "$push": {"comments": {"$each": [followup_comment, internal_note]}}
+            }
+        )
+        return {"message": "Ticket escalado para revisión manual", "status": "in_progress"}
+
 
 @api_router.get("/tickets")
 async def list_tickets(

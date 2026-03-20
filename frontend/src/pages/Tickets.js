@@ -229,6 +229,19 @@ export const Tickets = () => {
     }
   };
 
+  const handleConfirmResolution = async (resolved) => {
+    try {
+      await api.post(`/tickets/${selectedTicket.id}/confirm-resolution`, { resolved });
+      toast.success(resolved ? "¡Ticket cerrado exitosamente!" : "Ticket escalado para revisión");
+      // Refresh ticket details
+      const response = await api.get(`/tickets/${selectedTicket.id}`);
+      setSelectedTicket(response.data);
+      fetchTickets();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Error al confirmar"));
+    }
+  };
+
   const getPriorityBadge = (priority) => {
     const config = PRIORITIES.find(p => p.value === priority) || PRIORITIES[1];
     return <Badge className={`${config.color} text-white`}>{config.label}</Badge>;
@@ -569,33 +582,39 @@ export const Tickets = () => {
                   </div>
                 )}
                 
-                {/* AI Processing Indicator */}
+                {/* Processing Indicator - Humanized */}
                 {selectedTicket.ai_processing && (
-                  <div className="p-3 bg-purple-50 rounded-sm border border-purple-200 flex items-center gap-3">
-                    <Loader2 className="h-5 w-5 text-purple-600 animate-spin" />
+                  <div className="p-3 bg-blue-50 rounded-sm border border-blue-200 flex items-center gap-3">
+                    <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
                     <div>
-                      <p className="text-sm font-medium text-purple-800">Procesando con IA...</p>
-                      <p className="text-xs text-purple-600">Nuestro asistente está analizando tu ticket</p>
+                      <p className="text-sm font-medium text-blue-800">Revisando tu caso...</p>
+                      <p className="text-xs text-blue-600">Nuestro equipo está trabajando en tu solicitud</p>
                     </div>
                   </div>
                 )}
                 
-                {/* AI Diagnosis */}
-                {selectedTicket.ai_diagnosis && (
-                  <div className="p-3 bg-gradient-to-r from-purple-50 to-blue-50 rounded-sm border border-purple-200">
-                    <h4 className="font-semibold text-purple-800 mb-2 flex items-center gap-2">
-                      🤖 Diagnóstico de IA
-                      <Badge className={`text-xs ${selectedTicket.ai_diagnosis.confidence === 'alta' ? 'bg-green-500' : selectedTicket.ai_diagnosis.confidence === 'media' ? 'bg-amber-500' : 'bg-red-500'}`}>
-                        Confianza: {selectedTicket.ai_diagnosis.confidence}
-                      </Badge>
-                    </h4>
-                    <p className="text-sm text-purple-700 mb-2">{selectedTicket.ai_diagnosis.diagnosis}</p>
-                    {selectedTicket.ai_diagnosis.solution && (
-                      <div className="mt-2 p-2 bg-white rounded border">
-                        <p className="text-xs font-medium text-slate-600 mb-1">Solución Sugerida:</p>
-                        <p className="text-sm text-slate-800 whitespace-pre-wrap">{selectedTicket.ai_diagnosis.solution}</p>
-                      </div>
-                    )}
+                {/* Awaiting User Confirmation */}
+                {selectedTicket.awaiting_user_confirmation && selectedTicket.status !== "resolved" && (
+                  <div className="p-4 bg-amber-50 rounded-sm border border-amber-200">
+                    <h4 className="font-semibold text-amber-800 mb-2">¿Se resolvió tu problema?</h4>
+                    <p className="text-sm text-amber-700 mb-3">Por favor confirma si la solución proporcionada funcionó.</p>
+                    <div className="flex gap-2">
+                      <Button 
+                        onClick={() => handleConfirmResolution(true)}
+                        className="bg-green-600 hover:bg-green-700"
+                      >
+                        <CheckCircle className="h-4 w-4 mr-2" />
+                        Sí, está resuelto
+                      </Button>
+                      <Button 
+                        onClick={() => handleConfirmResolution(false)}
+                        variant="outline"
+                        className="border-red-300 text-red-700 hover:bg-red-50"
+                      >
+                        <XCircle className="h-4 w-4 mr-2" />
+                        No funcionó
+                      </Button>
+                    </div>
                   </div>
                 )}
                 
@@ -623,10 +642,10 @@ export const Tickets = () => {
                         <div
                           key={comment.id}
                           className={`p-3 rounded-sm ${
-                            comment.author_id === "ai-assistant" 
-                              ? "bg-purple-50 border-l-4 border-l-purple-500" 
+                            comment.author_id === "support-agent" 
+                              ? "bg-blue-50 border-l-4 border-l-blue-500" 
                               : comment.author_id === "system" 
-                                ? "bg-amber-50 border-l-4 border-l-amber-500"
+                                ? "bg-slate-50 border-l-4 border-l-slate-400"
                                 : comment.is_admin 
                                   ? "bg-blue-50 border-l-4 border-l-blue-500" 
                                   : "bg-slate-50"
@@ -635,14 +654,8 @@ export const Tickets = () => {
                           <div className="flex items-center justify-between text-xs mb-1">
                             <span className="font-medium flex items-center gap-2">
                               {comment.author_name}
-                              {comment.author_id === "ai-assistant" && (
-                                <Badge className="bg-purple-500 text-xs">🤖 IA</Badge>
-                              )}
-                              {comment.author_id === "system" && (
-                                <Badge className="bg-amber-500 text-xs">Sistema</Badge>
-                              )}
-                              {comment.is_admin && comment.author_id !== "ai-assistant" && comment.author_id !== "system" && (
-                                <Badge className="bg-blue-500 text-xs">Admin</Badge>
+                              {(comment.author_id === "support-agent" || comment.is_admin) && (
+                                <Badge className="bg-blue-500 text-xs">Soporte</Badge>
                               )}
                             </span>
                             <span className="text-muted-foreground">{formatDate(comment.created_at)}</span>
