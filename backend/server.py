@@ -6170,6 +6170,16 @@ async def create_invoice(invoice_data: InvoiceCreate, current_user: dict = Depen
     if current_user.get("company_id") != invoice_data.company_id:
         raise HTTPException(status_code=403, detail="Acceso denegado")
     
+    # CANDADO: Verificar que el cliente no sea un prospecto
+    client = await db.clients.find_one({"id": invoice_data.client_id}, {"_id": 0})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    if client.get("is_prospect", False):
+        raise HTTPException(
+            status_code=400, 
+            detail="No se puede facturar a un prospecto. Primero debes convertirlo en cliente desde el CRM."
+        )
+    
     invoice = Invoice(**invoice_data.model_dump())
     invoice_dict = invoice.model_dump()
     
@@ -6356,6 +6366,14 @@ async def convert_quote_to_invoice(quote_id: str, due_days: int = 30, current_us
     
     if quote.get("status") != QuoteStatus.AUTHORIZED:
         raise HTTPException(status_code=400, detail="Solo cotizaciones autorizadas pueden convertirse a factura")
+    
+    # CANDADO: Verificar que el cliente no sea un prospecto
+    client = await db.clients.find_one({"id": quote.get("client_id")}, {"_id": 0})
+    if client and client.get("is_prospect", False):
+        raise HTTPException(
+            status_code=400, 
+            detail="No se puede facturar a un prospecto. Primero debes convertirlo en cliente desde el CRM."
+        )
     
     # Generate invoice number
     count = await db.invoices.count_documents({"company_id": quote["company_id"]})
@@ -9525,13 +9543,13 @@ def generate_invoice_pdf(invoice: dict, company: dict, client: dict) -> bytes:
         [Paragraph("RECEPTOR (CLIENTE)", section_header), '', '', ''],  # Header row - will be merged
         [Paragraph("Nombre:", info_label), Paragraph(trade_name, info_value), 
          Paragraph("RFC:", info_label), Paragraph(client.get('rfc') or 'N/A', info_value)],
-        [Paragraph("Razón Social:", info_label), Paragraph(razon_social, info_value),
+        [Paragraph("R. Social:", info_label), Paragraph(razon_social, info_value),
          Paragraph("Régimen:", info_label), Paragraph(client.get('regimen_fiscal') or 'N/A', info_value)],
         [Paragraph("Domicilio:", info_label), Paragraph(client.get('domicilio_fiscal') or client.get('address') or 'N/A', info_value),
          Paragraph("Uso CFDI:", info_label), Paragraph(client.get('uso_cfdi') or 'G03', info_value)],
     ]
     
-    receptor_table = Table(receptor_data, colWidths=[0.7*inch, 2.5*inch, 0.7*inch, 2.6*inch])
+    receptor_table = Table(receptor_data, colWidths=[0.85*inch, 2.35*inch, 0.85*inch, 2.45*inch])
     receptor_table.setStyle(TableStyle([
         # Merge header row
         ('SPAN', (0, 0), (-1, 0)),
@@ -9551,15 +9569,15 @@ def generate_invoice_pdf(invoice: dict, company: dict, client: dict) -> bytes:
     # DATOS DE FACTURA - Single table with header spanning all columns
     factura_data = [
         [Paragraph("DATOS DE FACTURA", section_header), '', '', ''],  # Header row - will be merged
-        [Paragraph("Emisión:", info_label), Paragraph(format_date_safe(invoice.get('invoice_date')), info_value),
-         Paragraph("Vencimiento:", info_label), Paragraph(format_date_safe(invoice.get('due_date')), info_value)],
+        [Paragraph("F. Emisión:", info_label), Paragraph(format_date_safe(invoice.get('invoice_date')), info_value),
+         Paragraph("F. Vence:", info_label), Paragraph(format_date_safe(invoice.get('due_date')), info_value)],
         [Paragraph("Condiciones:", info_label), Paragraph((invoice.get('payment_terms') or 'Contado').replace('_', ' ').title(), info_value),
          Paragraph("Forma Pago:", info_label), Paragraph(invoice.get('payment_method') or '99 - Por definir', info_value)],
         [Paragraph("Método:", info_label), Paragraph(invoice.get('metodo_pago') or 'PUE', info_value),
          Paragraph("Referencia:", info_label), Paragraph(invoice.get('reference') or 'N/A', info_value)],
     ]
     
-    factura_table = Table(factura_data, colWidths=[0.7*inch, 2.5*inch, 0.7*inch, 2.6*inch])
+    factura_table = Table(factura_data, colWidths=[0.85*inch, 2.35*inch, 0.85*inch, 2.45*inch])
     factura_table.setStyle(TableStyle([
         # Merge header row
         ('SPAN', (0, 0), (-1, 0)),

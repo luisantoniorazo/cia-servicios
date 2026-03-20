@@ -1260,20 +1260,26 @@ export const Invoices = () => {
                 </div>
               </div>
               <div className="grid gap-2">
-                <Label>Cliente *</Label>
+                <Label>Cliente * <span className="text-xs text-muted-foreground">(Solo clientes, no prospectos)</span></Label>
                 <Select
                   value={formData.client_id}
                   onValueChange={(value) => setFormData({ ...formData, client_id: value })}
                 >
                   <SelectTrigger className="truncate"><SelectValue placeholder="Seleccionar cliente" /></SelectTrigger>
                   <SelectContent>
-                    {clients.filter(c => !c.is_prospect).map((c) => (
-                      <SelectItem key={c.id} value={c.id} className="truncate">
-                        <span className="truncate block max-w-[400px]">
-                          {c.trade_name || c.name} {c.rfc && `- ${c.rfc}`}
-                        </span>
-                      </SelectItem>
-                    ))}
+                    {clients.filter(c => !c.is_prospect).length === 0 ? (
+                      <div className="p-2 text-sm text-muted-foreground text-center">
+                        No hay clientes disponibles. Convierte un prospecto a cliente desde el CRM.
+                      </div>
+                    ) : (
+                      clients.filter(c => !c.is_prospect).map((c) => (
+                        <SelectItem key={c.id} value={c.id} className="truncate">
+                          <span className="truncate block max-w-[400px]">
+                            {c.trade_name || c.name} {c.rfc && `- ${c.rfc}`}
+                          </span>
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
