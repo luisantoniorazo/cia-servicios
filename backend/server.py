@@ -5109,6 +5109,93 @@ async def confirm_ticket_resolution(ticket_id: str, resolved: bool = Body(..., e
         return {"message": "Ticket escalado para revisión manual", "status": "in_progress"}
 
 
+@api_router.get("/tickets/unread-count")
+async def get_unread_ticket_count(current_user: dict = Depends(get_current_user)):
+    """Get count of tickets with unread responses for the current user"""
+    user_id = current_user.get("sub")
+    is_super_admin = current_user.get("role") == UserRole.SUPER_ADMIN
+    company_id = current_user.get("company_id")
+    
+    if is_super_admin:
+        # Super admin sees all tickets with new responses they haven't read
+        pipeline = [
+            {"$match": {"status": {"$nin": ["closed", "resolved"]}}},
+            {"$project": {
+                "id": 1,
+                "comments": 1,
+                "last_read_by_admin": 1
+            }}
+        ]
+        tickets = await db.tickets.aggregate(pipeline).to_list(1000)
+        
+        unread = 0
+        for ticket in tickets:
+            last_read = ticket.get("last_read_by_admin", {}).get(user_id)
+            comments = ticket.get("comments", [])
+            if comments:
+                # Check if there are comments after the last read
+                for comment in comments:
+                    if comment.get("author_id") != "support-agent" and comment.get("author_id") != "system":
+                        if not last_read or comment.get("created_at", "") > last_read:
+                            unread += 1
+                            break
+        
+        total = len(tickets)
+    else:
+        # Regular user - see their tickets with new support responses
+        pipeline = [
+            {"$match": {
+                "company_id": company_id,
+                "created_by": user_id,
+                "status": {"$nin": ["closed", "resolved"]}
+            }},
+            {"$project": {
+                "id": 1,
+                "comments": 1,
+                "last_read_by_user": 1
+            }}
+        ]
+        tickets = await db.tickets.aggregate(pipeline).to_list(100)
+        
+        unread = 0
+        for ticket in tickets:
+            last_read = ticket.get("last_read_by_user")
+            comments = ticket.get("comments", [])
+            if comments:
+                # Check if there are support comments after the last read
+                for comment in comments:
+                    if comment.get("author_id") in ["support-agent", "system"]:
+                        if not last_read or comment.get("created_at", "") > last_read:
+                            unread += 1
+                            break
+        
+        total = len(tickets)
+    
+    return {"total": total, "unread": unread}
+
+
+@api_router.post("/tickets/{ticket_id}/mark-read")
+async def mark_ticket_read(ticket_id: str, current_user: dict = Depends(get_current_user)):
+    """Mark a ticket as read by the current user"""
+    user_id = current_user.get("sub")
+    is_super_admin = current_user.get("role") == UserRole.SUPER_ADMIN
+    
+    now = datetime.now(timezone.utc).isoformat()
+    
+    if is_super_admin:
+        await db.tickets.update_one(
+            {"id": ticket_id},
+            {"$set": {f"last_read_by_admin.{user_id}": now}}
+        )
+    else:
+        await db.tickets.update_one(
+            {"id": ticket_id},
+            {"$set": {"last_read_by_user": now}}
+        )
+    
+    return {"message": "Ticket marcado como leído"}
+
+
 @api_router.get("/tickets")
 async def list_tickets(
     company_id: Optional[str] = None,

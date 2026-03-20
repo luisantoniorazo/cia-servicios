@@ -77,6 +77,7 @@ import {
   Receipt,
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
+import { useTicketCounts } from "../components/Notifications/TicketBadge";
 
 const LICENSE_TYPES = [
   { value: "basic", label: "Básica", users: 5 },
@@ -88,6 +89,7 @@ const LICENSE_TYPES = [
 export const SuperAdminDashboard = () => {
   const { api, superAdminLogout } = useAuth();
   const navigate = useNavigate();
+  const ticketCounts = useTicketCounts();
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -611,12 +613,17 @@ export const SuperAdminDashboard = () => {
             <Button 
               variant="outline" 
               size="sm"
-              className="border-purple-500 text-purple-400 hover:bg-purple-500/20 text-xs sm:text-sm" 
+              className="border-purple-500 text-purple-400 hover:bg-purple-500/20 text-xs sm:text-sm relative" 
               onClick={() => navigate("/admin-portal/tickets")}
               data-testid="tickets-admin-btn"
             >
               <TicketIcon className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
               Tickets
+              {ticketCounts.unread > 0 && (
+                <Badge className="absolute -top-2 -right-2 h-5 min-w-[20px] flex items-center justify-center text-[10px] px-1 bg-red-500 animate-pulse">
+                  {ticketCounts.unread}
+                </Badge>
+              )}
             </Button>
             <Button 
               variant="outline" 

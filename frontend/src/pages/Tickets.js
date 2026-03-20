@@ -263,6 +263,8 @@ export const Tickets = () => {
       const response = await api.get(`/tickets/${ticket.id}`);
       setSelectedTicket(response.data);
       setDetailDialogOpen(true);
+      // Mark ticket as read
+      await api.post(`/tickets/${ticket.id}/mark-read`);
     } catch (error) {
       toast.error("Error al cargar ticket");
     }

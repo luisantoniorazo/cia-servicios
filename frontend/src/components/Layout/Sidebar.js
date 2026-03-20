@@ -42,6 +42,7 @@ import {
 } from "../ui/dropdown-menu";
 import NotificationBell from "../Notifications/NotificationBell";
 import { useReminderCounts } from "../Notifications/ReminderBadge";
+import { useTicketCounts } from "../Notifications/TicketBadge";
 
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_cia-operacional/artifacts/0bkwa552_Logo%20CIA.jpg";
 
@@ -74,6 +75,7 @@ export const Sidebar = ({ isOpen, onToggle }) => {
   const navigate = useNavigate();
   const { slug } = useParams();
   const reminderCounts = useReminderCounts();
+  const ticketCounts = useTicketCounts();
   
   // Use slug from URL params or from auth context
   const currentSlug = slug || companySlug;
@@ -199,6 +201,13 @@ export const Sidebar = ({ isOpen, onToggle }) => {
                         className="absolute -top-2 -right-3 h-4 min-w-[16px] flex items-center justify-center text-[10px] px-1 bg-amber-500"
                       >
                         {reminderCounts.total}
+                      </Badge>
+                    )}
+                    {item.moduleId === "tickets" && ticketCounts.unread > 0 && (
+                      <Badge 
+                        className="absolute -top-2 -right-3 h-4 min-w-[16px] flex items-center justify-center text-[10px] px-1 bg-blue-500 animate-pulse"
+                      >
+                        {ticketCounts.unread}
                       </Badge>
                     )}
                   </div>
