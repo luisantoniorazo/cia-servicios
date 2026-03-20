@@ -7853,19 +7853,26 @@ async def create_purchase_order(po_data: PurchaseOrderCreate, current_user: dict
     po = PurchaseOrder(**po_data.model_dump())
     po_dict = po.model_dump()
     
-    # Calculate totals from items
+    # Check if items are provided - if so, calculate from items
     items = po_dict.get("items", [])
-    for item in items:
-        item["total"] = item.get("quantity", 1) * item.get("unit_price", 0)
-    
-    subtotal = sum(item.get("total", 0) for item in items)
-    tax = subtotal * 0.16
-    total = subtotal + tax
-    
-    po_dict["items"] = items
-    po_dict["subtotal"] = subtotal
-    po_dict["tax"] = tax
-    po_dict["total"] = total
+    if items:
+        for item in items:
+            item["total"] = item.get("quantity", 1) * item.get("unit_price", 0)
+        subtotal = sum(item.get("total", 0) for item in items)
+        tax = subtotal * 0.16
+        total = subtotal + tax
+        po_dict["items"] = items
+        po_dict["subtotal"] = subtotal
+        po_dict["tax"] = tax
+        po_dict["total"] = total
+    else:
+        # Use the values provided directly by the user
+        subtotal = float(po_data.subtotal) if po_data.subtotal else 0
+        tax = float(po_data.tax) if po_data.tax else subtotal * 0.16
+        total = float(po_data.total) if po_data.total else subtotal + tax
+        po_dict["subtotal"] = subtotal
+        po_dict["tax"] = tax
+        po_dict["total"] = total
     
     po_dict["created_at"] = po_dict["created_at"].isoformat()
     po_dict["updated_at"] = po_dict["updated_at"].isoformat()
@@ -7874,9 +7881,9 @@ async def create_purchase_order(po_data: PurchaseOrderCreate, current_user: dict
     await db.purchase_orders.insert_one(po_dict)
     
     # Return with calculated values
-    po.subtotal = subtotal
-    po.tax = tax
-    po.total = total
+    po.subtotal = po_dict["subtotal"]
+    po.tax = po_dict["tax"]
+    po.total = po_dict["total"]
     return po
 
 @api_router.get("/purchase-orders", response_model=List[PurchaseOrder])
@@ -9082,14 +9089,7 @@ def generate_invoice_pdf(invoice: dict, company: dict, client: dict) -> bytes:
         custom_value = invoice.get('custom_field')
         custom_style = ParagraphStyle('Custom', fontSize=10, fontName='Helvetica-Bold', textColor=colors.HexColor(SECONDARY))
         elements.append(Paragraph(f"{custom_label}: {custom_value}", custom_style))
-        elements.append(Spacer(1, 0.1*inch))
-    
-    # Client & Invoice info section
-    elements.append(Paragraph("DATOS DEL RECEPTOR (CLIENTE)", section_title_style))
-    
-    trade_name = client.get('trade_name') or client.get('name') or 'N/A'
-    razon_social = client.get('razon_social_fiscal') or trade_name
-    client_ref = f" ({client.get('reference')})" if client.get('reference') else ""
+        elements.append(Spacer(1, 0.08*inch))
     
     # Format dates safely
     def format_date_safe(date_val):
@@ -9101,55 +9101,54 @@ def generate_invoice_pdf(invoice: dict, company: dict, client: dict) -> bytes:
             return date_val[:10]
         return str(date_val)
     
-    client_info_data = [
-        [Paragraph("Nombre Comercial", label_style), Paragraph(trade_name + client_ref, value_style), 
-         Paragraph("RFC", label_style), Paragraph(client.get('rfc') or 'N/A', value_style)],
-        [Paragraph("Razón Social Fiscal", label_style), Paragraph(razon_social, value_style),
-         Paragraph("Régimen Fiscal", label_style), Paragraph(client.get('regimen_fiscal') or 'N/A', value_style)],
-        [Paragraph("Domicilio Fiscal", label_style), Paragraph(client.get('domicilio_fiscal') or client.get('address') or 'N/A', value_style),
-         Paragraph("Uso CFDI", label_style), Paragraph(client.get('uso_cfdi') or 'G03', value_style)],
+    trade_name = client.get('trade_name') or client.get('name') or 'N/A'
+    razon_social = client.get('razon_social_fiscal') or trade_name
+    client_ref = f" ({client.get('reference')})" if client.get('reference') else ""
+    
+    # Compact label style for tables
+    compact_label = ParagraphStyle('CompactLabel', fontSize=7, fontName='Helvetica-Bold', textColor=colors.HexColor(TEXT_MUTED), leading=9)
+    compact_value = ParagraphStyle('CompactValue', fontSize=8, fontName='Helvetica', textColor=colors.HexColor(TEXT_DARK), leading=10)
+    
+    # Combined Receptor + Invoice Data in one compact table
+    combined_data = [
+        # Headers
+        [Paragraph("<b>RECEPTOR (CLIENTE)</b>", ParagraphStyle('H', fontSize=8, fontName='Helvetica-Bold', textColor=colors.HexColor(PRIMARY))), '', '',
+         Paragraph("<b>DATOS DE FACTURA</b>", ParagraphStyle('H', fontSize=8, fontName='Helvetica-Bold', textColor=colors.HexColor(PRIMARY))), '', ''],
+        # Row 1: Name/RFC | Date/Due
+        [Paragraph("Nombre:", compact_label), Paragraph(trade_name[:35] + ('...' if len(trade_name) > 35 else ''), compact_value), Paragraph(f"RFC: {client.get('rfc') or 'N/A'}", compact_value),
+         Paragraph("Emisión:", compact_label), Paragraph(format_date_safe(invoice.get('invoice_date')), compact_value), Paragraph(f"Vence: {format_date_safe(invoice.get('due_date'))}", compact_value)],
+        # Row 2: Razon Social/Regimen | Condiciones/Forma
+        [Paragraph("Razón Social:", compact_label), Paragraph(razon_social[:35] + ('...' if len(razon_social) > 35 else ''), compact_value), Paragraph(f"Rég: {client.get('regimen_fiscal') or 'N/A'}", compact_value),
+         Paragraph("Cond:", compact_label), Paragraph((invoice.get('payment_terms') or 'Contado').replace('_', ' ').title(), compact_value), Paragraph(f"Forma: {(invoice.get('payment_method') or '99')[:15]}", compact_value)],
+        # Row 3: Domicilio/Uso CFDI | Metodo/Ref
+        [Paragraph("Domicilio:", compact_label), Paragraph((client.get('domicilio_fiscal') or client.get('address') or 'N/A')[:35], compact_value), Paragraph(f"CFDI: {client.get('uso_cfdi') or 'G03'}", compact_value),
+         Paragraph("Método:", compact_label), Paragraph((invoice.get('metodo_pago') or 'PUE')[:20], compact_value), Paragraph(f"Ref: {(invoice.get('reference') or 'N/A')[:15]}", compact_value)],
     ]
     
-    client_table = Table(client_info_data, colWidths=[1.0*inch, 2.3*inch, 0.9*inch, 2.3*inch])
-    client_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f7fafc')),
-        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
+    combined_table = Table(combined_data, colWidths=[0.6*inch, 1.5*inch, 1.1*inch, 0.5*inch, 1.3*inch, 1.5*inch])
+    combined_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        # Header row background
+        ('BACKGROUND', (0, 0), (2, 0), colors.HexColor('#f7fafc')),
+        ('BACKGROUND', (3, 0), (-1, 0), colors.HexColor('#faf5ff')),
+        # Data rows
+        ('BACKGROUND', (0, 1), (2, -1), colors.HexColor('#fafafa')),
+        ('BACKGROUND', (3, 1), (-1, -1), colors.HexColor('#fefcff')),
+        # Borders
+        ('BOX', (0, 0), (2, -1), 0.5, colors.HexColor('#e2e8f0')),
+        ('BOX', (3, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
+        ('LINEBELOW', (0, 0), (-1, 0), 0.5, colors.HexColor('#cbd5e0')),
     ]))
-    elements.append(client_table)
-    elements.append(Spacer(1, 0.15*inch))
+    elements.append(combined_table)
+    elements.append(Spacer(1, 0.1*inch))
     
-    # Invoice details
-    elements.append(Paragraph("DATOS DE LA FACTURA", section_title_style))
-    
-    invoice_info_data = [
-        [Paragraph("Fecha Emisión", label_style), Paragraph(format_date_safe(invoice.get('invoice_date')), value_style),
-         Paragraph("Fecha Vencimiento", label_style), Paragraph(format_date_safe(invoice.get('due_date')), value_style)],
-        [Paragraph("Condiciones de Pago", label_style), Paragraph((invoice.get('payment_terms') or 'Contado').replace('_', ' ').title(), value_style),
-         Paragraph("Forma de Pago", label_style), Paragraph(invoice.get('payment_method') or '99 - Por definir', value_style)],
-        [Paragraph("Método de Pago", label_style), Paragraph(invoice.get('metodo_pago') or 'PUE - Pago en una sola exhibición', value_style),
-         Paragraph("Referencia", label_style), Paragraph(invoice.get('reference') or 'N/A', value_style)],
-    ]
-    
-    invoice_table = Table(invoice_info_data, colWidths=[1.0*inch, 2.3*inch, 0.9*inch, 2.3*inch])
-    invoice_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#faf5ff')),
-        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
-    ]))
-    elements.append(invoice_table)
-    elements.append(Spacer(1, 0.15*inch))
-    
-    # Concept/description
+    # Concept/description (inline, compact)
     if invoice.get('concept'):
-        elements.append(Paragraph("CONCEPTO", section_title_style))
-        desc_style = ParagraphStyle('Desc', fontSize=10, textColor=colors.HexColor(TEXT_DARK), leading=14)
-        elements.append(Paragraph(invoice.get('concept'), desc_style))
-        elements.append(Spacer(1, 0.1*inch))
+        concept_style = ParagraphStyle('Concept', fontSize=9, textColor=colors.HexColor(TEXT_DARK), leading=11)
+        elements.append(Paragraph(f"<b>Concepto:</b> {invoice.get('concept')}", concept_style))
+        elements.append(Spacer(1, 0.08*inch))
     
     # Items table
     items = invoice.get('items', [])
