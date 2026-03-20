@@ -1259,37 +1259,37 @@ export const Invoices = () => {
                   />
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Cliente *</Label>
-                  <Select
-                    value={formData.client_id}
-                    onValueChange={(value) => setFormData({ ...formData, client_id: value })}
-                  >
-                    <SelectTrigger><SelectValue placeholder="Seleccionar cliente" /></SelectTrigger>
-                    <SelectContent>
-                      {clients.filter(c => !c.is_prospect).map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.name} {c.reference && `(${c.reference})`} {c.rfc && `- ${c.rfc}`}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Proyecto (opcional)</Label>
-                  <Select
-                    value={formData.project_id}
-                    onValueChange={(value) => setFormData({ ...formData, project_id: value })}
-                  >
-                    <SelectTrigger><SelectValue placeholder="Seleccionar proyecto" /></SelectTrigger>
-                    <SelectContent>
-                      {projects.map((p) => (
-                        <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div className="grid gap-2">
+                <Label>Cliente *</Label>
+                <Select
+                  value={formData.client_id}
+                  onValueChange={(value) => setFormData({ ...formData, client_id: value })}
+                >
+                  <SelectTrigger className="truncate"><SelectValue placeholder="Seleccionar cliente" /></SelectTrigger>
+                  <SelectContent>
+                    {clients.filter(c => !c.is_prospect).map((c) => (
+                      <SelectItem key={c.id} value={c.id} className="truncate">
+                        <span className="truncate block max-w-[400px]">
+                          {c.trade_name || c.name} {c.rfc && `- ${c.rfc}`}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid gap-2">
+                <Label>Proyecto (opcional)</Label>
+                <Select
+                  value={formData.project_id}
+                  onValueChange={(value) => setFormData({ ...formData, project_id: value })}
+                >
+                  <SelectTrigger><SelectValue placeholder="Seleccionar proyecto" /></SelectTrigger>
+                  <SelectContent>
+                    {projects.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
@@ -1315,26 +1315,6 @@ export const Invoices = () => {
                       <SelectItem value="credito_60">Crédito 60 días</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-              </div>
-              
-              {/* Campo Personalizado */}
-              <div className="grid grid-cols-2 gap-4">
-                <div className="grid gap-2">
-                  <Label>Etiqueta del Campo Personalizado</Label>
-                  <Input
-                    value={formData.custom_field_label}
-                    onChange={(e) => setFormData({ ...formData, custom_field_label: e.target.value })}
-                    placeholder="Ej: Orden de Trabajo, Pedido, Contrato"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label>{formData.custom_field_label || "Campo Personalizado"}</Label>
-                  <Input
-                    value={formData.custom_field}
-                    onChange={(e) => setFormData({ ...formData, custom_field: e.target.value })}
-                    placeholder={formData.custom_field_label ? `Ingrese ${formData.custom_field_label}` : "Valor del campo personalizado"}
-                  />
                 </div>
               </div>
 
@@ -1444,6 +1424,28 @@ export const Invoices = () => {
                 <div className="flex justify-between text-lg font-bold">
                   <span>Total:</span>
                   <span className="text-primary">{formatCurrency(formData.total)}</span>
+                </div>
+              </div>
+              
+              {/* Campo Personalizado - Debajo de totales */}
+              <div className="grid grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="grid gap-2">
+                  <Label className="text-blue-700">Etiqueta del Campo Personalizado</Label>
+                  <Input
+                    value={formData.custom_field_label}
+                    onChange={(e) => setFormData({ ...formData, custom_field_label: e.target.value })}
+                    placeholder="Ej: Orden de Trabajo, Pedido, Contrato"
+                    className="bg-white"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label className="text-blue-700">{formData.custom_field_label || "Campo Personalizado"}</Label>
+                  <Input
+                    value={formData.custom_field}
+                    onChange={(e) => setFormData({ ...formData, custom_field: e.target.value })}
+                    placeholder={formData.custom_field_label ? `Ingrese ${formData.custom_field_label}` : "Valor del campo personalizado"}
+                    className="bg-white"
+                  />
                 </div>
               </div>
             </div>

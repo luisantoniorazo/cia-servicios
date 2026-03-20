@@ -653,27 +653,6 @@ export const Quotes = () => {
                 />
               </div>
 
-              {/* Campo Personalizado */}
-              <div className="grid grid-cols-2 gap-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
-                <div className="grid gap-2">
-                  <Label className="text-blue-700">Etiqueta del Campo (opcional)</Label>
-                  <Input
-                    value={formData.custom_field_label}
-                    onChange={(e) => setFormData({ ...formData, custom_field_label: e.target.value })}
-                    placeholder="Ej: No. de Proyecto, Referencia, Código"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label className="text-blue-700">Valor del Campo</Label>
-                  <Input
-                    value={formData.custom_field}
-                    onChange={(e) => setFormData({ ...formData, custom_field: e.target.value })}
-                    placeholder="Ej: PROY-2024-001"
-                  />
-                </div>
-                <p className="col-span-2 text-xs text-blue-600">Este campo aparecerá en el PDF de la cotización</p>
-              </div>
-
               {/* Items */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -793,6 +772,29 @@ export const Quotes = () => {
                   <span className="text-primary">{formatCurrency(total)}</span>
                 </div>
               </div>
+              
+              {/* Campo Personalizado - Debajo de totales */}
+              <div className="grid grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="grid gap-2">
+                  <Label className="text-blue-700">Etiqueta del Campo (opcional)</Label>
+                  <Input
+                    value={formData.custom_field_label}
+                    onChange={(e) => setFormData({ ...formData, custom_field_label: e.target.value })}
+                    placeholder="Ej: No. de Proyecto, Referencia, Código"
+                    className="bg-white"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label className="text-blue-700">Valor del Campo</Label>
+                  <Input
+                    value={formData.custom_field}
+                    onChange={(e) => setFormData({ ...formData, custom_field: e.target.value })}
+                    placeholder="Ej: PROY-2024-001"
+                    className="bg-white"
+                  />
+                </div>
+                <p className="col-span-2 text-xs text-blue-600">Este campo aparecerá en el PDF de la cotización</p>
+              </div>
             </div>
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
@@ -824,13 +826,15 @@ export const Quotes = () => {
                     value={formData.client_id}
                     onValueChange={(value) => setFormData({ ...formData, client_id: value })}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="truncate">
                       <SelectValue placeholder="Seleccionar cliente" />
                     </SelectTrigger>
                     <SelectContent>
                       {clients.map((client) => (
-                        <SelectItem key={client.id} value={client.id}>
-                          {client.name} {client.reference && `(${client.reference})`}
+                        <SelectItem key={client.id} value={client.id} className="truncate">
+                          <span className="truncate block max-w-[250px]">
+                            {client.trade_name || client.name}
+                          </span>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -988,6 +992,29 @@ export const Quotes = () => {
                   <span>Total:</span>
                   <span className="text-primary">{formatCurrency(total)}</span>
                 </div>
+              </div>
+              
+              {/* Campo Personalizado - Debajo de totales */}
+              <div className="grid grid-cols-2 gap-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <div className="grid gap-2">
+                  <Label className="text-blue-700">Etiqueta del Campo (opcional)</Label>
+                  <Input
+                    value={formData.custom_field_label}
+                    onChange={(e) => setFormData({ ...formData, custom_field_label: e.target.value })}
+                    placeholder="Ej: No. de Proyecto, Referencia, Código"
+                    className="bg-white"
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label className="text-blue-700">Valor del Campo</Label>
+                  <Input
+                    value={formData.custom_field}
+                    onChange={(e) => setFormData({ ...formData, custom_field: e.target.value })}
+                    placeholder="Ej: PROY-2024-001"
+                    className="bg-white"
+                  />
+                </div>
+                <p className="col-span-2 text-xs text-blue-600">Este campo aparecerá en el PDF de la cotización</p>
               </div>
             </div>
             <DialogFooter>

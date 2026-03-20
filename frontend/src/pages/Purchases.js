@@ -263,7 +263,7 @@ export const Purchases = () => {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <Card className="stat-card">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">Total Órdenes</CardTitle>
@@ -271,6 +271,16 @@ export const Purchases = () => {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold font-[Chivo]">{stats.total}</div>
+          </CardContent>
+        </Card>
+        <Card className="stat-card border-red-200 bg-red-50/50">
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium text-red-700">Monto Total Compras</CardTitle>
+            <Package className="h-5 w-5 text-red-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold font-[Chivo] text-red-700">{formatCurrency(stats.totalValue)}</div>
+            <p className="text-xs text-red-600">Afecta cálculo de utilidad</p>
           </CardContent>
         </Card>
         <Card className="stat-card">
@@ -486,25 +496,30 @@ export const Purchases = () => {
                   data-testid="po-description-input"
                 />
               </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div className="grid gap-2">
-                  <Label htmlFor="subtotal">Subtotal</Label>
-                  <Input
-                    id="subtotal"
-                    type="number"
-                    value={formData.subtotal}
-                    onChange={(e) => handleSubtotalChange(e.target.value)}
-                    placeholder="0"
-                    data-testid="po-subtotal-input"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="tax">IVA</Label>
-                  <Input id="tax" type="number" value={formData.tax} disabled className="bg-slate-50" />
-                </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="total">Total</Label>
-                  <Input id="total" type="number" value={formData.total} disabled className="bg-slate-50 font-bold" />
+              <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                <p className="text-xs text-amber-700 mb-2 font-medium">El monto es importante para el cálculo de rentabilidad</p>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="grid gap-2">
+                    <Label htmlFor="subtotal" className="text-amber-800">Subtotal *</Label>
+                    <Input
+                      id="subtotal"
+                      type="number"
+                      value={formData.subtotal}
+                      onChange={(e) => handleSubtotalChange(e.target.value)}
+                      placeholder="0.00"
+                      required
+                      data-testid="po-subtotal-input"
+                      className="bg-white"
+                    />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="tax" className="text-amber-800">IVA (16%)</Label>
+                    <Input id="tax" type="number" value={formData.tax} disabled className="bg-slate-100" />
+                  </div>
+                  <div className="grid gap-2">
+                    <Label htmlFor="total" className="text-amber-800 font-bold">Total</Label>
+                    <Input id="total" type="number" value={formData.total} disabled className="bg-slate-100 font-bold" />
+                  </div>
                 </div>
               </div>
             </div>
