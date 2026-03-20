@@ -84,6 +84,7 @@ export function getStatusLabel(status) {
     approved: "Aprobado",
     ordered: "Ordenado",
     received: "Recibido",
+    invoiced: "Facturado",
     super_admin: "Super Admin",
     admin: "Administrador",
     manager: "Gerente",
