@@ -1,4 +1,4 @@
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, UploadFile, File, Query, Body, Response
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, status, UploadFile, File, Query, Body, Response, BackgroundTasks
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -4822,7 +4822,8 @@ async def update_company_billing(
 # ============== TICKET SYSTEM ROUTES ==============
 @api_router.post("/tickets")
 async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(get_current_user)):
-    """Create a new support ticket"""
+    """Create a new support ticket with automatic AI self-management"""
+    
     # Generate ticket number
     count = await db.tickets.count_documents({})
     ticket_number = f"TKT-{datetime.now().year}-{count + 1:04d}"
@@ -4838,10 +4839,238 @@ async def create_ticket(ticket_data: TicketCreate, current_user: dict = Depends(
     ticket_dict["created_at"] = ticket_dict["created_at"].isoformat()
     ticket_dict["updated_at"] = ticket_dict["updated_at"].isoformat()
     
-    # Insert a copy to avoid MongoDB adding _id to our response dict
+    # Add automatic response comment
+    auto_comment = {
+        "id": str(uuid.uuid4()),
+        "text": f"Gracias por reportar este problema. Nuestro sistema de inteligencia artificial está analizando tu ticket automáticamente. Te notificaremos en breve con una solución o con más información.",
+        "author_id": "system",
+        "author_name": "Sistema Automático",
+        "is_internal": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    ticket_dict["comments"] = [auto_comment]
+    ticket_dict["ai_processing"] = True
+    
+    # Insert ticket
     await db.tickets.insert_one({**ticket_dict})
     
+    # Start background AI processing
+    asyncio.create_task(process_ticket_with_ai(ticket_dict["id"], current_user))
+    
     return ticket_dict
+
+
+async def process_ticket_with_ai(ticket_id: str, user_info: dict):
+    """Background task to process ticket with AI - auto-diagnose and auto-resolve if possible"""
+    try:
+        if not EMERGENT_LLM_KEY:
+            logger.error("AI key not configured for ticket auto-processing")
+            return
+        
+        ticket = await db.tickets.find_one({"id": ticket_id}, {"_id": 0})
+        if not ticket:
+            return
+        
+        # Get company info
+        company = await db.companies.find_one({"id": ticket.get("company_id")}, {"_id": 0})
+        company_name = company.get("business_name") if company else "Desconocida"
+        
+        # Find similar resolved tickets
+        similar_tickets = await db.tickets.find(
+            {
+                "id": {"$ne": ticket_id},
+                "status": {"$in": ["resolved", "closed"]},
+                "resolution_notes": {"$exists": True, "$ne": None, "$ne": ""}
+            },
+            {"_id": 0, "title": 1, "description": 1, "resolution_notes": 1, "category": 1}
+        ).sort("resolved_at", -1).limit(10).to_list(10)
+        
+        # Build context
+        ticket_context = f"""
+TICKET NUEVO A RESOLVER:
+- Número: {ticket.get('ticket_number', 'N/A')}
+- Título: {ticket.get('title', 'Sin título')}
+- Descripción: {ticket.get('description', 'Sin descripción')}
+- Categoría: {ticket.get('category', 'general')}
+- Prioridad: {ticket.get('priority', 'medium')}
+- Empresa: {company_name}
+- Usuario: {ticket.get('created_by_name', 'Usuario')}
+"""
+        
+        if similar_tickets:
+            ticket_context += "\n\nTICKETS SIMILARES RESUELTOS ANTERIORMENTE:"
+            for i, st in enumerate(similar_tickets, 1):
+                ticket_context += f"""
+--- Caso #{i} ---
+Problema: {st.get('title', 'N/A')}
+Descripción: {st.get('description', 'N/A')[:300]}
+SOLUCIÓN APLICADA: {st.get('resolution_notes', 'N/A')}
+"""
+        
+        system_message = """Eres un asistente de soporte técnico autónomo para CIA SERVICIOS.
+Tu rol es RESOLVER tickets de soporte automáticamente cuando sea posible.
+
+IMPORTANTE:
+- Analiza el problema y busca patrones en tickets similares resueltos
+- Si encuentras una solución clara con alta confianza, proporciona instrucciones paso a paso
+- Si la solución requiere acción del usuario, dala claramente
+- Si requiere intervención técnica, indica qué se debe hacer
+
+SIEMPRE responde en español de forma clara, amigable y profesional.
+Imagina que estás hablando directamente con el usuario que reportó el problema."""
+
+        chat = LlmChat(
+            api_key=EMERGENT_LLM_KEY,
+            session_id=f"ticket-auto-{ticket_id}",
+            system_message=system_message
+        ).with_model("openai", "gpt-5.2")
+        
+        user_message = UserMessage(text=f"""Analiza y resuelve este ticket de soporte:
+
+{ticket_context}
+
+Proporciona tu respuesta en el siguiente formato JSON:
+{{
+    "puede_resolver": true/false,
+    "confianza": "alta/media/baja",
+    "diagnostico": "descripción del problema identificado",
+    "solucion": "pasos detallados para resolver el problema",
+    "respuesta_usuario": "mensaje amigable y completo para el usuario con la solución o información",
+    "requiere_escalamiento": true/false,
+    "notas_internas": "información adicional para el equipo técnico"
+}}
+
+Responde SOLO con el JSON, sin texto adicional.""")
+        
+        response = await chat.send_message(user_message)
+        
+        # Parse AI response
+        try:
+            # Clean response and parse JSON
+            clean_response = response.strip()
+            if clean_response.startswith("```"):
+                clean_response = clean_response.split("```")[1]
+                if clean_response.startswith("json"):
+                    clean_response = clean_response[4:]
+            
+            import json
+            ai_result = json.loads(clean_response)
+        except:
+            # If parsing fails, create a generic response
+            ai_result = {
+                "puede_resolver": False,
+                "confianza": "baja",
+                "diagnostico": "No se pudo analizar el ticket automáticamente",
+                "solucion": "",
+                "respuesta_usuario": f"Hemos recibido tu ticket #{ticket.get('ticket_number')}. Un miembro de nuestro equipo lo revisará pronto y te contactará con más información.",
+                "requiere_escalamiento": True,
+                "notas_internas": f"Error al procesar respuesta de IA: {response[:200]}"
+            }
+        
+        # Add AI response as comment
+        ai_comment = {
+            "id": str(uuid.uuid4()),
+            "text": ai_result.get("respuesta_usuario", "Estamos revisando tu solicitud."),
+            "author_id": "ai-assistant",
+            "author_name": "Asistente IA",
+            "is_internal": False,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # Prepare update
+        update_data = {
+            "ai_processing": False,
+            "ai_diagnosis": {
+                "id": str(uuid.uuid4()),
+                "diagnosis": ai_result.get("diagnostico", ""),
+                "solution": ai_result.get("solucion", ""),
+                "confidence": ai_result.get("confianza", "baja"),
+                "can_resolve": ai_result.get("puede_resolver", False),
+                "requires_escalation": ai_result.get("requiere_escalamiento", True),
+                "internal_notes": ai_result.get("notas_internas", ""),
+                "similar_tickets_found": len(similar_tickets),
+                "created_at": datetime.now(timezone.utc).isoformat()
+            },
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        # If AI can resolve with high confidence, mark as resolved
+        if ai_result.get("puede_resolver") and ai_result.get("confianza") == "alta":
+            update_data["status"] = "resolved"
+            update_data["resolved_at"] = datetime.now(timezone.utc).isoformat()
+            update_data["resolved_by"] = "ai-assistant"
+            update_data["resolved_by_name"] = "Asistente IA"
+            update_data["resolution_notes"] = ai_result.get("solucion", "Resuelto automáticamente por IA")
+            
+            # Add resolution comment
+            resolution_comment = {
+                "id": str(uuid.uuid4()),
+                "text": "✅ Este ticket ha sido resuelto automáticamente por nuestro sistema de IA. Si necesitas más ayuda, no dudes en contactarnos.",
+                "author_id": "ai-assistant",
+                "author_name": "Asistente IA",
+                "is_internal": False,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+            
+            await db.tickets.update_one(
+                {"id": ticket_id},
+                {
+                    "$set": update_data,
+                    "$push": {"comments": {"$each": [ai_comment, resolution_comment]}}
+                }
+            )
+        else:
+            # Not auto-resolved - add diagnosis and escalate if needed
+            if ai_result.get("requiere_escalamiento"):
+                update_data["status"] = "in_progress"
+                
+                # Add internal note for admin
+                internal_comment = {
+                    "id": str(uuid.uuid4()),
+                    "text": f"[NOTA INTERNA] {ai_result.get('notas_internas', 'Requiere revisión manual')}",
+                    "author_id": "ai-assistant",
+                    "author_name": "Sistema IA",
+                    "is_internal": True,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                }
+                
+                await db.tickets.update_one(
+                    {"id": ticket_id},
+                    {
+                        "$set": update_data,
+                        "$push": {"comments": {"$each": [ai_comment, internal_comment]}}
+                    }
+                )
+            else:
+                await db.tickets.update_one(
+                    {"id": ticket_id},
+                    {
+                        "$set": update_data,
+                        "$push": {"comments": ai_comment}
+                    }
+                )
+        
+        logger.info(f"AI processed ticket {ticket_id}: confidence={ai_result.get('confianza')}, resolved={ai_result.get('puede_resolver')}")
+        
+    except Exception as e:
+        logger.error(f"Error in AI ticket processing: {str(e)}")
+        # Add error comment
+        error_comment = {
+            "id": str(uuid.uuid4()),
+            "text": "Nuestro equipo ha sido notificado y revisará tu ticket pronto. Disculpa las molestias.",
+            "author_id": "system",
+            "author_name": "Sistema",
+            "is_internal": False,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        
+        await db.tickets.update_one(
+            {"id": ticket_id},
+            {
+                "$set": {"ai_processing": False, "updated_at": datetime.now(timezone.utc).isoformat()},
+                "$push": {"comments": error_comment}
+            }
+        )
 
 @api_router.get("/tickets")
 async def list_tickets(

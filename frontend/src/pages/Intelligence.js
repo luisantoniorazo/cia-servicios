@@ -175,11 +175,19 @@ export const Intelligence = () => {
     }
   };
 
-  const loadConversation = (conversation) => {
-    setMessages(conversation.messages || []);
-    setCurrentConversationId(conversation.id);
-    setHistoryOpen(false);
-    toast.success("Conversación cargada");
+  const loadConversation = async (conversation) => {
+    try {
+      // Fetch full conversation with messages from API
+      const response = await api.get(`/ai/conversations/${conversation.id}`);
+      const fullConversation = response.data;
+      
+      setMessages(fullConversation.messages || []);
+      setCurrentConversationId(fullConversation.id);
+      setHistoryOpen(false);
+      toast.success("Conversación cargada");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Error al cargar conversación"));
+    }
   };
 
   const deleteConversation = async (conversationId, e) => {

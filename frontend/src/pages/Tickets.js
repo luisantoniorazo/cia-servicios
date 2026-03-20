@@ -102,6 +102,26 @@ export const Tickets = () => {
     }
   }, [fetchTickets, company?.id]);
 
+  // Auto-refresh ticket detail when AI is processing
+  useEffect(() => {
+    let interval;
+    if (selectedTicket?.ai_processing) {
+      interval = setInterval(async () => {
+        try {
+          const response = await api.get(`/tickets/${selectedTicket.id}`);
+          setSelectedTicket(response.data);
+          // Also refresh the list
+          fetchTickets();
+        } catch (error) {
+          console.error("Error refreshing ticket:", error);
+        }
+      }, 5000); // Refresh every 5 seconds
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [selectedTicket?.ai_processing, selectedTicket?.id, api, fetchTickets]);
+
   const handleScreenshotCapture = async () => {
     try {
       // Use clipboard API to paste screenshot
@@ -147,15 +167,26 @@ export const Tickets = () => {
     e.preventDefault();
     setSubmitting(true);
     try {
-      await api.post("/tickets", {
+      const response = await api.post("/tickets", {
         company_id: company.id,
         ...formData,
         screenshots: screenshots.map(s => s.split(",")[1] || s), // Remove data URL prefix
       });
-      toast.success("Ticket creado exitosamente");
+      toast.success(
+        <div>
+          <p className="font-semibold">Ticket creado exitosamente</p>
+          <p className="text-sm">Nuestro asistente de IA está analizando tu solicitud...</p>
+        </div>,
+        { duration: 5000 }
+      );
       setDialogOpen(false);
       resetForm();
       fetchTickets();
+      
+      // Open the newly created ticket to see AI processing
+      setTimeout(() => {
+        openTicketDetail(response.data);
+      }, 1000);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Error al crear ticket"));
     } finally {
@@ -538,6 +569,36 @@ export const Tickets = () => {
                   </div>
                 )}
                 
+                {/* AI Processing Indicator */}
+                {selectedTicket.ai_processing && (
+                  <div className="p-3 bg-purple-50 rounded-sm border border-purple-200 flex items-center gap-3">
+                    <Loader2 className="h-5 w-5 text-purple-600 animate-spin" />
+                    <div>
+                      <p className="text-sm font-medium text-purple-800">Procesando con IA...</p>
+                      <p className="text-xs text-purple-600">Nuestro asistente está analizando tu ticket</p>
+                    </div>
+                  </div>
+                )}
+                
+                {/* AI Diagnosis */}
+                {selectedTicket.ai_diagnosis && (
+                  <div className="p-3 bg-gradient-to-r from-purple-50 to-blue-50 rounded-sm border border-purple-200">
+                    <h4 className="font-semibold text-purple-800 mb-2 flex items-center gap-2">
+                      🤖 Diagnóstico de IA
+                      <Badge className={`text-xs ${selectedTicket.ai_diagnosis.confidence === 'alta' ? 'bg-green-500' : selectedTicket.ai_diagnosis.confidence === 'media' ? 'bg-amber-500' : 'bg-red-500'}`}>
+                        Confianza: {selectedTicket.ai_diagnosis.confidence}
+                      </Badge>
+                    </h4>
+                    <p className="text-sm text-purple-700 mb-2">{selectedTicket.ai_diagnosis.diagnosis}</p>
+                    {selectedTicket.ai_diagnosis.solution && (
+                      <div className="mt-2 p-2 bg-white rounded border">
+                        <p className="text-xs font-medium text-slate-600 mb-1">Solución Sugerida:</p>
+                        <p className="text-sm text-slate-800 whitespace-pre-wrap">{selectedTicket.ai_diagnosis.solution}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
+                
                 {/* Resolution */}
                 {selectedTicket.resolution_notes && (
                   <div className="p-3 bg-emerald-50 rounded-sm border border-emerald-200">
@@ -558,19 +619,35 @@ export const Tickets = () => {
                     {selectedTicket.comments?.length === 0 ? (
                       <p className="text-sm text-muted-foreground">No hay comentarios aún</p>
                     ) : (
-                      selectedTicket.comments?.map((comment) => (
+                      selectedTicket.comments?.filter(c => !c.is_internal).map((comment) => (
                         <div
                           key={comment.id}
-                          className={`p-3 rounded-sm ${comment.is_admin ? "bg-blue-50 border-l-4 border-l-blue-500" : "bg-slate-50"}`}
+                          className={`p-3 rounded-sm ${
+                            comment.author_id === "ai-assistant" 
+                              ? "bg-purple-50 border-l-4 border-l-purple-500" 
+                              : comment.author_id === "system" 
+                                ? "bg-amber-50 border-l-4 border-l-amber-500"
+                                : comment.is_admin 
+                                  ? "bg-blue-50 border-l-4 border-l-blue-500" 
+                                  : "bg-slate-50"
+                          }`}
                         >
                           <div className="flex items-center justify-between text-xs mb-1">
-                            <span className="font-medium">
+                            <span className="font-medium flex items-center gap-2">
                               {comment.author_name}
-                              {comment.is_admin && <Badge className="ml-2 bg-blue-500 text-xs">Admin</Badge>}
+                              {comment.author_id === "ai-assistant" && (
+                                <Badge className="bg-purple-500 text-xs">🤖 IA</Badge>
+                              )}
+                              {comment.author_id === "system" && (
+                                <Badge className="bg-amber-500 text-xs">Sistema</Badge>
+                              )}
+                              {comment.is_admin && comment.author_id !== "ai-assistant" && comment.author_id !== "system" && (
+                                <Badge className="bg-blue-500 text-xs">Admin</Badge>
+                              )}
                             </span>
                             <span className="text-muted-foreground">{formatDate(comment.created_at)}</span>
                           </div>
-                          <p className="text-sm">{comment.text}</p>
+                          <p className="text-sm whitespace-pre-wrap">{comment.text}</p>
                         </div>
                       ))
                     )}
