@@ -96,10 +96,10 @@ export const CompanyLogin = () => {
         {/* Company Header */}
         <div className="text-center space-y-3 sm:space-y-4">
           <div className="flex justify-center">
-            {companyInfo?.logo_url ? (
+            {(companyInfo?.logo_url || companyInfo?.logo_file) ? (
               <div className="bg-white/10 backdrop-blur-sm p-3 sm:p-4 rounded-lg">
                 <img
-                  src={companyInfo.logo_url}
+                  src={companyInfo.logo_url || companyInfo.logo_file}
                   alt={companyInfo.business_name}
                   className="h-12 sm:h-16 w-auto"
                 />
