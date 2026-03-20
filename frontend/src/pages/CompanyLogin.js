@@ -135,7 +135,7 @@ export const CompanyLogin = () => {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="usuario@empresa.com"
+                    placeholder="Ingresa tu correo"
                     className="pl-9 h-10 sm:h-11"
                     value={loginForm.email}
                     onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
@@ -151,7 +151,7 @@ export const CompanyLogin = () => {
                   <Input
                     id="password"
                     type="password"
-                    placeholder="••••••••"
+                    placeholder="Ingresa tu contraseña"
                     className="pl-9 h-10 sm:h-11"
                     value={loginForm.password}
                     onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}

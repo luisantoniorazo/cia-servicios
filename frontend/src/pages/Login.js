@@ -131,7 +131,7 @@ export const Login = () => {
                       <Input
                         id="login-email"
                         type="email"
-                        placeholder="correo@empresa.com"
+                        placeholder="Ingresa tu correo"
                         className="pl-9"
                         value={loginForm.email}
                         onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
@@ -147,7 +147,7 @@ export const Login = () => {
                       <Input
                         id="login-password"
                         type="password"
-                        placeholder="••••••••"
+                        placeholder="Ingresa tu contraseña"
                         className="pl-9"
                         value={loginForm.password}
                         onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
@@ -176,7 +176,7 @@ export const Login = () => {
                       <Input
                         id="register-name"
                         type="text"
-                        placeholder="Juan Pérez"
+                        placeholder="Tu nombre completo"
                         className="pl-9"
                         value={registerForm.full_name}
                         onChange={(e) => setRegisterForm({ ...registerForm, full_name: e.target.value })}
@@ -192,7 +192,7 @@ export const Login = () => {
                       <Input
                         id="register-email"
                         type="email"
-                        placeholder="correo@empresa.com"
+                        placeholder="Tu correo electrónico"
                         className="pl-9"
                         value={registerForm.email}
                         onChange={(e) => setRegisterForm({ ...registerForm, email: e.target.value })}

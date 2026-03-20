@@ -101,7 +101,7 @@ export const SuperAdminLogin = () => {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="superadmin@cia-servicios.com"
+                    placeholder="Ingresa tu correo"
                     className="pl-9 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-500"
                     value={loginForm.email}
                     onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
@@ -117,7 +117,7 @@ export const SuperAdminLogin = () => {
                   <Input
                     id="password"
                     type="password"
-                    placeholder="••••••••"
+                    placeholder="Ingresa tu contraseña"
                     className="pl-9 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-500"
                     value={loginForm.password}
                     onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}

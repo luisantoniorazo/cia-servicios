@@ -8384,8 +8384,18 @@ async def get_dashboard_stats(company_id: str, current_user: dict = Depends(get_
     total_clients = len([c for c in clients if not c.get("is_prospect")])
     total_prospects = len([c for c in clients if c.get("is_prospect")])
     
-    total_revenue = sum(p.get("contract_amount", 0) for p in projects if p.get("status") in [ProjectStatus.ACTIVE, ProjectStatus.COMPLETED])
-    total_costs = sum(p.get("total_cost", 0) for p in projects)
+    # Calculate financials based on projects
+    # Ingresos = sum of contract_amount for active/completed projects
+    total_revenue = sum(p.get("contract_amount", 0) or 0 for p in projects if p.get("status") in [ProjectStatus.ACTIVE, ProjectStatus.COMPLETED])
+    
+    # Costos = sum of purchase orders linked to projects
+    project_ids = [p.get("id") for p in projects if p.get("status") in [ProjectStatus.ACTIVE, ProjectStatus.COMPLETED]]
+    purchase_orders = await db.purchase_orders.find(
+        {"company_id": company_id, "project_id": {"$in": project_ids}},
+        {"_id": 0, "total": 1}
+    ).to_list(10000)
+    total_costs = sum(po.get("total", 0) or 0 for po in purchase_orders)
+    
     total_profit = total_revenue - total_costs
     
     return {
