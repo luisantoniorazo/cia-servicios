@@ -78,6 +78,9 @@ import {
 } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { useTicketCounts } from "../components/Notifications/TicketBadge";
+import { AppVersionBadge, APP_VERSION } from "../components/AppVersion";
+import { ChangelogModal } from "../components/ChangelogModal";
+import { History, Sparkles } from "lucide-react";
 
 const LICENSE_TYPES = [
   { value: "basic", label: "Básica", users: 5 },
@@ -144,6 +147,7 @@ export const SuperAdminDashboard = () => {
   const [migratingData, setMigratingData] = useState(false);
   const [renewDialogOpen, setRenewDialogOpen] = useState(false);
   const [renewingSubscription, setRenewingSubscription] = useState(false);
+  const [changelogOpen, setChangelogOpen] = useState(false);
   const [renewForm, setRenewForm] = useState({
     months: 1,
     payment_amount: 0,
@@ -598,6 +602,16 @@ export const SuperAdminDashboard = () => {
               <h1 className="text-lg sm:text-xl font-bold text-white font-[Chivo]">Portal Super Admin</h1>
               <p className="text-xs sm:text-sm text-slate-400">Gestión de Licencias y Empresas</p>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="hidden sm:flex border-slate-600 text-slate-300 hover:bg-slate-700 text-xs gap-1"
+              onClick={() => setChangelogOpen(true)}
+              data-testid="changelog-btn"
+            >
+              <Sparkles className="h-3 w-3 text-amber-400" />
+              v{APP_VERSION}
+            </Button>
           </div>
           <div className="flex flex-wrap items-center gap-2 sm:gap-3">
             <Button 
@@ -2155,6 +2169,27 @@ export const SuperAdminDashboard = () => {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Changelog Modal */}
+      <ChangelogModal open={changelogOpen} onOpenChange={setChangelogOpen} />
+
+      {/* Footer con versión */}
+      <footer className="bg-slate-800 border-t border-slate-700 mt-8">
+        <div className="max-w-7xl mx-auto px-6 py-3 flex items-center justify-between">
+          <p className="text-xs text-slate-500">
+            © 2026 CIA Servicios - Control Integral de Administración
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs text-slate-400 hover:text-white gap-1"
+            onClick={() => setChangelogOpen(true)}
+          >
+            <Sparkles className="h-3 w-3" />
+            v{APP_VERSION} - Ver cambios
+          </Button>
+        </div>
+      </footer>
     </div>
   );
 };

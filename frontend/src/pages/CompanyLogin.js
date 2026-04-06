@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../co
 import { Skeleton } from "../components/ui/skeleton";
 import { toast } from "sonner";
 import { Building2, Lock, Mail, AlertTriangle } from "lucide-react";
+import { APP_VERSION } from "../components/AppVersion";
 
 export const CompanyLogin = () => {
   const { slug } = useParams();
@@ -183,7 +184,7 @@ export const CompanyLogin = () => {
         </Card>
 
         <p className="text-center text-xs sm:text-sm text-slate-400">
-          &copy; 2024 CIA Servicios. Control Integral Administrativo.
+          &copy; 2026 CIA Servicios v{APP_VERSION}. Control Integral Administrativo.
         </p>
       </div>
     </div>

@@ -1,8 +1,13 @@
 import smtplib
 import asyncio
 import logging
+import json
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.base import MIMEBase
+from email import encoders
+from datetime import datetime
+import io
 
 logger = logging.getLogger(__name__)
 
@@ -221,3 +226,128 @@ def get_password_reset_template(user_name: str, reset_url: str):
     </body>
     </html>
     """
+
+
+def get_backup_email_template(backup_date: str, stats: dict):
+    """Generate HTML template for weekly backup email"""
+    return f"""
+    <html>
+    <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #004e92, #000428); padding: 30px; text-align: center;">
+            <h1 style="color: white; margin: 0;">CIA SERVICIOS</h1>
+            <p style="color: #94a3b8; margin-top: 10px;">Respaldo Semanal de Datos</p>
+        </div>
+        <div style="padding: 30px; background: #f8fafc;">
+            <h2 style="color: #1e293b;">✅ Respaldo Completado</h2>
+            <p style="color: #475569;">
+                Se ha generado exitosamente el respaldo semanal de datos del sistema.
+            </p>
+            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 8px; padding: 20px; margin: 20px 0;">
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b;">Fecha de respaldo:</td>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold;">{backup_date}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b;">Empresas:</td>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold;">{stats.get('companies', 0)}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b;">Usuarios:</td>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold;">{stats.get('users', 0)}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b;">Clientes:</td>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold;">{stats.get('clients', 0)}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b;">Proyectos:</td>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold;">{stats.get('projects', 0)}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; color: #64748b;">Cotizaciones:</td>
+                        <td style="padding: 10px 0; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold;">{stats.get('quotes', 0)}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 10px 0; color: #64748b;">Facturas:</td>
+                        <td style="padding: 10px 0; text-align: right; font-weight: bold;">{stats.get('invoices', 0)}</td>
+                    </tr>
+                </table>
+            </div>
+            <p style="color: #475569;">
+                El archivo de respaldo se encuentra adjunto a este correo en formato JSON.
+            </p>
+            <p style="color: #94a3b8; font-size: 14px;">
+                Guarde este archivo en un lugar seguro. Este respaldo puede ser utilizado para restaurar 
+                los datos en caso de emergencia.
+            </p>
+        </div>
+        <div style="padding: 20px; text-align: center; background: #1e293b;">
+            <p style="color: #94a3b8; margin: 0; font-size: 12px;">
+                &copy; 2026 CIA SERVICIOS - Control Integral Administrativo
+            </p>
+        </div>
+    </body>
+    </html>
+    """
+
+
+def send_email_with_attachment_sync(
+    smtp_host: str, 
+    smtp_port: int, 
+    use_tls: bool, 
+    use_ssl: bool, 
+    sender_email: str, 
+    sender_password: str, 
+    to_email: str, 
+    subject: str, 
+    html_body: str,
+    attachment_data: bytes,
+    attachment_filename: str,
+    text_body: str = None
+):
+    """Send email with attachment synchronously using SMTP"""
+    msg = MIMEMultipart("mixed")
+    msg["Subject"] = subject
+    msg["From"] = sender_email
+    msg["To"] = to_email
+    
+    # Create the body part
+    body_part = MIMEMultipart("alternative")
+    if text_body:
+        part1 = MIMEText(text_body, "plain")
+        body_part.attach(part1)
+    part2 = MIMEText(html_body, "html")
+    body_part.attach(part2)
+    msg.attach(body_part)
+    
+    # Add attachment
+    attachment = MIMEBase("application", "octet-stream")
+    attachment.set_payload(attachment_data)
+    encoders.encode_base64(attachment)
+    attachment.add_header(
+        "Content-Disposition",
+        f"attachment; filename={attachment_filename}"
+    )
+    msg.attach(attachment)
+    
+    try:
+        if use_ssl:
+            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=60)
+        else:
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=60)
+            if use_tls:
+                server.starttls()
+        
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, to_email, msg.as_string())
+        server.quit()
+        return {"success": True, "message": "Email con respaldo enviado correctamente"}
+    except smtplib.SMTPAuthenticationError:
+        return {"success": False, "message": "Error de autenticación. Verifica el correo y contraseña."}
+    except smtplib.SMTPConnectError:
+        return {"success": False, "message": "No se pudo conectar al servidor SMTP. Verifica el host y puerto."}
+    except smtplib.SMTPException as e:
+        return {"success": False, "message": f"Error SMTP: {str(e)}"}
+    except Exception as e:
+        return {"success": False, "message": f"Error: {str(e)}"}

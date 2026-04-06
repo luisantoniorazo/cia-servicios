@@ -4557,6 +4557,154 @@ async def run_scheduled_diagnostics():
         }
         await db.scheduled_diagnostics.insert_one(error_report)
 
+
+async def run_weekly_backup():
+    """Run weekly database backup and send via email"""
+    logger.info("🔄 Iniciando respaldo semanal...")
+    
+    try:
+        # Get server config for email settings
+        server_config = await db.server_config.find_one({}, {"_id": 0})
+        if not server_config:
+            logger.warning("⚠️ No hay configuración de servidor para respaldo")
+            return
+        
+        # Check if backup email is configured
+        if not server_config.get("email_general_enabled"):
+            logger.info("📧 Email general no habilitado, omitiendo respaldo por correo")
+            return
+        
+        email_address = server_config.get("email_general_address")
+        email_password = server_config.get("email_general_password")
+        smtp_host = server_config.get("email_general_smtp_host")
+        smtp_port = server_config.get("email_general_smtp_port", 587)
+        use_tls = server_config.get("email_general_use_tls", True)
+        use_ssl = server_config.get("email_general_use_ssl", False)
+        
+        if not all([email_address, email_password, smtp_host]):
+            logger.warning("⚠️ Configuración de email incompleta para respaldo")
+            return
+        
+        # Collect all data from collections
+        backup_data = {
+            "backup_date": datetime.now(timezone.utc).isoformat(),
+            "version": "1.0.0",
+            "collections": {}
+        }
+        
+        # Collections to backup (excluding sensitive data like passwords)
+        collections_to_backup = [
+            "companies", "users", "clients", "projects", "quotes", 
+            "invoices", "purchases", "suppliers", "documents", 
+            "field_reports", "tickets", "reminders"
+        ]
+        
+        stats = {}
+        for collection_name in collections_to_backup:
+            try:
+                collection = db[collection_name]
+                # Get all documents but exclude password fields
+                docs = await collection.find(
+                    {}, 
+                    {"password_hash": 0, "password": 0, "_id": 0}
+                ).to_list(None)
+                
+                # Convert any remaining ObjectId or datetime to string
+                for doc in docs:
+                    for key, value in list(doc.items()):
+                        if hasattr(value, 'isoformat'):
+                            doc[key] = value.isoformat()
+                
+                backup_data["collections"][collection_name] = docs
+                stats[collection_name] = len(docs)
+            except Exception as e:
+                logger.error(f"Error respaldando {collection_name}: {e}")
+                backup_data["collections"][collection_name] = []
+                stats[collection_name] = 0
+        
+        # Generate JSON backup
+        import json
+        backup_json = json.dumps(backup_data, indent=2, ensure_ascii=False, default=str)
+        backup_bytes = backup_json.encode('utf-8')
+        
+        # Generate filename
+        backup_date = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        filename = f"cia_servicios_backup_{backup_date}.json"
+        
+        # Import email utilities
+        from utils.email import get_backup_email_template, send_email_with_attachment_sync
+        
+        # Generate email template
+        html_body = get_backup_email_template(
+            backup_date=datetime.now(timezone.utc).strftime("%d/%m/%Y %H:%M UTC"),
+            stats=stats
+        )
+        
+        # Send email with attachment
+        result = send_email_with_attachment_sync(
+            smtp_host=smtp_host,
+            smtp_port=smtp_port,
+            use_tls=use_tls,
+            use_ssl=use_ssl,
+            sender_email=email_address,
+            sender_password=email_password,
+            to_email=email_address,  # Send to same email configured
+            subject=f"CIA Servicios - Respaldo Semanal {backup_date}",
+            html_body=html_body,
+            attachment_data=backup_bytes,
+            attachment_filename=filename
+        )
+        
+        # Save backup log
+        backup_log = {
+            "id": str(uuid.uuid4()),
+            "type": "weekly_backup",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "status": "completed" if result.get("success") else "failed",
+            "stats": stats,
+            "email_sent_to": email_address,
+            "filename": filename,
+            "size_bytes": len(backup_bytes),
+            "message": result.get("message")
+        }
+        await db.backup_logs.insert_one(backup_log)
+        
+        if result.get("success"):
+            logger.info(f"✅ Respaldo semanal enviado exitosamente a {email_address}")
+        else:
+            logger.error(f"❌ Error enviando respaldo: {result.get('message')}")
+            
+    except Exception as e:
+        logger.error(f"❌ Error en respaldo semanal: {str(e)}")
+        error_log = {
+            "id": str(uuid.uuid4()),
+            "type": "weekly_backup",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "status": "failed",
+            "error": str(e)
+        }
+        await db.backup_logs.insert_one(error_log)
+
+
+@api_router.get("/super-admin/system/backup-logs")
+async def get_backup_logs(
+    limit: int = 20,
+    current_user: dict = Depends(require_super_admin)
+):
+    """Get backup history logs"""
+    logs = await db.backup_logs.find(
+        {}, {"_id": 0}
+    ).sort("created_at", -1).limit(limit).to_list(limit)
+    return logs
+
+
+@api_router.post("/super-admin/system/run-backup")
+async def run_manual_backup(current_user: dict = Depends(require_super_admin)):
+    """Manually trigger a backup"""
+    await run_weekly_backup()
+    return {"message": "Respaldo iniciado. Revisa los logs para el estado."}
+
+
 @api_router.get("/super-admin/system/scheduled-diagnostics")
 async def get_scheduled_diagnostics(
     limit: int = 30,
@@ -11513,8 +11661,17 @@ async def startup_event():
         replace_existing=True
     )
     
+    # Schedule weekly backup every Sunday at 3:00 AM
+    scheduler.add_job(
+        run_weekly_backup,
+        CronTrigger(day_of_week='sun', hour=3, minute=0),
+        id="weekly_backup",
+        name="Respaldo Semanal",
+        replace_existing=True
+    )
+    
     scheduler.start()
-    logger.info("✅ Scheduler iniciado - Diagnósticos diarios a las 2:00 AM, Verificación de cancelaciones CFDI cada hora")
+    logger.info("✅ Scheduler iniciado - Diagnósticos diarios a las 2:00 AM, Verificación de cancelaciones CFDI cada hora, Respaldo semanal domingos 3:00 AM")
 
 @app.on_event("shutdown")
 async def shutdown_db_client():

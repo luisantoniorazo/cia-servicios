@@ -7,6 +7,7 @@ import { Label } from "../components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { toast } from "sonner";
 import { Shield, Lock, Mail, AlertTriangle } from "lucide-react";
+import { APP_VERSION } from "../components/AppVersion";
 
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_cia-operacional/artifacts/0bkwa552_Logo%20CIA.jpg";
 
@@ -157,7 +158,7 @@ export const SuperAdminLogin = () => {
         <div className="flex items-center justify-center gap-3">
           <img src={LOGO_URL} alt="CIA" className="h-8 w-auto opacity-50" />
           <p className="text-sm text-slate-500">
-            CIA SERVICIOS - Sistema de Control
+            CIA SERVICIOS - Sistema de Control v{APP_VERSION}
           </p>
         </div>
       </div>

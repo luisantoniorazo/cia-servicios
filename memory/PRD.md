@@ -2,9 +2,11 @@
 
 ## Información General
 - **Nombre**: CIA SERVICIOS - Control Estratégico de Servicios y Proyectos
-- **Versión**: 3.8.0
-- **Última Actualización**: Diciembre 2025
+- **Versión**: 1.0.0 (Producción)
+- **Última Actualización**: Abril 2026
 - **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2 + Facturama + Stripe
+- **Servidor de Producción**: DigitalOcean Droplet `104.236.227.110`
+- **Dominio**: `cia.ciasistem.com` (pendiente SSL)
 
 ## Problem Statement Original
 Aplicación empresarial de renta mensual que permita gestionar, monitorear y optimizar todos los procesos operativos, comerciales y estratégicos de una empresa mexicana de servicios y proyectos industriales. Sistema multi-tenant con Super Admin para gestión de suscripciones.
