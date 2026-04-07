@@ -83,7 +83,7 @@ import { ChangelogModal } from "../components/ChangelogModal";
 import { History, Sparkles } from "lucide-react";
 
 const LICENSE_TYPES = [
-  { value: "test", label: "Prueba ($1 MXN)", users: 1, price: 1 },
+  { value: "test", label: "Prueba ($10 MXN)", users: 1, price: 10 },
   { value: "basic", label: "Básica ($499 MXN)", users: 5, price: 499 },
   { value: "professional", label: "Profesional ($999 MXN)", users: 15, price: 999 },
   { value: "enterprise", label: "Empresarial ($1,999 MXN)", users: 50, price: 1999 },
