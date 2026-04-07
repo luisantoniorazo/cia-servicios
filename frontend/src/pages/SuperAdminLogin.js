@@ -108,6 +108,7 @@ export const SuperAdminLogin = () => {
                     value={loginForm.email}
                     onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
                     required
+                    autoComplete="off"
                     data-testid="super-admin-email-input"
                   />
                 </div>
@@ -124,6 +125,7 @@ export const SuperAdminLogin = () => {
                     value={loginForm.password}
                     onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
                     required
+                    autoComplete="new-password"
                     data-testid="super-admin-password-input"
                   />
                   <button

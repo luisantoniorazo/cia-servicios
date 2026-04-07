@@ -142,6 +142,7 @@ export const CompanyLogin = () => {
                     value={loginForm.email}
                     onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
                     required
+                    autoComplete="off"
                     data-testid="company-email-input"
                   />
                 </div>
@@ -158,6 +159,7 @@ export const CompanyLogin = () => {
                     value={loginForm.password}
                     onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
                     required
+                    autoComplete="new-password"
                     data-testid="company-password-input"
                   />
                   <button

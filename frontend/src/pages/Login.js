@@ -139,6 +139,7 @@ export const Login = () => {
                         value={loginForm.email}
                         onChange={(e) => setLoginForm({ ...loginForm, email: e.target.value })}
                         required
+                        autoComplete="off"
                         data-testid="login-email-input"
                       />
                     </div>
@@ -155,6 +156,7 @@ export const Login = () => {
                         value={loginForm.password}
                         onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
                         required
+                        autoComplete="new-password"
                         data-testid="login-password-input"
                       />
                       <button
