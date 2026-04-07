@@ -22,6 +22,42 @@ import {
 // Changelog data - update this with each release
 export const CHANGELOG_DATA = [
   {
+    version: "1.1.0",
+    date: "2026-04-07",
+    title: "Integración de Pagos Stripe",
+    description: "Sistema de pagos con Stripe completamente funcional.",
+    changes: [
+      {
+        type: "feature",
+        description: "Botón de pago rápido con Stripe en Mi Suscripción"
+      },
+      {
+        type: "feature",
+        description: "Visor de contraseña (ícono de ojo) en todos los logins"
+      },
+      {
+        type: "feature",
+        description: "Sesión de Super Admin expira en 20 minutos por seguridad"
+      },
+      {
+        type: "feature",
+        description: "Sesión de clientes válida todo el día hasta medianoche"
+      },
+      {
+        type: "improvement",
+        description: "Mensaje de sesión expirada con redirección automática"
+      },
+      {
+        type: "security",
+        description: "Campos de contraseña no permiten autocompletado"
+      },
+      {
+        type: "fix",
+        description: "Favicon actualizado con logo de CIA"
+      }
+    ]
+  },
+  {
     version: "1.0.0",
     date: "2026-04-06",
     title: "Lanzamiento Inicial en Producción",

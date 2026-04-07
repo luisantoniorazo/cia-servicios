@@ -974,7 +974,6 @@ async def create_quick_stripe_payment(
     
     # Price mapping based on license type
     price_map = {
-        "test": 10.00,  # Stripe minimum is $10 MXN
         "basic": 499.00,
         "professional": 999.00,
         "enterprise": 1999.00,

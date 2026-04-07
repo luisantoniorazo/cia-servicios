@@ -3,8 +3,8 @@ import { Badge } from "./ui/badge";
 import { Info } from "lucide-react";
 
 // App version - update this with each release
-export const APP_VERSION = "1.0.0";
-export const BUILD_DATE = "2026-04-06";
+export const APP_VERSION = "1.1.0";
+export const BUILD_DATE = "2026-04-07";
 
 export const AppVersion = ({ className = "" }) => {
   return (
