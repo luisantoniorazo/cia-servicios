@@ -946,6 +946,142 @@ async def create_stripe_checkout_session(
         logger.error(f"Stripe checkout error: {e}")
         raise HTTPException(status_code=500, detail=f"Error al crear sesión de pago: {str(e)}")
 
+
+class QuickPaymentRequest(BaseModel):
+    origin_url: str
+
+
+@router.post("/checkout/quick-payment")
+async def create_quick_stripe_payment(
+    request: QuickPaymentRequest,
+    http_request: Request,
+    current_user: dict = Depends(get_current_user_sub)
+):
+    """Create quick Stripe checkout session based on company's current plan"""
+    company_id = current_user.get("company_id")
+    
+    # Get company info
+    company = await _db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    # Get license type and determine price
+    license_type = company.get("license_type", "basic")
+    
+    # Price mapping based on license type
+    price_map = {
+        "test": 1.00,
+        "basic": 499.00,
+        "professional": 999.00,
+        "enterprise": 1999.00,
+        "unlimited": 2999.00
+    }
+    
+    amount = price_map.get(license_type, 499.00)
+    plan_name = {
+        "test": "Plan Prueba",
+        "basic": "Plan Básico",
+        "professional": "Plan Profesional", 
+        "enterprise": "Plan Empresarial",
+        "unlimited": "Plan Ilimitado"
+    }.get(license_type, "Plan Básico")
+    
+    # Get Stripe API key
+    stripe_api_key = os.environ.get("STRIPE_API_KEY")
+    if not stripe_api_key:
+        # Try from server config
+        config = await _db.server_config.find_one({}, {"_id": 0})
+        if config:
+            stripe_api_key = config.get("stripe_api_key")
+    
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Stripe no está configurado")
+    
+    # Initialize Stripe
+    webhook_url = f"{str(http_request.base_url)}api/webhook/stripe"
+    stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url=webhook_url)
+    
+    # Build URLs
+    success_url = f"{request.origin_url}/empresa/{company.get('slug')}/subscription?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{request.origin_url}/empresa/{company.get('slug')}/subscription?cancelled=true"
+    
+    # Create a quick invoice record
+    invoice_id = str(uuid.uuid4())
+    invoice_number = f"INV-QUICK-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    now = datetime.now(timezone.utc)
+    
+    invoice = {
+        "id": invoice_id,
+        "company_id": company_id,
+        "invoice_number": invoice_number,
+        "plan_id": license_type,
+        "plan_name": plan_name,
+        "period_start": now.isoformat(),
+        "period_end": (now + relativedelta(months=1)).isoformat(),
+        "subtotal": amount,
+        "tax": 0,
+        "total": amount,
+        "currency": "MXN",
+        "status": "pending",
+        "payment_method": "stripe",
+        "created_at": now.isoformat(),
+        "quick_payment": True
+    }
+    await _db.subscription_invoices.insert_one({**invoice})
+    
+    # Create checkout request
+    checkout_request = CheckoutSessionRequest(
+        amount=amount,
+        currency="mxn",
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata={
+            "invoice_id": invoice_id,
+            "company_id": company_id,
+            "company_name": company.get("business_name", ""),
+            "invoice_number": invoice_number,
+            "plan_id": license_type,
+            "quick_payment": "true"
+        }
+    )
+    
+    try:
+        session = await stripe_checkout.create_checkout_session(checkout_request)
+        
+        # Create payment transaction record
+        transaction = {
+            "id": str(uuid.uuid4()),
+            "session_id": session.session_id,
+            "invoice_id": invoice_id,
+            "company_id": company_id,
+            "amount": amount,
+            "currency": "mxn",
+            "payment_status": "initiated",
+            "metadata": checkout_request.metadata,
+            "created_at": now.isoformat()
+        }
+        await _db.payment_transactions.insert_one({**transaction})
+        
+        # Update invoice with session ID
+        await _db.subscription_invoices.update_one(
+            {"id": invoice_id},
+            {"$set": {"stripe_session_id": session.session_id}}
+        )
+        
+        return {
+            "url": session.url,
+            "session_id": session.session_id,
+            "amount": amount,
+            "plan": plan_name
+        }
+        
+    except Exception as e:
+        logger.error(f"Quick Stripe payment error: {e}")
+        # Clean up the invoice
+        await _db.subscription_invoices.delete_one({"id": invoice_id})
+        raise HTTPException(status_code=500, detail=f"Error al crear sesión de pago: {str(e)}")
+
+
 @router.get("/checkout/status/{session_id}")
 async def get_checkout_status(
     session_id: str,

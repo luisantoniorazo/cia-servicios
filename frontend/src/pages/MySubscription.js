@@ -184,6 +184,26 @@ const MySubscription = () => {
     }
   };
 
+  const handleQuickStripePayment = async () => {
+    setProcessingPayment(true);
+    try {
+      const originUrl = window.location.origin;
+      const response = await api.post("/subscriptions/checkout/quick-payment", {
+        origin_url: originUrl
+      });
+      
+      if (response.data.url) {
+        window.location.href = response.data.url;
+      } else {
+        toast.error("Error al crear sesión de pago");
+      }
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al procesar pago");
+    } finally {
+      setProcessingPayment(false);
+    }
+  };
+
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
     toast.success("Copiado al portapapeles");
@@ -333,14 +353,30 @@ const MySubscription = () => {
 
             <div className="flex flex-col justify-center items-center md:items-end gap-3">
               {pendingInvoices.length === 0 && (
-                <Button 
-                  onClick={() => setRequestInvoiceDialogOpen(true)}
-                  className="w-full md:w-auto"
-                  data-testid="request-invoice-btn"
-                >
-                  <FileText className="mr-2 h-4 w-4" />
-                  Solicitar Renovación
-                </Button>
+                <>
+                  <Button 
+                    onClick={handleQuickStripePayment}
+                    disabled={processingPayment}
+                    className="w-full md:w-auto bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                    data-testid="quick-pay-btn"
+                  >
+                    {processingPayment ? (
+                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <CreditCard className="mr-2 h-4 w-4" />
+                    )}
+                    Pagar Suscripción
+                  </Button>
+                  <Button 
+                    variant="outline"
+                    onClick={() => setRequestInvoiceDialogOpen(true)}
+                    className="w-full md:w-auto"
+                    data-testid="request-invoice-btn"
+                  >
+                    <FileText className="mr-2 h-4 w-4" />
+                    Solicitar Factura
+                  </Button>
+                </>
               )}
               {daysRemaining !== null && daysRemaining <= 15 && daysRemaining > 0 && (
                 <p className="text-sm text-amber-500 text-center md:text-right">
