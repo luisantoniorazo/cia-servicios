@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import axios from "axios";
+import { toast } from "sonner";
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
@@ -19,6 +20,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(true);
   const [company, setCompany] = useState(null);
   const [companySlug, setCompanySlug] = useState(localStorage.getItem("cia_company_slug"));
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   const api = axios.create({
     baseURL: `${API_URL}/api`,
@@ -26,6 +28,36 @@ export const AuthProvider = ({ children }) => {
       "Content-Type": "application/json",
     },
   });
+
+  // Function to handle session expiration
+  const handleSessionExpired = useCallback(() => {
+    if (!sessionExpired) {
+      setSessionExpired(true);
+      localStorage.removeItem("cia_token");
+      localStorage.removeItem("cia_company_slug");
+      setToken(null);
+      setUser(null);
+      setCompany(null);
+      setCompanySlug(null);
+      toast.error("Tu sesión ha expirado. Por favor, inicia sesión nuevamente.", {
+        duration: 5000,
+      });
+      // Redirect to appropriate login page
+      const currentPath = window.location.pathname;
+      if (currentPath.includes("/admin-portal")) {
+        window.location.href = "/admin-portal";
+      } else if (currentPath.includes("/empresa/")) {
+        const slug = currentPath.split("/empresa/")[1]?.split("/")[0];
+        if (slug) {
+          window.location.href = `/empresa/${slug}/login`;
+        } else {
+          window.location.href = "/";
+        }
+      } else {
+        window.location.href = "/";
+      }
+    }
+  }, [sessionExpired]);
 
   api.interceptors.request.use((config) => {
     const storedToken = localStorage.getItem("cia_token");
@@ -38,12 +70,15 @@ export const AuthProvider = ({ children }) => {
   api.interceptors.response.use(
     (response) => response,
     (error) => {
-      if (error.response?.status === 401) {
-        // Don't auto-logout on 401 for login endpoints
-        const url = error.config?.url || "";
-        if (!url.includes("/login") && !url.includes("/setup") && !url.includes("/info")) {
-          logout();
-        }
+      const status = error.response?.status;
+      const url = error.config?.url || "";
+      
+      // Don't auto-logout on login/setup/info endpoints
+      const isAuthEndpoint = url.includes("/login") || url.includes("/setup") || url.includes("/info");
+      
+      if (!isAuthEndpoint && (status === 401 || status === 403)) {
+        // Session expired or forbidden - logout user
+        handleSessionExpired();
       }
       return Promise.reject(error);
     }
@@ -85,6 +120,7 @@ export const AuthProvider = ({ children }) => {
     setUser(userData);
     setCompany(null);
     setCompanySlug(null);
+    setSessionExpired(false); // Reset session expired state
     
     return userData;
   };
@@ -103,6 +139,7 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     setCompany(null);
     setCompanySlug(null);
+    setSessionExpired(false); // Reset session expired state
   };
 
   // Company Login
@@ -116,6 +153,7 @@ export const AuthProvider = ({ children }) => {
     setUser(userData);
     setCompany(companyData);
     setCompanySlug(slug);
+    setSessionExpired(false); // Reset session expired state
     
     return { user: userData, company: companyData };
   };
@@ -129,6 +167,7 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     setCompany(null);
     setCompanySlug(null);
+    setSessionExpired(false); // Reset session expired state
     return savedSlug;
   };
 
