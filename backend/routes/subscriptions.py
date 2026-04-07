@@ -974,10 +974,13 @@ async def create_quick_stripe_payment(
     
     # Price mapping based on license type
     price_map = {
-        "basic": 499.00,
-        "professional": 999.00,
-        "enterprise": 1999.00,
-        "unlimited": 2999.00
+        "base": 2500.00,
+        "facturacion": 3000.00,
+        # Legacy plans (for backwards compatibility)
+        "basic": 2500.00,
+        "professional": 2500.00,
+        "enterprise": 3000.00,
+        "unlimited": 3000.00
     }
     
     amount = price_map.get(license_type, 499.00)
