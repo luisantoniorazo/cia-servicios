@@ -83,10 +83,11 @@ import { ChangelogModal } from "../components/ChangelogModal";
 import { History, Sparkles } from "lucide-react";
 
 const LICENSE_TYPES = [
-  { value: "basic", label: "Básica", users: 5 },
-  { value: "professional", label: "Profesional", users: 15 },
-  { value: "enterprise", label: "Empresarial", users: 50 },
-  { value: "unlimited", label: "Ilimitada", users: 999 },
+  { value: "test", label: "Prueba ($1 MXN)", users: 1, price: 1 },
+  { value: "basic", label: "Básica ($499 MXN)", users: 5, price: 499 },
+  { value: "professional", label: "Profesional ($999 MXN)", users: 15, price: 999 },
+  { value: "enterprise", label: "Empresarial ($1,999 MXN)", users: 50, price: 1999 },
+  { value: "unlimited", label: "Ilimitada", users: 999, price: 2999 },
 ];
 
 export const SuperAdminDashboard = () => {
