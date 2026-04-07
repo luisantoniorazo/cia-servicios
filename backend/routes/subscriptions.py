@@ -880,8 +880,13 @@ async def create_stripe_checkout_session(
     if invoice["status"] == "paid":
         raise HTTPException(status_code=400, detail="Esta factura ya está pagada")
     
-    # Get Stripe API key
+    # Get Stripe API key - check environment first, then database
     stripe_api_key = os.environ.get("STRIPE_API_KEY")
+    if not stripe_api_key:
+        config = await _db.server_config.find_one({}, {"_id": 0, "stripe_api_key": 1})
+        if config:
+            stripe_api_key = config.get("stripe_api_key")
+    
     if not stripe_api_key:
         raise HTTPException(status_code=500, detail="Stripe no está configurado")
     
