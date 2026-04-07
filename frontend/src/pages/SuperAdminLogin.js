@@ -6,7 +6,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../components/ui/card";
 import { toast } from "sonner";
-import { Shield, Lock, Mail, AlertTriangle } from "lucide-react";
+import { Shield, Lock, Mail, AlertTriangle, Eye, EyeOff } from "lucide-react";
 import { APP_VERSION } from "../components/AppVersion";
 
 const LOGO_URL = "https://customer-assets.emergentagent.com/job_cia-operacional/artifacts/0bkwa552_Logo%20CIA.jpg";
@@ -16,6 +16,7 @@ export const SuperAdminLogin = () => {
   const { superAdminLogin, setupSuperAdmin } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [showSetup, setShowSetup] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   
   const [loginForm, setLoginForm] = useState({
     email: "",
@@ -117,14 +118,22 @@ export const SuperAdminLogin = () => {
                   <Lock className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
                   <Input
                     id="password"
-                    type="password"
+                    type={showPassword ? "text" : "password"}
                     placeholder="Ingresa tu contraseña"
-                    className="pl-9 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-500"
+                    className="pl-9 pr-10 bg-slate-700/50 border-slate-600 text-white placeholder:text-slate-500"
                     value={loginForm.password}
                     onChange={(e) => setLoginForm({ ...loginForm, password: e.target.value })}
                     required
                     data-testid="super-admin-password-input"
                   />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-3 text-slate-400 hover:text-slate-200 transition-colors"
+                    data-testid="toggle-password-visibility"
+                  >
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
                 </div>
               </div>
               <Button
