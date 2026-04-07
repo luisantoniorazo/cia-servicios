@@ -896,12 +896,11 @@ async def create_stripe_checkout_session(
     # Get company name for metadata
     company = await _db.companies.find_one({"id": company_id}, {"_id": 0, "business_name": 1})
     
-    # Create checkout request - Stripe requires amount in smallest currency unit (centavos for MXN)
+    # Create checkout request - emergentintegrations handles centavos conversion
     amount = float(invoice["total"])
-    amount_in_centavos = int(amount * 100)
     
     checkout_request = CheckoutSessionRequest(
-        amount=amount_in_centavos,
+        amount=amount,
         currency="mxn",
         success_url=success_url,
         cancel_url=cancel_url,
@@ -1029,11 +1028,9 @@ async def create_quick_stripe_payment(
     }
     await _db.subscription_invoices.insert_one({**invoice})
     
-    # Create checkout request - Stripe expects amount in smallest currency unit (centavos for MXN)
-    amount_in_centavos = int(amount * 100)
-    
+    # Create checkout request - emergentintegrations handles centavos conversion
     checkout_request = CheckoutSessionRequest(
-        amount=amount_in_centavos,
+        amount=amount,
         currency="mxn",
         success_url=success_url,
         cancel_url=cancel_url,
