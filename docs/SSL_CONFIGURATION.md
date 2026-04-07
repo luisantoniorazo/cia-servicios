@@ -2,15 +2,15 @@
 
 ## Paso 1: Configurar DNS
 
-En tu proveedor de dominio (donde compraste `ciasistema.com`), necesitas crear un registro DNS:
+En tu proveedor de dominio (donde compraste `ciasistem.com`), necesitas crear un registro DNS:
 
 ### Tipo: A Record
-- **Nombre/Host**: `www` (esto usará `www.ciasistema.com`)
+- **Nombre/Host**: `www` (esto usará `www.ciasistem.com`)
 - **Valor/Apunta a**: `104.236.227.110`
 - **TTL**: 3600 (o el predeterminado)
 
 ### También para el dominio raíz (opcional pero recomendado):
-- **Nombre/Host**: `@` (esto usará `ciasistema.com` sin www)
+- **Nombre/Host**: `@` (esto usará `ciasistem.com` sin www)
 - **Valor/Apunta a**: `104.236.227.110`
 - **TTL**: 3600
 
@@ -18,10 +18,10 @@ En tu proveedor de dominio (donde compraste `ciasistema.com`), necesitas crear u
 
 ```bash
 # Desde tu servidor o computadora local
-ping www.ciasistema.com
+ping www.ciasistem.com
 
 # Debería responder con:
-# PING www.ciasistema.com (104.236.227.110)
+# PING www.ciasistem.com (104.236.227.110)
 ```
 
 **Nota**: La propagación de DNS puede tardar entre 5 minutos y 48 horas.
@@ -41,7 +41,7 @@ sudo apt update
 sudo apt install certbot python3-certbot-nginx -y
 
 # Obtener e instalar certificado SSL (con ambos dominios)
-sudo certbot --nginx -d www.ciasistema.com -d ciasistema.com
+sudo certbot --nginx -d www.ciasistem.com -d ciasistem.com
 ```
 
 Durante la instalación de Certbot:
@@ -54,7 +54,7 @@ Durante la instalación de Certbot:
 
 ## Paso 3: Verificar la instalación
 
-1. Abre en tu navegador: `https://www.ciasistema.com`
+1. Abre en tu navegador: `https://www.ciasistem.com`
 2. Deberías ver el candado verde de seguridad
 3. El sistema debería cargar normalmente
 
@@ -76,7 +76,7 @@ sudo certbot renew --dry-run
 ### Error "DNS not propagated"
 Espera más tiempo y verifica con:
 ```bash
-nslookup www.ciasistema.com
+nslookup www.ciasistem.com
 ```
 
 ### Error "Connection refused"
@@ -88,7 +88,7 @@ sudo systemctl status nginx
 ### Error "Certificate not valid"
 Ejecuta de nuevo certbot:
 ```bash
-sudo certbot --nginx -d www.ciasistema.com -d ciasistema.com --force-renewal
+sudo certbot --nginx -d www.ciasistem.com -d ciasistem.com --force-renewal
 ```
 
 ---
@@ -96,5 +96,5 @@ sudo certbot --nginx -d www.ciasistema.com -d ciasistema.com --force-renewal
 ## URLs Finales
 
 Después de configurar SSL:
-- **Portal Super Admin**: `https://www.ciasistema.com/admin-portal`
-- **Login Empresa**: `https://www.ciasistema.com/empresa/{slug}/login`
+- **Portal Super Admin**: `https://www.ciasistem.com/admin-portal`
+- **Login Empresa**: `https://www.ciasistem.com/empresa/{slug}/login`

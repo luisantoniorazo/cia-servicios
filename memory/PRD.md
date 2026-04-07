@@ -6,7 +6,7 @@
 - **Última Actualización**: Abril 2026
 - **Stack Tecnológico**: FastAPI + React + MongoDB + OpenAI GPT-5.2 + Facturama + Stripe
 - **Servidor de Producción**: DigitalOcean Droplet `104.236.227.110`
-- **Dominio**: `www.ciasistema.com` (pendiente SSL)
+- **Dominio**: `www.ciasistem.com` (pendiente SSL)
 
 ## Problem Statement Original
 Aplicación empresarial de renta mensual que permita gestionar, monitorear y optimizar todos los procesos operativos, comerciales y estratégicos de una empresa mexicana de servicios y proyectos industriales. Sistema multi-tenant con Super Admin para gestión de suscripciones.
