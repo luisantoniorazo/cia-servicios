@@ -994,6 +994,18 @@ def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 def create_token(user_id: str, email: str, role: str, company_id: Optional[str] = None, company_slug: Optional[str] = None, full_name: Optional[str] = None) -> str:
+    # Different expiration times based on user role
+    if role == "super_admin":
+        # Super Admin: 20 minutes for security
+        expiration = datetime.now(timezone.utc) + timedelta(minutes=20)
+    else:
+        # Company users: Expires at end of day (midnight local time, approximated to 24 hours)
+        # Calculate time until midnight (end of current day)
+        now = datetime.now(timezone.utc)
+        # Set expiration to next midnight (approximately 24 hours max, but resets daily)
+        tomorrow_midnight = (now + timedelta(days=1)).replace(hour=6, minute=0, second=0, microsecond=0)  # 6 AM UTC = midnight Mexico
+        expiration = tomorrow_midnight
+    
     payload = {
         "sub": user_id,
         "email": email,
@@ -1001,7 +1013,7 @@ def create_token(user_id: str, email: str, role: str, company_id: Optional[str] 
         "company_id": company_id,
         "company_slug": company_slug,
         "full_name": full_name,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
+        "exp": expiration
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
