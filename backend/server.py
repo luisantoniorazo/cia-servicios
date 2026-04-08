@@ -42,6 +42,7 @@ from routes.purchases import router as purchases_router, init_purchases_routes
 from routes.documents import router as documents_router, init_documents_routes
 from routes.ai import router as ai_router, init_ai_routes
 from routes.activity import router as activity_router, init_activity_routes
+from routes.facturama import router as facturama_router, init_facturama_routes
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
@@ -11621,6 +11622,7 @@ init_purchases_routes(db, get_current_user, UserRole, module_log_activity)
 init_documents_routes(db, get_current_user, UserRole, module_log_activity)
 init_ai_routes(db, get_current_user, UserRole, llm_chat if 'llm_chat' in dir() else None)
 init_activity_routes(db, get_current_user, require_super_admin, UserRole)
+init_facturama_routes(db, security, JWT_SECRET, JWT_ALGORITHM)
 
 # Include modular routers (replacing basic CRUD routes, keeping special routes in api_router)
 app.include_router(clients_router, prefix="/api")
@@ -11636,6 +11638,7 @@ app.include_router(purchases_router, prefix="/api")
 app.include_router(documents_router, prefix="/api")
 app.include_router(ai_router, prefix="/api")
 app.include_router(activity_router, prefix="/api")
+app.include_router(facturama_router)  # Facturama at /api/facturama
 app.include_router(subscriptions_router)  # Subscriptions at /api/subscriptions
 
 # Stripe webhook endpoint (must be outside api_router for proper path)

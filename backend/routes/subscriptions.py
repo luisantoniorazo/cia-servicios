@@ -1199,7 +1199,7 @@ async def _process_successful_payment(invoice_id: str, session_id: str):
         "invoice_id": invoice_id,
         "action": "stripe_payment",
         "plan_id": plan_id,
-        "billing_cycle": invoice["billing_cycle"],
+        "billing_cycle": invoice.get("billing_cycle", "monthly"),
         "amount": invoice["total"],
         "payment_method": "stripe",
         "payment_reference": session_id,
@@ -1209,6 +1209,15 @@ async def _process_successful_payment(invoice_id: str, session_id: str):
     await _db.subscription_history.insert_one(history_entry)
     
     logger.info(f"Processed successful payment for invoice {invoice_id}, company {company_id}")
+    
+    # Try to auto-generate CFDI if enabled
+    try:
+        from routes.facturama import auto_generate_cfdi_for_payment
+        cfdi_uuid = await auto_generate_cfdi_for_payment(invoice_id, company_id)
+        if cfdi_uuid:
+            logger.info(f"Auto-generated CFDI {cfdi_uuid} for invoice {invoice_id}")
+    except Exception as e:
+        logger.error(f"Failed to auto-generate CFDI for invoice {invoice_id}: {str(e)}")
 
 # ============== WEBHOOK HANDLER ==============
 # Note: This will be mounted at /api/webhook/stripe in the main server
