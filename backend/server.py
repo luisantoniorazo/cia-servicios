@@ -9454,7 +9454,9 @@ def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
             elements.append(Paragraph(f"<b>{quote.get('title')}</b>", value_style))
         if quote.get('description'):
             desc_style = ParagraphStyle('Desc', fontSize=10, textColor=colors.HexColor(TEXT_DARK), leading=14)
-            elements.append(Paragraph(quote.get('description'), desc_style))
+            # Convert newlines to HTML breaks for proper line breaks in PDF
+            desc_text = quote.get('description', '').replace('\n', '<br/>')
+            elements.append(Paragraph(desc_text, desc_style))
         elements.append(Spacer(1, 0.15*inch))
     
     # Campo personalizado
@@ -9477,7 +9479,7 @@ def generate_quote_pdf(quote: dict, company: dict, client: dict) -> bytes:
         
         for i, item in enumerate(items, 1):
             # Use Paragraph for description - THIS IS THE KEY FOR AUTO-ADJUSTING
-            desc_text = item.get('description', '')
+            desc_text = item.get('description', '').replace('\n', '<br/>')
             desc_paragraph = Paragraph(desc_text, cell_desc_style)
             
             table_data.append([
@@ -9770,7 +9772,7 @@ def generate_invoice_pdf(invoice: dict, company: dict, client: dict) -> bytes:
         table_data = [['#', 'Clave SAT', 'Descripción', 'Cant.', 'Unidad', 'P. Unit.', 'Importe']]
         
         for i, item in enumerate(items, 1):
-            desc_text = item.get('description', '')
+            desc_text = item.get('description', '').replace('\n', '<br/>')
             desc_paragraph = Paragraph(desc_text, cell_desc_style)
             
             table_data.append([
@@ -10087,7 +10089,7 @@ def generate_purchase_order_pdf(po: dict, company: dict, supplier: dict) -> byte
         
         for i, item in enumerate(items, 1):
             # Use Paragraph for description - THIS IS THE KEY FOR AUTO-ADJUSTING
-            desc_text = item.get('description', '')
+            desc_text = item.get('description', '').replace('\n', '<br/>')
             desc_paragraph = Paragraph(desc_text, cell_desc_style)
             
             table_data.append([
