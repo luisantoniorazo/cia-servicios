@@ -625,14 +625,27 @@ export default function SuperAdminSilentAccess() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 p-6">
       <div className="max-w-7xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Eye className="w-6 h-6 text-red-400" />
-            Acceso Silencioso
-          </h1>
-          <p className="text-slate-400 text-sm">
-            Acceso sin registro en bitácoras ni historiales
-          </p>
+        <div className="mb-6 flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Button 
+              variant="outline" 
+              size="sm"
+              className="border-slate-600 text-slate-300 hover:bg-slate-700"
+              onClick={() => navigate('/admin-portal/dashboard')}
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Volver al Dashboard
+            </Button>
+            <div>
+              <h1 className="text-2xl font-bold text-white flex items-center gap-2">
+                <Eye className="w-6 h-6 text-red-400" />
+                Acceso Silencioso
+              </h1>
+              <p className="text-slate-400 text-sm">
+                Acceso sin registro en bitácoras ni historiales
+              </p>
+            </div>
+          </div>
         </div>
 
         {viewType ? renderDataView() : 

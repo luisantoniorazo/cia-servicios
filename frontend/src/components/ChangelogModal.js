@@ -22,6 +22,38 @@ import {
 // Changelog data - update this with each release
 export const CHANGELOG_DATA = [
   {
+    version: "1.2.0",
+    date: "2026-04-14",
+    title: "Facturama y Acceso Silencioso",
+    description: "Integración con Facturama para CFDI y herramientas de soporte para Super Admin.",
+    changes: [
+      {
+        type: "feature",
+        description: "Integración completa con Facturama para generación de CFDI 4.0"
+      },
+      {
+        type: "feature",
+        description: "Acceso Silencioso: Super Admin puede ver datos de cualquier empresa sin registro en bitácora"
+      },
+      {
+        type: "feature",
+        description: "Impersonación: Super Admin puede ingresar al portal de cualquier empresa como si fuera el usuario"
+      },
+      {
+        type: "feature",
+        description: "Búsqueda global en toda la base de datos para soporte técnico"
+      },
+      {
+        type: "fix",
+        description: "Dropdown de clientes ahora es visible sobre modales (z-index corregido)"
+      },
+      {
+        type: "fix",
+        description: "Saltos de línea ahora se respetan en descripciones de cotizaciones PDF"
+      }
+    ]
+  },
+  {
     version: "1.1.0",
     date: "2026-04-07",
     title: "Integración de Pagos Stripe",
