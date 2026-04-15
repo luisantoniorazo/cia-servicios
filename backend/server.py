@@ -2784,6 +2784,208 @@ async def toggle_company_admin_status(
     action = "desbloqueado" if new_status else "bloqueado"
     return {"message": f"Admin {action} exitosamente", "is_active": new_status}
 
+# ============== SUPER ADMIN - SILENT ACCESS (NO AUDIT LOG) ==============
+# Estos endpoints permiten al Super Admin acceder a datos sin dejar rastro en bitácoras
+
+@api_router.get("/super-admin/silent/companies/{company_id}/clients")
+async def silent_get_company_clients(company_id: str, current_user: dict = Depends(require_super_admin)):
+    """Obtener todos los clientes de una empresa (SIN registro en bitácora)"""
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    clients = await db.clients.find({"company_id": company_id}, {"_id": 0}).to_list(1000)
+    return {
+        "company": {
+            "id": company_id,
+            "business_name": company.get("business_name"),
+            "trade_name": company.get("trade_name")
+        },
+        "total_clients": len(clients),
+        "clients": clients
+    }
+
+@api_router.get("/super-admin/silent/companies/{company_id}/quotes")
+async def silent_get_company_quotes(company_id: str, current_user: dict = Depends(require_super_admin)):
+    """Obtener todas las cotizaciones de una empresa (SIN registro en bitácora)"""
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    quotes = await db.quotes.find({"company_id": company_id}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return {
+        "company": {
+            "id": company_id,
+            "business_name": company.get("business_name")
+        },
+        "total_quotes": len(quotes),
+        "quotes": quotes
+    }
+
+@api_router.get("/super-admin/silent/companies/{company_id}/invoices")
+async def silent_get_company_invoices(company_id: str, current_user: dict = Depends(require_super_admin)):
+    """Obtener todas las facturas de una empresa (SIN registro en bitácora)"""
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    invoices = await db.invoices.find({"company_id": company_id}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return {
+        "company": {
+            "id": company_id,
+            "business_name": company.get("business_name")
+        },
+        "total_invoices": len(invoices),
+        "invoices": invoices
+    }
+
+@api_router.get("/super-admin/silent/companies/{company_id}/projects")
+async def silent_get_company_projects(company_id: str, current_user: dict = Depends(require_super_admin)):
+    """Obtener todos los proyectos de una empresa (SIN registro en bitácora)"""
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    projects = await db.projects.find({"company_id": company_id}, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return {
+        "company": {
+            "id": company_id,
+            "business_name": company.get("business_name")
+        },
+        "total_projects": len(projects),
+        "projects": projects
+    }
+
+@api_router.get("/super-admin/silent/companies/{company_id}/users")
+async def silent_get_company_users(company_id: str, current_user: dict = Depends(require_super_admin)):
+    """Obtener todos los usuarios de una empresa (SIN registro en bitácora)"""
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    users = await db.users.find(
+        {"company_id": company_id}, 
+        {"_id": 0, "password": 0}  # Excluir password
+    ).to_list(100)
+    return {
+        "company": {
+            "id": company_id,
+            "business_name": company.get("business_name")
+        },
+        "total_users": len(users),
+        "users": users
+    }
+
+@api_router.get("/super-admin/silent/companies/{company_id}/activity")
+async def silent_get_company_activity(company_id: str, limit: int = 100, current_user: dict = Depends(require_super_admin)):
+    """Obtener actividad reciente de una empresa (SIN registro en bitácora)"""
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    # Obtener actividad reciente
+    activity = await db.activity_logs.find(
+        {"company_id": company_id}, 
+        {"_id": 0}
+    ).sort("timestamp", -1).to_list(limit)
+    
+    return {
+        "company": {
+            "id": company_id,
+            "business_name": company.get("business_name")
+        },
+        "total_records": len(activity),
+        "activity": activity
+    }
+
+@api_router.get("/super-admin/silent/all-clients")
+async def silent_get_all_clients(current_user: dict = Depends(require_super_admin)):
+    """Obtener TODOS los clientes de TODAS las empresas (SIN registro en bitácora)"""
+    clients = await db.clients.find({}, {"_id": 0}).to_list(5000)
+    
+    # Agrupar por empresa
+    companies_dict = {}
+    for client in clients:
+        company_id = client.get("company_id")
+        if company_id not in companies_dict:
+            company = await db.companies.find_one({"id": company_id}, {"_id": 0, "business_name": 1})
+            companies_dict[company_id] = {
+                "company_id": company_id,
+                "business_name": company.get("business_name") if company else "Desconocida",
+                "clients": []
+            }
+        companies_dict[company_id]["clients"].append(client)
+    
+    return {
+        "total_clients": len(clients),
+        "total_companies": len(companies_dict),
+        "companies": list(companies_dict.values())
+    }
+
+@api_router.get("/super-admin/silent/search")
+async def silent_search(
+    q: str,
+    search_type: str = "all",  # all, clients, quotes, invoices, projects
+    current_user: dict = Depends(require_super_admin)
+):
+    """Buscar en toda la base de datos (SIN registro en bitácora)"""
+    results = {
+        "query": q,
+        "clients": [],
+        "quotes": [],
+        "invoices": [],
+        "projects": []
+    }
+    
+    regex_query = {"$regex": q, "$options": "i"}
+    
+    if search_type in ["all", "clients"]:
+        clients = await db.clients.find(
+            {"$or": [
+                {"name": regex_query},
+                {"trade_name": regex_query},
+                {"email": regex_query},
+                {"rfc": regex_query},
+                {"phone": regex_query}
+            ]},
+            {"_id": 0}
+        ).to_list(100)
+        results["clients"] = clients
+    
+    if search_type in ["all", "quotes"]:
+        quotes = await db.quotes.find(
+            {"$or": [
+                {"quote_number": regex_query},
+                {"title": regex_query},
+                {"description": regex_query}
+            ]},
+            {"_id": 0}
+        ).to_list(100)
+        results["quotes"] = quotes
+    
+    if search_type in ["all", "invoices"]:
+        invoices = await db.invoices.find(
+            {"$or": [
+                {"invoice_number": regex_query},
+                {"concept": regex_query}
+            ]},
+            {"_id": 0}
+        ).to_list(100)
+        results["invoices"] = invoices
+    
+    if search_type in ["all", "projects"]:
+        projects = await db.projects.find(
+            {"$or": [
+                {"name": regex_query},
+                {"project_number": regex_query},
+                {"description": regex_query}
+            ]},
+            {"_id": 0}
+        ).to_list(100)
+        results["projects"] = projects
+    
+    return results
+
 # ============== SUBSCRIPTION MANAGEMENT ==============
 class SubscriptionUpdate(BaseModel):
     months: int = 1  # Number of months to add

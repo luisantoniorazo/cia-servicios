@@ -7,6 +7,7 @@ import "./App.css";
 // Auth Pages
 import SuperAdminLogin from "./pages/SuperAdminLogin";
 import SuperAdminDashboard from "./pages/SuperAdminDashboard";
+import SuperAdminSilentAccess from "./pages/SuperAdminSilentAccess";
 import SystemMonitor from "./pages/SystemMonitor";
 import FacturamaConfig from "./pages/FacturamaConfig";
 import StripeConfig from "./pages/StripeConfig";
@@ -190,6 +191,14 @@ function AppRoutes() {
         element={
           <SuperAdminRoute>
             <FacturamaConfig />
+          </SuperAdminRoute>
+        }
+      />
+      <Route
+        path="/admin-portal/silent-access"
+        element={
+          <SuperAdminRoute>
+            <SuperAdminSilentAccess />
           </SuperAdminRoute>
         }
       />

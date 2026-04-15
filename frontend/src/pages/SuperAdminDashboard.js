@@ -687,6 +687,16 @@ export const SuperAdminDashboard = () => {
               <Bot className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
               <span className="hidden sm:inline">Monitor</span>
             </Button>
+            <Button 
+              variant="outline" 
+              size="sm"
+              className="border-red-500 text-red-400 hover:bg-red-500/20 text-xs sm:text-sm" 
+              onClick={() => navigate("/admin-portal/silent-access")}
+              data-testid="silent-access-btn"
+            >
+              <Eye className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">Acceso Silencioso</span>
+            </Button>
             <Button variant="outline" size="sm" className="border-slate-600 text-slate-300 text-xs sm:text-sm" onClick={handleLogout}>
               <LogOut className="mr-1 sm:mr-2 h-3 w-3 sm:h-4 sm:w-4" />
               <span className="hidden sm:inline">Cerrar Sesión</span>
