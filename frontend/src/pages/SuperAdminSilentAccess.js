@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "../components/ui/dialog";
 import { Badge } from "../components/ui/badge";
-import { Search, Eye, Users, FileText, Briefcase, Receipt, ArrowLeft, Building2, Activity } from 'lucide-react';
+import { Search, Eye, Users, FileText, Briefcase, Receipt, ArrowLeft, Building2, Activity, LogIn, ExternalLink } from 'lucide-react';
 
 const API_URL = process.env.REACT_APP_BACKEND_URL;
 
 export default function SuperAdminSilentAccess() {
   const { token } = useAuth();
+  const navigate = useNavigate();
   const [companies, setCompanies] = useState([]);
   const [selectedCompany, setSelectedCompany] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -21,9 +23,13 @@ export default function SuperAdminSilentAccess() {
   const [searchResults, setSearchResults] = useState(null);
   
   // Data views
-  const [viewType, setViewType] = useState(null); // clients, quotes, invoices, projects, users, activity
+  const [viewType, setViewType] = useState(null);
   const [viewData, setViewData] = useState(null);
   const [detailModal, setDetailModal] = useState({ open: false, data: null, type: null });
+  
+  // Impersonation
+  const [impersonateModal, setImpersonateModal] = useState({ open: false, company: null, users: [] });
+  const [impersonating, setImpersonating] = useState(false);
 
   useEffect(() => {
     fetchCompanies();
@@ -88,6 +94,66 @@ export default function SuperAdminSilentAccess() {
     }
   };
 
+  // Impersonation functions
+  const handleImpersonateCompany = async (company) => {
+    setImpersonating(true);
+    try {
+      const res = await fetch(`${API_URL}/api/super-admin/impersonate/company/${company.id}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // Abrir en nueva pestaña con el token
+        const url = `${window.location.origin}${data.redirect_url}?impersonate_token=${data.access_token}`;
+        window.open(url, '_blank');
+      } else {
+        alert('Error al impersonar usuario');
+      }
+    } catch (error) {
+      console.error('Error impersonating:', error);
+      alert('Error al impersonar usuario');
+    }
+    setImpersonating(false);
+  };
+
+  const handleShowUsers = async (company) => {
+    try {
+      const res = await fetch(`${API_URL}/api/super-admin/companies/${company.id}/users-list`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setImpersonateModal({ open: true, company: data.company, users: data.users });
+      }
+    } catch (error) {
+      console.error('Error fetching users:', error);
+    }
+  };
+
+  const handleImpersonateUser = async (userId) => {
+    setImpersonating(true);
+    try {
+      const res = await fetch(`${API_URL}/api/super-admin/impersonate/${userId}`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        // Abrir en nueva pestaña con el token
+        const url = `${window.location.origin}${data.redirect_url}?impersonate_token=${data.access_token}`;
+        window.open(url, '_blank');
+        setImpersonateModal({ open: false, company: null, users: [] });
+      } else {
+        alert('Error al impersonar usuario');
+      }
+    } catch (error) {
+      console.error('Error impersonating:', error);
+      alert('Error al impersonar usuario');
+    }
+    setImpersonating(false);
+  };
+
   const formatDate = (dateStr) => {
     if (!dateStr) return '-';
     return new Date(dateStr).toLocaleDateString('es-MX', {
@@ -149,7 +215,7 @@ export default function SuperAdminSilentAccess() {
         <CardHeader>
           <CardTitle className="text-white flex items-center gap-2">
             <Building2 className="w-5 h-5" />
-            Seleccionar Empresa
+            Seleccionar Empresa para Ver Datos o Impersonar
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -157,8 +223,7 @@ export default function SuperAdminSilentAccess() {
             {companies.map((company) => (
               <Card 
                 key={company.id}
-                className="bg-slate-900/50 border-slate-600 hover:border-blue-500 cursor-pointer transition-all"
-                onClick={() => setSelectedCompany(company)}
+                className="bg-slate-900/50 border-slate-600 hover:border-blue-500 transition-all"
               >
                 <CardContent className="p-4">
                   <h3 className="text-white font-semibold truncate">{company.business_name}</h3>
@@ -169,6 +234,35 @@ export default function SuperAdminSilentAccess() {
                     </Badge>
                     <span className="text-slate-500 text-xs">{company.license_type}</span>
                   </div>
+                  <div className="flex gap-2 mt-3">
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      className="flex-1 border-slate-600 text-slate-300 hover:bg-slate-700"
+                      onClick={() => setSelectedCompany(company)}
+                    >
+                      <Eye className="w-3 h-3 mr-1" />
+                      Ver Datos
+                    </Button>
+                    <Button 
+                      size="sm" 
+                      className="flex-1 bg-green-600 hover:bg-green-700 text-white"
+                      onClick={() => handleImpersonateCompany(company)}
+                      disabled={impersonating}
+                    >
+                      <LogIn className="w-3 h-3 mr-1" />
+                      Entrar
+                    </Button>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    variant="ghost"
+                    className="w-full mt-2 text-slate-400 hover:text-white"
+                    onClick={() => handleShowUsers(company)}
+                  >
+                    <Users className="w-3 h-3 mr-1" />
+                    Ver usuarios para impersonar
+                  </Button>
                 </CardContent>
               </Card>
             ))}
@@ -563,6 +657,62 @@ export default function SuperAdminSilentAccess() {
                 </pre>
               )}
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Impersonate User Modal */}
+        <Dialog open={impersonateModal.open} onOpenChange={(open) => setImpersonateModal({ ...impersonateModal, open })}>
+          <DialogContent className="bg-slate-800 border-slate-700 text-white max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <LogIn className="w-5 h-5 text-green-400" />
+                Impersonar Usuario - {impersonateModal.company?.business_name}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <p className="text-slate-400 text-sm">
+                Selecciona el usuario como el cual deseas ingresar. Se abrirá una nueva pestaña con su sesión.
+              </p>
+              {impersonateModal.users.length === 0 ? (
+                <p className="text-center text-slate-500 py-4">No hay usuarios en esta empresa</p>
+              ) : (
+                <div className="space-y-2">
+                  {impersonateModal.users.map((user) => (
+                    <div 
+                      key={user.id}
+                      className="flex items-center justify-between p-3 bg-slate-900/50 rounded-lg border border-slate-700 hover:border-green-500 transition-all"
+                    >
+                      <div>
+                        <p className="text-white font-medium">{user.full_name}</p>
+                        <p className="text-slate-400 text-sm">{user.email}</p>
+                        <div className="flex gap-2 mt-1">
+                          <Badge variant={user.role === 'admin' ? 'default' : 'secondary'}>
+                            {user.role}
+                          </Badge>
+                          <Badge variant={user.is_active ? 'outline' : 'destructive'}>
+                            {user.is_active ? 'Activo' : 'Inactivo'}
+                          </Badge>
+                        </div>
+                      </div>
+                      <Button 
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700"
+                        onClick={() => handleImpersonateUser(user.id)}
+                        disabled={impersonating}
+                      >
+                        <LogIn className="w-4 h-4 mr-1" />
+                        Entrar como este usuario
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setImpersonateModal({ open: false, company: null, users: [] })}>
+                Cancelar
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

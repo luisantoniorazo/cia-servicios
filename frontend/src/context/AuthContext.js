@@ -102,7 +102,28 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   useEffect(() => {
-    if (token) {
+    // Check for impersonation token in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const impersonateToken = urlParams.get('impersonate_token');
+    
+    if (impersonateToken) {
+      // Remove token from URL without reloading
+      const newUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+      
+      // Set the impersonation token
+      localStorage.setItem("cia_token", impersonateToken);
+      setToken(impersonateToken);
+      setSessionExpired(false);
+      
+      // Show impersonation notice
+      toast.info("Sesión de impersonación activa", {
+        description: "Estás viendo el portal como este usuario",
+        duration: 5000,
+      });
+    }
+    
+    if (token || impersonateToken) {
       fetchUser();
     } else {
       setLoading(false);

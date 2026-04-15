@@ -2986,6 +2986,133 @@ async def silent_search(
     
     return results
 
+# ============== SUPER ADMIN - IMPERSONATION (LOGIN AS USER) ==============
+# Permite al Super Admin iniciar sesión como cualquier usuario para ver su portal
+
+@api_router.post("/super-admin/impersonate/{user_id}")
+async def impersonate_user(user_id: str, current_user: dict = Depends(require_super_admin)):
+    """
+    Generar un token de acceso para impersonar a un usuario específico.
+    El Super Admin podrá ver exactamente lo que ve el usuario.
+    NO se registra en bitácoras.
+    """
+    # Buscar el usuario a impersonar
+    target_user = await db.users.find_one({"id": user_id}, {"_id": 0})
+    if not target_user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    
+    # No permitir impersonar a otros super admins
+    if target_user.get("role") == UserRole.SUPER_ADMIN:
+        raise HTTPException(status_code=403, detail="No se puede impersonar a un Super Admin")
+    
+    # Obtener la empresa del usuario
+    company = await db.companies.find_one({"id": target_user.get("company_id")}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa del usuario no encontrada")
+    
+    # Generar token con los datos del usuario objetivo
+    token = create_token(
+        user_id=target_user["id"],
+        email=target_user["email"],
+        role=target_user.get("role", "user"),
+        company_id=target_user.get("company_id"),
+        company_slug=company.get("slug"),
+        full_name=target_user.get("full_name")
+    )
+    
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": target_user["id"],
+            "email": target_user["email"],
+            "full_name": target_user.get("full_name"),
+            "role": target_user.get("role")
+        },
+        "company": {
+            "id": company["id"],
+            "business_name": company.get("business_name"),
+            "slug": company.get("slug")
+        },
+        "redirect_url": f"/empresa/{company.get('slug')}/dashboard"
+    }
+
+@api_router.post("/super-admin/impersonate/company/{company_id}")
+async def impersonate_company_admin(company_id: str, current_user: dict = Depends(require_super_admin)):
+    """
+    Generar un token de acceso para impersonar al administrador de una empresa.
+    NO se registra en bitácoras.
+    """
+    # Buscar la empresa
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    # Buscar el admin de la empresa
+    admin_user = await db.users.find_one({
+        "company_id": company_id,
+        "role": {"$in": ["admin", "owner"]}
+    }, {"_id": 0})
+    
+    if not admin_user:
+        # Si no hay admin, buscar cualquier usuario activo
+        admin_user = await db.users.find_one({
+            "company_id": company_id,
+            "is_active": True
+        }, {"_id": 0})
+    
+    if not admin_user:
+        raise HTTPException(status_code=404, detail="No se encontró ningún usuario en esta empresa")
+    
+    # Generar token con los datos del admin
+    token = create_token(
+        user_id=admin_user["id"],
+        email=admin_user["email"],
+        role=admin_user.get("role", "admin"),
+        company_id=company_id,
+        company_slug=company.get("slug"),
+        full_name=admin_user.get("full_name")
+    )
+    
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": admin_user["id"],
+            "email": admin_user["email"],
+            "full_name": admin_user.get("full_name"),
+            "role": admin_user.get("role")
+        },
+        "company": {
+            "id": company["id"],
+            "business_name": company.get("business_name"),
+            "trade_name": company.get("trade_name"),
+            "slug": company.get("slug")
+        },
+        "redirect_url": f"/empresa/{company.get('slug')}/dashboard"
+    }
+
+@api_router.get("/super-admin/companies/{company_id}/users-list")
+async def get_company_users_for_impersonation(company_id: str, current_user: dict = Depends(require_super_admin)):
+    """Obtener lista de usuarios de una empresa para seleccionar cuál impersonar"""
+    company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    
+    users = await db.users.find(
+        {"company_id": company_id},
+        {"_id": 0, "password_hash": 0, "password": 0}
+    ).to_list(100)
+    
+    return {
+        "company": {
+            "id": company["id"],
+            "business_name": company.get("business_name"),
+            "slug": company.get("slug")
+        },
+        "users": users
+    }
+
 # ============== SUBSCRIPTION MANAGEMENT ==============
 class SubscriptionUpdate(BaseModel):
     months: int = 1  # Number of months to add
