@@ -129,3 +129,4 @@ asyncmy==0.2.11
 PyMySQL==1.1.2
 SQLAlchemy==2.0.48
 python-dateutil==2.9.0.post0
+sendgrid==6.12.5

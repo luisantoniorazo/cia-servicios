@@ -1551,6 +1551,13 @@ SMTP_PRESETS = {
         "use_ssl": True,
         "notes": "Usar credenciales de GoDaddy Workspace Email"
     },
+    "sendgrid": {
+        "smtp_host": "api",
+        "smtp_port": 0,
+        "use_tls": False,
+        "use_ssl": False,
+        "notes": "Usar API Key de SendGrid (no usa SMTP, usa API HTTP)"
+    },
     "custom": {
         "smtp_host": "",
         "smtp_port": 587,
@@ -1559,6 +1566,33 @@ SMTP_PRESETS = {
         "notes": "Configuración manual"
     }
 }
+
+# SendGrid email function
+def send_email_sendgrid(api_key: str, from_email: str, to_email: str, subject: str, html_body: str):
+    """Send email using SendGrid API"""
+    try:
+        from sendgrid import SendGridAPIClient
+        from sendgrid.helpers.mail import Mail
+        
+        message = Mail(
+            from_email=from_email,
+            to_emails=to_email,
+            subject=subject,
+            html_content=html_body
+        )
+        
+        sg = SendGridAPIClient(api_key)
+        response = sg.send(message)
+        
+        if response.status_code in [200, 201, 202]:
+            logger.info(f"SendGrid email sent successfully to {to_email}")
+            return {"success": True, "message": "Email enviado correctamente via SendGrid"}
+        else:
+            logger.error(f"SendGrid error: {response.status_code}")
+            return {"success": False, "message": f"Error de SendGrid: código {response.status_code}"}
+    except Exception as e:
+        logger.error(f"SendGrid Exception: {e}")
+        return {"success": False, "message": f"Error de SendGrid: {str(e)}"}
 
 def send_email_sync(smtp_host: str, smtp_port: int, use_tls: bool, use_ssl: bool, 
                     sender_email: str, sender_password: str, 
@@ -1631,12 +1665,32 @@ async def get_email_config(email_type: str = "general"):
     }
 
 async def send_email_async(email_type: str, to_email: str, subject: str, html_body: str, text_body: str = None):
-    """Send email using configured SMTP settings"""
+    """Send email using configured settings (SMTP or SendGrid)"""
     config = await get_email_config(email_type)
     if not config or not config.get("email"):
         logger.warning(f"Email {email_type} no configurado")
         return {"success": False, "message": f"Email de {email_type} no configurado"}
     
+    # Check if using SendGrid (API-based, not SMTP)
+    if config.get("provider") == "sendgrid" or config.get("smtp_host") == "api":
+        # Use SendGrid API instead of SMTP
+        api_key = config.get("password")  # SendGrid API key is stored in password field
+        if not api_key or not api_key.startswith("SG."):
+            return {"success": False, "message": "API Key de SendGrid no configurada o inválida"}
+        
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(
+            None,
+            send_email_sendgrid,
+            api_key,
+            config["email"],
+            to_email,
+            subject,
+            html_body
+        )
+        return result
+    
+    # Use traditional SMTP
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(
         None,
