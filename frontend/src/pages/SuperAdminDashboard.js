@@ -1777,6 +1777,7 @@ export const SuperAdminDashboard = () => {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="custom">Configuración Manual</SelectItem>
+                          <SelectItem value="sendgrid">SendGrid (API)</SelectItem>
                           <SelectItem value="gmail">Gmail / Google Workspace</SelectItem>
                           <SelectItem value="outlook">Outlook / Microsoft 365</SelectItem>
                           <SelectItem value="yahoo">Yahoo Mail</SelectItem>
@@ -1802,16 +1803,18 @@ export const SuperAdminDashboard = () => {
                         />
                       </div>
                       <div className="grid gap-2">
-                        <Label>Contraseña *</Label>
+                        <Label>{serverConfig.email_cobranza_provider === 'sendgrid' ? 'API Key *' : 'Contraseña *'}</Label>
                         <Input
                           type="password"
                           value={serverConfig.email_cobranza_password}
                           onChange={(e) => setServerConfig({ ...serverConfig, email_cobranza_password: e.target.value })}
-                          placeholder="••••••••"
+                          placeholder={serverConfig.email_cobranza_provider === 'sendgrid' ? 'SG.xxxxxxxxxx' : '••••••••'}
                         />
                       </div>
                     </div>
 
+                    {serverConfig.email_cobranza_provider !== 'sendgrid' && (
+                    <>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="grid gap-2">
                         <Label>Servidor SMTP</Label>
@@ -1851,6 +1854,14 @@ export const SuperAdminDashboard = () => {
                         Usar SSL
                       </label>
                     </div>
+                    </>
+                    )}
+
+                    {serverConfig.email_cobranza_provider === 'sendgrid' && (
+                      <p className="text-sm text-green-600 bg-green-50 p-3 rounded-lg">
+                        ✅ SendGrid usa API HTTP, no requiere configuración SMTP. Solo necesitas el correo verificado y la API Key.
+                      </p>
+                    )}
 
                     <Button
                       type="button"
@@ -1931,6 +1942,7 @@ export const SuperAdminDashboard = () => {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="custom">Configuración Manual</SelectItem>
+                          <SelectItem value="sendgrid">SendGrid (API)</SelectItem>
                           <SelectItem value="gmail">Gmail / Google Workspace</SelectItem>
                           <SelectItem value="outlook">Outlook / Microsoft 365</SelectItem>
                           <SelectItem value="yahoo">Yahoo Mail</SelectItem>
@@ -1956,16 +1968,18 @@ export const SuperAdminDashboard = () => {
                         />
                       </div>
                       <div className="grid gap-2">
-                        <Label>Contraseña *</Label>
+                        <Label>{serverConfig.email_general_provider === 'sendgrid' ? 'API Key *' : 'Contraseña *'}</Label>
                         <Input
                           type="password"
                           value={serverConfig.email_general_password}
                           onChange={(e) => setServerConfig({ ...serverConfig, email_general_password: e.target.value })}
-                          placeholder="••••••••"
+                          placeholder={serverConfig.email_general_provider === 'sendgrid' ? 'SG.xxxxxxxxxx' : '••••••••'}
                         />
                       </div>
                     </div>
 
+                    {serverConfig.email_general_provider !== 'sendgrid' && (
+                    <>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="grid gap-2">
                         <Label>Servidor SMTP</Label>
@@ -2005,6 +2019,14 @@ export const SuperAdminDashboard = () => {
                         Usar SSL
                       </label>
                     </div>
+                    </>
+                    )}
+
+                    {serverConfig.email_general_provider === 'sendgrid' && (
+                      <p className="text-sm text-green-600 bg-green-50 p-3 rounded-lg">
+                        ✅ SendGrid usa API HTTP, no requiere configuración SMTP. Solo necesitas el correo verificado y la API Key.
+                      </p>
+                    )}
 
                     <Button
                       type="button"
