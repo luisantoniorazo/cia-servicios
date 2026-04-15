@@ -5,6 +5,7 @@ from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
+import socket
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict, EmailStr
 from typing import List, Optional, Dict, Any
@@ -1576,24 +1577,38 @@ def send_email_sync(smtp_host: str, smtp_port: int, use_tls: bool, use_ssl: bool
     msg.attach(part2)
     
     try:
+        logger.info(f"Connecting to SMTP: {smtp_host}:{smtp_port} (SSL: {use_ssl}, TLS: {use_tls})")
+        
         if use_ssl:
-            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=30)
+            server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=60)
         else:
-            server = smtplib.SMTP(smtp_host, smtp_port, timeout=30)
+            server = smtplib.SMTP(smtp_host, smtp_port, timeout=60)
             if use_tls:
                 server.starttls()
         
+        logger.info(f"Logging in as: {sender_email}")
         server.login(sender_email, sender_password)
+        
+        logger.info(f"Sending email to: {to_email}")
         server.sendmail(sender_email, to_email, msg.as_string())
         server.quit()
+        
+        logger.info("Email sent successfully")
         return {"success": True, "message": "Email enviado correctamente"}
-    except smtplib.SMTPAuthenticationError:
-        return {"success": False, "message": "Error de autenticación. Verifica el correo y contraseña."}
-    except smtplib.SMTPConnectError:
+    except smtplib.SMTPAuthenticationError as e:
+        logger.error(f"SMTP Auth Error: {e}")
+        return {"success": False, "message": "Error de autenticación. Verifica el correo y contraseña. Si usas 2FA en Zoho, necesitas una contraseña de aplicación."}
+    except smtplib.SMTPConnectError as e:
+        logger.error(f"SMTP Connect Error: {e}")
         return {"success": False, "message": "No se pudo conectar al servidor SMTP. Verifica el host y puerto."}
+    except socket.timeout:
+        logger.error("SMTP Timeout")
+        return {"success": False, "message": "Timeout: El servidor SMTP no respondió. Intenta con puerto 465 y SSL activado, o verifica que el puerto no esté bloqueado."}
     except smtplib.SMTPException as e:
+        logger.error(f"SMTP Exception: {e}")
         return {"success": False, "message": f"Error SMTP: {str(e)}"}
     except Exception as e:
+        logger.error(f"Email Error: {e}")
         return {"success": False, "message": f"Error: {str(e)}"}
 
 async def get_email_config(email_type: str = "general"):
