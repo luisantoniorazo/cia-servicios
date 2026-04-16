@@ -42,6 +42,8 @@ import {
   RefreshCw,
   ExternalLink,
   Info,
+  Loader2,
+  Wallet,
 } from "lucide-react";
 
 const formatCurrency = (amount) => {
@@ -70,6 +72,9 @@ export const StripeConfig = () => {
   const [showKeys, setShowKeys] = useState(false);
   const [configDialog, setConfigDialog] = useState(false);
   const [payments, setPayments] = useState([]);
+  const [stripePayments, setStripePayments] = useState([]);
+  const [stripeBalance, setStripeBalance] = useState(null);
+  const [loadingStripe, setLoadingStripe] = useState(false);
   const [stats, setStats] = useState({
     total_collected: 0,
     total_pending: 0,
@@ -135,14 +140,57 @@ export const StripeConfig = () => {
     }
   }, [api]);
 
+  const fetchStripePayments = useCallback(async () => {
+    setLoadingStripe(true);
+    try {
+      const [paymentsRes, balanceRes] = await Promise.all([
+        api.get("/subscriptions/stripe/payments?limit=50"),
+        api.get("/subscriptions/stripe/balance")
+      ]);
+      setStripePayments(paymentsRes.data.payments || []);
+      setStripeBalance(balanceRes.data);
+      
+      // Update stats with Stripe data
+      const succeeded = paymentsRes.data.payments?.filter(p => p.status === "succeeded") || [];
+      const thisMonth = new Date().getMonth();
+      const thisYear = new Date().getFullYear();
+      
+      setStats(prev => ({
+        ...prev,
+        total_collected: paymentsRes.data.total_succeeded || 0,
+        payments_count: succeeded.length,
+        this_month: succeeded
+          .filter(p => {
+            const d = new Date(p.created_at);
+            return d.getMonth() === thisMonth && d.getFullYear() === thisYear;
+          })
+          .reduce((sum, p) => sum + (p.amount || 0), 0),
+      }));
+    } catch (error) {
+      console.error("Error fetching Stripe payments:", error);
+      if (error.response?.data?.detail) {
+        toast.error(error.response.data.detail);
+      }
+    } finally {
+      setLoadingStripe(false);
+    }
+  }, [api]);
+
   useEffect(() => {
     const loadData = async () => {
       setLoading(true);
-      await Promise.all([fetchConfig(), fetchPayments()]);
+      await fetchConfig();
       setLoading(false);
     };
     loadData();
-  }, [fetchConfig, fetchPayments]);
+  }, [fetchConfig]);
+
+  // Fetch Stripe payments when config is loaded and has API key
+  useEffect(() => {
+    if (config.stripe_api_key && config.stripe_api_key.startsWith("sk_")) {
+      fetchStripePayments();
+    }
+  }, [config.stripe_api_key, fetchStripePayments]);
 
   const handleSaveConfig = async () => {
     setSaving(true);
@@ -274,36 +322,46 @@ export const StripeConfig = () => {
               />
             </div>
             <Badge variant="outline" className="mt-2">
-              {config.environment === "test" ? "Modo Test" : "Producción"}
+              {config.stripe_api_key?.startsWith("sk_live") ? "Producción" : "Modo Test"}
             </Badge>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Cobrado con Stripe</CardDescription>
+            <CardDescription>Cobrado en Stripe</CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-bold text-purple-600">
               {formatCurrency(stats.total_collected)}
             </p>
             <p className="text-sm text-muted-foreground">
-              {stats.payments_count} pagos procesados
+              {stats.payments_count} pagos exitosos
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-2">
-            <CardDescription>Este Mes</CardDescription>
+            <CardDescription>Balance Disponible</CardDescription>
           </CardHeader>
           <CardContent>
-            <p className="text-2xl font-bold text-green-600">
-              {formatCurrency(stats.this_month)}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              Pagos con tarjeta
-            </p>
+            {stripeBalance ? (
+              <>
+                <p className="text-2xl font-bold text-green-600">
+                  {formatCurrency(stripeBalance.available?.[0]?.amount || 0)}
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  {stripeBalance.pending?.[0]?.amount > 0 && (
+                    <span className="text-amber-600">
+                      + {formatCurrency(stripeBalance.pending[0].amount)} pendiente
+                    </span>
+                  )}
+                </p>
+              </>
+            ) : (
+              <p className="text-2xl font-bold text-muted-foreground">--</p>
+            )}
           </CardContent>
         </Card>
 
@@ -326,11 +384,15 @@ export const StripeConfig = () => {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="payments" className="space-y-4">
+      <Tabs defaultValue="stripe-payments" className="space-y-4">
         <TabsList>
+          <TabsTrigger value="stripe-payments">
+            <Wallet className="h-4 w-4 mr-2" />
+            Pagos en Stripe
+          </TabsTrigger>
           <TabsTrigger value="payments">
             <DollarSign className="h-4 w-4 mr-2" />
-            Pagos Recibidos
+            Pagos Registrados
           </TabsTrigger>
           <TabsTrigger value="info">
             <Info className="h-4 w-4 mr-2" />
@@ -338,11 +400,99 @@ export const StripeConfig = () => {
           </TabsTrigger>
         </TabsList>
 
+        <TabsContent value="stripe-payments">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Pagos Directos de Stripe</CardTitle>
+                  <CardDescription>Todos los pagos recibidos en tu cuenta de Stripe</CardDescription>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={fetchStripePayments}
+                  disabled={loadingStripe}
+                >
+                  {loadingStripe ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                  )}
+                  Actualizar
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loadingStripe ? (
+                <div className="text-center py-12">
+                  <Loader2 className="h-8 w-8 mx-auto mb-4 animate-spin text-purple-500" />
+                  <p className="text-muted-foreground">Consultando Stripe...</p>
+                </div>
+              ) : stripePayments.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-20" />
+                  <p>No hay pagos en Stripe</p>
+                  <p className="text-sm mt-2">Verifica que la API Key sea correcta (sk_live_...)</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Fecha</TableHead>
+                      <TableHead>Cliente</TableHead>
+                      <TableHead>Descripción</TableHead>
+                      <TableHead className="text-right">Monto</TableHead>
+                      <TableHead>Estado</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {stripePayments.map((payment) => (
+                      <TableRow key={payment.id}>
+                        <TableCell>{formatDate(payment.created_at)}</TableCell>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{payment.customer_name || "Sin nombre"}</p>
+                            <p className="text-xs text-muted-foreground">{payment.customer_email || payment.id}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell className="max-w-[200px] truncate">
+                          {payment.description || "Pago con tarjeta"}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {payment.currency === "MXN" 
+                            ? formatCurrency(payment.amount)
+                            : `$${payment.amount.toFixed(2)} ${payment.currency}`
+                          }
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={payment.status === "succeeded" ? "success" : 
+                                    payment.status === "processing" ? "warning" : "secondary"}
+                          >
+                            {payment.status === "succeeded" && <CheckCircle className="h-3 w-3 mr-1" />}
+                            {payment.status === "succeeded" ? "Pagado" : 
+                             payment.status === "processing" ? "Procesando" : 
+                             payment.status === "requires_action" ? "Requiere acción" : payment.status}
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         <TabsContent value="payments">
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
-                <CardTitle>Historial de Pagos con Stripe</CardTitle>
+                <div>
+                  <CardTitle>Pagos Registrados en el Sistema</CardTitle>
+                  <CardDescription>Pagos procesados a través del flujo de suscripciones</CardDescription>
+                </div>
                 <Button variant="outline" size="sm" onClick={fetchPayments}>
                   <RefreshCw className="h-4 w-4 mr-2" />
                   Actualizar

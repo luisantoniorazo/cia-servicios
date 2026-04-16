@@ -10,6 +10,7 @@ from dateutil.relativedelta import relativedelta
 import uuid
 import os
 import logging
+import stripe
 
 # Stripe imports
 from emergentintegrations.payments.stripe.checkout import (
@@ -860,6 +861,122 @@ async def reject_receipt(
 
 # ============== STRIPE PAYMENT ROUTES ==============
 
+@router.get("/stripe/payments")
+async def get_stripe_payments(
+    limit: int = 50,
+    current_user: dict = Depends(require_super_admin_sub)
+):
+    """Get recent payments directly from Stripe API (Super Admin only)"""
+    # Get Stripe API key
+    stripe_api_key = os.environ.get("STRIPE_API_KEY")
+    if not stripe_api_key:
+        config = await _db.server_config.find_one({}, {"_id": 0, "stripe_api_key": 1})
+        if config:
+            stripe_api_key = config.get("stripe_api_key")
+    
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Stripe no está configurado - falta API key")
+    
+    # Validate it's a secret key
+    if stripe_api_key.startswith("pk_"):
+        raise HTTPException(status_code=500, detail="Error: Se está usando una llave pública (pk_) en lugar de la llave secreta (sk_)")
+    
+    try:
+        stripe.api_key = stripe_api_key
+        
+        # Get recent payment intents
+        payment_intents = stripe.PaymentIntent.list(limit=limit)
+        
+        payments = []
+        for pi in payment_intents.data:
+            # Get customer info if available
+            customer_email = None
+            customer_name = None
+            if pi.customer:
+                try:
+                    customer = stripe.Customer.retrieve(pi.customer)
+                    customer_email = customer.email
+                    customer_name = customer.name
+                except:
+                    pass
+            
+            payments.append({
+                "id": pi.id,
+                "amount": pi.amount / 100,  # Convert from cents
+                "currency": pi.currency.upper(),
+                "status": pi.status,
+                "description": pi.description,
+                "customer_email": customer_email,
+                "customer_name": customer_name,
+                "created_at": datetime.fromtimestamp(pi.created, tz=timezone.utc).isoformat(),
+                "metadata": dict(pi.metadata) if pi.metadata else {}
+            })
+        
+        # Calculate totals
+        total_succeeded = sum(p["amount"] for p in payments if p["status"] == "succeeded")
+        total_pending = sum(p["amount"] for p in payments if p["status"] in ["processing", "requires_action"])
+        
+        return {
+            "payments": payments,
+            "total_succeeded": total_succeeded,
+            "total_pending": total_pending,
+            "count": len(payments)
+        }
+        
+    except stripe.error.AuthenticationError as e:
+        logger.error(f"Stripe authentication error: {e}")
+        raise HTTPException(status_code=401, detail="Error de autenticación con Stripe. Verifica la API key.")
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe error: {e}")
+        raise HTTPException(status_code=500, detail=f"Error de Stripe: {str(e)}")
+
+
+@router.get("/stripe/balance")
+async def get_stripe_balance(
+    current_user: dict = Depends(require_super_admin_sub)
+):
+    """Get Stripe account balance (Super Admin only)"""
+    stripe_api_key = os.environ.get("STRIPE_API_KEY")
+    if not stripe_api_key:
+        config = await _db.server_config.find_one({}, {"_id": 0, "stripe_api_key": 1})
+        if config:
+            stripe_api_key = config.get("stripe_api_key")
+    
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Stripe no está configurado")
+    
+    if stripe_api_key.startswith("pk_"):
+        raise HTTPException(status_code=500, detail="Error: Se está usando una llave pública (pk_)")
+    
+    try:
+        stripe.api_key = stripe_api_key
+        balance = stripe.Balance.retrieve()
+        
+        available = []
+        pending = []
+        
+        for b in balance.available:
+            available.append({
+                "amount": b.amount / 100,
+                "currency": b.currency.upper()
+            })
+        
+        for b in balance.pending:
+            pending.append({
+                "amount": b.amount / 100,
+                "currency": b.currency.upper()
+            })
+        
+        return {
+            "available": available,
+            "pending": pending
+        }
+        
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe balance error: {e}")
+        raise HTTPException(status_code=500, detail=f"Error de Stripe: {str(e)}")
+
+
 @router.post("/checkout/create-session")
 async def create_stripe_checkout_session(
     request: StripeCheckoutRequest,
@@ -1235,13 +1352,12 @@ async def handle_stripe_webhook(request: Request):
     """Handle Stripe webhook events"""
     # Get Stripe API key from environment or database
     stripe_api_key = os.environ.get("STRIPE_API_KEY")
-    webhook_secret = None
+    # Note: webhook_secret would be used for signature verification if needed in the future
     
     if not stripe_api_key:
         config = await _db.server_config.find_one({}, {"_id": 0, "stripe_api_key": 1, "stripe_webhook_secret": 1})
         if config:
             stripe_api_key = config.get("stripe_api_key")
-            webhook_secret = config.get("stripe_webhook_secret")
     
     if not stripe_api_key:
         logger.error("Stripe webhook: No API key configured")
@@ -1249,7 +1365,7 @@ async def handle_stripe_webhook(request: Request):
     
     # Validate that it's a secret key, not publishable
     if stripe_api_key.startswith("pk_"):
-        logger.error(f"Stripe webhook: Invalid key type (publishable key detected)")
+        logger.error("Stripe webhook: Invalid key type (publishable key detected)")
         raise HTTPException(status_code=500, detail="Error de configuración: Se está usando una llave pública (pk_) en lugar de la llave secreta (sk_)")
     
     body = await request.body()
