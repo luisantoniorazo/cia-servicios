@@ -859,6 +859,114 @@ async def reject_receipt(
     return {"message": "Comprobante rechazado"}
 
 
+class ManualPaymentData(BaseModel):
+    """Data for manually marking an invoice as paid"""
+    payment_method: str = "stripe"  # stripe, transfer, cash
+    payment_reference: Optional[str] = None
+    notes: Optional[str] = None
+
+
+@router.post("/admin/invoices/{invoice_id}/mark-paid")
+async def mark_invoice_as_paid(
+    invoice_id: str,
+    data: ManualPaymentData,
+    current_user: dict = Depends(require_super_admin_sub)
+):
+    """Manually mark a subscription invoice as paid and renew subscription (Super Admin)"""
+    invoice = await _db.subscription_invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not invoice:
+        # Try finding by invoice_number
+        invoice = await _db.subscription_invoices.find_one({"invoice_number": invoice_id}, {"_id": 0})
+    
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura de suscripción no encontrada")
+    
+    if invoice.get("status") == "paid":
+        raise HTTPException(status_code=400, detail="Esta factura ya está marcada como pagada")
+    
+    now = datetime.now(timezone.utc)
+    company_id = invoice["company_id"]
+    period_end = invoice.get("period_end")
+    plan_id = invoice.get("plan_id", "base")
+    includes_billing = SUBSCRIPTION_PLANS.get(plan_id, {}).get("includes_billing", False)
+    
+    # Update invoice as paid
+    await _db.subscription_invoices.update_one(
+        {"id": invoice["id"]},
+        {"$set": {
+            "status": "paid",
+            "payment_method": data.payment_method,
+            "payment_reference": data.payment_reference,
+            "payment_date": now.isoformat(),
+            "paid_manually": True,
+            "paid_by": current_user.get("sub"),
+            "payment_notes": data.notes
+        }}
+    )
+    
+    # Update company subscription
+    await _db.companies.update_one(
+        {"id": company_id},
+        {"$set": {
+            "subscription_status": "active",
+            "subscription_end": period_end,
+            "last_payment_date": now.isoformat(),
+            "payment_reminder_sent": False,
+            "billing_included": includes_billing,
+            "billing_mode": "master" if includes_billing else "manual"
+        }}
+    )
+    
+    # Record payment in history
+    await _db.subscription_history.insert_one({
+        "id": str(uuid.uuid4()),
+        "company_id": company_id,
+        "invoice_id": invoice["id"],
+        "action": "payment_received_manual",
+        "plan_id": plan_id,
+        "amount": invoice.get("total", 0),
+        "payment_method": data.payment_method,
+        "payment_reference": data.payment_reference,
+        "processed_by": current_user.get("sub"),
+        "notes": data.notes,
+        "created_at": now.isoformat()
+    })
+    
+    # Get company name for response
+    company = await _db.companies.find_one({"id": company_id}, {"_id": 0, "business_name": 1})
+    
+    logger.info(f"Invoice {invoice['id']} manually marked as paid by {current_user.get('sub')}")
+    
+    return {
+        "message": "Factura marcada como pagada y suscripción renovada",
+        "invoice_id": invoice["id"],
+        "company_name": company.get("business_name") if company else "N/A",
+        "new_subscription_end": period_end
+    }
+
+
+@router.get("/admin/invoices/pending")
+async def list_pending_invoices(
+    current_user: dict = Depends(require_super_admin_sub)
+):
+    """List all pending subscription invoices (Super Admin)"""
+    invoices = await _db.subscription_invoices.find(
+        {"status": {"$in": ["pending", "overdue"]}},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    
+    # Enrich with company info
+    for invoice in invoices:
+        company = await _db.companies.find_one(
+            {"id": invoice.get("company_id")},
+            {"_id": 0, "business_name": 1, "email": 1}
+        )
+        invoice["company_name"] = company.get("business_name") if company else "Desconocida"
+        invoice["company_email"] = company.get("email") if company else None
+    
+    return {"invoices": invoices}
+
+
 # ============== STRIPE PAYMENT ROUTES ==============
 
 @router.get("/stripe/payments")
@@ -897,7 +1005,7 @@ async def get_stripe_payments(
                     customer = stripe.Customer.retrieve(pi.customer)
                     customer_email = customer.email
                     customer_name = customer.name
-                except:
+                except Exception:
                     pass
             
             payments.append({
