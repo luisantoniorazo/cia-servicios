@@ -6177,6 +6177,29 @@ async def reset_user_password(user_id: str, new_password: str, current_user: dic
     return {"message": "Contraseña actualizada"}
 
 # ============== COMPANY DATA ROUTES ==============
+
+@api_router.patch("/companies/current")
+async def update_current_company_fiscal(update_data: dict, current_user: dict = Depends(require_admin)):
+    """Update current user's company fiscal data"""
+    company_id = current_user.get("company_id")
+    if not company_id:
+        raise HTTPException(status_code=400, detail="No company assigned")
+    
+    # Allow these fiscal fields to be updated
+    allowed_fields = ["regimen_fiscal", "codigo_postal_fiscal", "lugar_expedicion", "rfc", "business_name"]
+    filtered_data = {k: v for k, v in update_data.items() if k in allowed_fields and v is not None}
+    
+    if not filtered_data:
+        raise HTTPException(status_code=400, detail="No hay campos válidos para actualizar")
+    
+    filtered_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    await db.companies.update_one({"id": company_id}, {"$set": filtered_data})
+    
+    # Return updated company data
+    updated_company = await db.companies.find_one({"id": company_id}, {"_id": 0})
+    return updated_company
+
 @api_router.get("/companies/{company_id}", response_model=Company)
 async def get_company(company_id: str, current_user: dict = Depends(get_current_user)):
     """Obtener datos de la empresa del usuario"""
@@ -11956,25 +11979,34 @@ async def get_cfdi_status(current_user: dict = Depends(get_current_user)):
     
     issues = []
     
-    # Check company data
+    # Check company data with specific error messages
     if not company.get("rfc"):
-        issues.append("Falta RFC de la empresa")
+        issues.append("RFC de la empresa: No está configurado. Ve a Empresa > Datos Generales y agrega el RFC.")
+    elif len(company.get("rfc", "")) < 12:
+        issues.append(f"RFC de la empresa: El RFC '{company.get('rfc')}' parece incompleto. Debe tener 12-13 caracteres.")
+    
     if not company.get("regimen_fiscal"):
-        issues.append("Falta régimen fiscal de la empresa")
+        issues.append("Régimen Fiscal: No está seleccionado. En esta página, selecciona tu régimen fiscal del SAT en el campo correspondiente y haz clic en 'Guardar Datos Fiscales'.")
+    
     if not company.get("codigo_postal_fiscal"):
-        issues.append("Falta código postal fiscal")
+        issues.append("Código Postal Fiscal: No está configurado. Ingresa el C.P. de tu domicilio fiscal según tu Constancia de Situación Fiscal del SAT y haz clic en 'Guardar Datos Fiscales'.")
+    elif len(company.get("codigo_postal_fiscal", "")) != 5:
+        issues.append(f"Código Postal Fiscal: El C.P. '{company.get('codigo_postal_fiscal')}' es inválido. Debe tener exactamente 5 dígitos.")
     
     # Check certificate
     if not cert:
-        issues.append("No hay certificado CSD configurado")
+        issues.append("Certificado CSD: No hay certificado configurado. Ve a la pestaña 'Certificado CSD' y sube tus archivos .cer y .key del SAT.")
     elif cert.get("pac_provider") == "none":
-        issues.append("No hay proveedor PAC configurado")
+        issues.append("Proveedor PAC: No hay proveedor de timbrado configurado. En la pestaña 'Certificado CSD', selecciona un proveedor PAC (ej. Facturama) e ingresa las credenciales.")
     
     return {
         "ready": len(issues) == 0,
         "issues": issues,
         "has_certificate": cert is not None,
-        "pac_provider": cert.get("pac_provider") if cert else None
+        "pac_provider": cert.get("pac_provider") if cert else None,
+        "company_rfc": company.get("rfc"),
+        "company_regimen": company.get("regimen_fiscal"),
+        "company_cp": company.get("codigo_postal_fiscal")
     }
 
 # Include router and configure CORS
