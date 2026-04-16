@@ -967,6 +967,29 @@ async def list_pending_invoices(
     return {"invoices": invoices}
 
 
+@router.get("/admin/invoices/all")
+async def list_all_invoices(
+    limit: int = 50,
+    current_user: dict = Depends(require_super_admin_sub)
+):
+    """List ALL subscription invoices regardless of status (Super Admin)"""
+    invoices = await _db.subscription_invoices.find(
+        {},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(limit)
+    
+    # Enrich with company info
+    for invoice in invoices:
+        company = await _db.companies.find_one(
+            {"id": invoice.get("company_id")},
+            {"_id": 0, "business_name": 1, "email": 1}
+        )
+        invoice["company_name"] = company.get("business_name") if company else "Desconocida"
+        invoice["company_email"] = company.get("email") if company else None
+    
+    return {"invoices": invoices}
+
+
 class UpdateSubscriptionInvoiceData(BaseModel):
     """Data for updating a subscription invoice"""
     plan_id: Optional[str] = None

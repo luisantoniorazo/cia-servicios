@@ -84,7 +84,9 @@ export const StripeConfig = () => {
   const [stripeBalance, setStripeBalance] = useState(null);
   const [loadingStripe, setLoadingStripe] = useState(false);
   const [pendingInvoices, setPendingInvoices] = useState([]);
+  const [allInvoices, setAllInvoices] = useState([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
+  const [loadingAllInvoices, setLoadingAllInvoices] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(null);
   const [editingInvoice, setEditingInvoice] = useState(null);
   const [editForm, setEditForm] = useState({
@@ -205,6 +207,18 @@ export const StripeConfig = () => {
     }
   }, [api]);
 
+  const fetchAllInvoices = useCallback(async () => {
+    setLoadingAllInvoices(true);
+    try {
+      const response = await api.get("/subscriptions/admin/invoices/all?limit=50");
+      setAllInvoices(response.data.invoices || []);
+    } catch (error) {
+      console.error("Error fetching all invoices:", error);
+    } finally {
+      setLoadingAllInvoices(false);
+    }
+  }, [api]);
+
   const handleMarkAsPaid = async (invoiceId, paymentMethod = "stripe") => {
     setMarkingPaid(invoiceId);
     try {
@@ -250,10 +264,11 @@ export const StripeConfig = () => {
       setLoading(true);
       await fetchConfig();
       await fetchPendingInvoices();
+      await fetchAllInvoices();
       setLoading(false);
     };
     loadData();
-  }, [fetchConfig, fetchPendingInvoices]);
+  }, [fetchConfig, fetchPendingInvoices, fetchAllInvoices]);
 
   // Fetch Stripe payments when config is loaded and has API key
   useEffect(() => {
@@ -454,11 +469,15 @@ export const StripeConfig = () => {
       </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="pending-invoices" className="space-y-4">
+      <Tabs defaultValue="all-invoices" className="space-y-4">
         <TabsList>
+          <TabsTrigger value="all-invoices">
+            <CreditCard className="h-4 w-4 mr-2" />
+            Todas las Facturas
+          </TabsTrigger>
           <TabsTrigger value="pending-invoices" className="relative">
             <AlertTriangle className="h-4 w-4 mr-2" />
-            Facturas Pendientes
+            Pendientes
             {pendingInvoices.length > 0 && (
               <Badge variant="destructive" className="ml-2 h-5 w-5 p-0 flex items-center justify-center text-xs">
                 {pendingInvoices.length}
@@ -469,15 +488,135 @@ export const StripeConfig = () => {
             <Wallet className="h-4 w-4 mr-2" />
             Pagos en Stripe
           </TabsTrigger>
-          <TabsTrigger value="payments">
-            <DollarSign className="h-4 w-4 mr-2" />
-            Pagos Registrados
-          </TabsTrigger>
           <TabsTrigger value="info">
             <Info className="h-4 w-4 mr-2" />
             Información
           </TabsTrigger>
         </TabsList>
+
+        {/* All Invoices Tab */}
+        <TabsContent value="all-invoices">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Todas las Facturas de Suscripción</CardTitle>
+                  <CardDescription>Historial completo de facturas del sistema</CardDescription>
+                </div>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={fetchAllInvoices}
+                  disabled={loadingAllInvoices}
+                >
+                  {loadingAllInvoices ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                  )}
+                  Actualizar
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {loadingAllInvoices ? (
+                <div className="text-center py-12">
+                  <Loader2 className="h-8 w-8 mx-auto mb-4 animate-spin text-blue-500" />
+                  <p className="text-muted-foreground">Cargando facturas...</p>
+                </div>
+              ) : allInvoices.length === 0 ? (
+                <div className="text-center py-12 text-muted-foreground">
+                  <CreditCard className="h-12 w-12 mx-auto mb-4 opacity-20" />
+                  <p>No hay facturas registradas</p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Factura</TableHead>
+                      <TableHead>Empresa</TableHead>
+                      <TableHead>Plan</TableHead>
+                      <TableHead>Período</TableHead>
+                      <TableHead className="text-right">Monto</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead className="text-right">Acciones</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {allInvoices.map((invoice) => (
+                      <TableRow key={invoice.id}>
+                        <TableCell>
+                          <p className="font-mono text-sm">{invoice.invoice_number}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {formatDate(invoice.created_at)?.split(",")[0]}
+                          </p>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Building2 className="h-4 w-4 text-muted-foreground" />
+                            <div>
+                              <p className="font-medium text-sm">{invoice.company_name}</p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <p className="text-sm">{invoice.plan_name || invoice.plan_id}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {invoice.billing_cycle === "monthly" ? "Mensual" : 
+                             invoice.billing_cycle === "quarterly" ? "Trimestral" :
+                             invoice.billing_cycle === "biannual" ? "Semestral" :
+                             invoice.billing_cycle === "annual" ? "Anual" : invoice.billing_cycle}
+                          </p>
+                        </TableCell>
+                        <TableCell>
+                          <p className="text-xs">
+                            {formatDate(invoice.period_start)?.split(",")[0]} - {formatDate(invoice.period_end)?.split(",")[0]}
+                          </p>
+                        </TableCell>
+                        <TableCell className="text-right font-bold">
+                          {formatCurrency(invoice.total)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge 
+                            variant={invoice.status === "paid" ? "success" : 
+                                    invoice.status === "overdue" ? "destructive" : "warning"}
+                          >
+                            {invoice.status === "paid" ? "Pagada" : 
+                             invoice.status === "overdue" ? "Vencida" : 
+                             invoice.status === "pending" ? "Pendiente" : invoice.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right space-x-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleEditInvoice(invoice)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          {invoice.status !== "paid" && (
+                            <Button
+                              size="sm"
+                              onClick={() => handleMarkAsPaid(invoice.id, "stripe")}
+                              disabled={markingPaid === invoice.id}
+                              className="bg-green-600 hover:bg-green-700"
+                            >
+                              {markingPaid === invoice.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <CheckCircle className="h-4 w-4" />
+                              )}
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         {/* Pending Invoices Tab */}
         <TabsContent value="pending-invoices">
