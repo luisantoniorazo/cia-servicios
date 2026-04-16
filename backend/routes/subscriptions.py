@@ -967,6 +967,66 @@ async def list_pending_invoices(
     return {"invoices": invoices}
 
 
+class UpdateSubscriptionInvoiceData(BaseModel):
+    """Data for updating a subscription invoice"""
+    plan_id: Optional[str] = None
+    plan_name: Optional[str] = None
+    billing_cycle: Optional[str] = None
+    total: Optional[float] = None
+    notes: Optional[str] = None
+
+
+@router.patch("/admin/invoices/{invoice_id}")
+async def update_subscription_invoice(
+    invoice_id: str,
+    data: UpdateSubscriptionInvoiceData,
+    current_user: dict = Depends(require_super_admin_sub)
+):
+    """Update a subscription invoice (Super Admin) - to fix incorrect data"""
+    invoice = await _db.subscription_invoices.find_one({"id": invoice_id}, {"_id": 0})
+    if not invoice:
+        invoice = await _db.subscription_invoices.find_one({"invoice_number": invoice_id}, {"_id": 0})
+    
+    if not invoice:
+        raise HTTPException(status_code=404, detail="Factura no encontrada")
+    
+    update_fields = {}
+    
+    if data.plan_id:
+        update_fields["plan_id"] = data.plan_id
+        # Also update plan_name based on plan_id
+        plan = SUBSCRIPTION_PLANS.get(data.plan_id, {})
+        update_fields["plan_name"] = plan.get("name", data.plan_name or "Plan")
+    elif data.plan_name:
+        update_fields["plan_name"] = data.plan_name
+    
+    if data.billing_cycle:
+        update_fields["billing_cycle"] = data.billing_cycle
+    
+    if data.total is not None:
+        update_fields["total"] = data.total
+        update_fields["subtotal"] = round(data.total / 1.16, 2)  # Recalculate without IVA
+    
+    if data.notes:
+        update_fields["notes"] = data.notes
+    
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No hay campos para actualizar")
+    
+    update_fields["updated_at"] = datetime.now(timezone.utc).isoformat()
+    update_fields["updated_by"] = current_user.get("sub")
+    
+    await _db.subscription_invoices.update_one(
+        {"id": invoice["id"]},
+        {"$set": update_fields}
+    )
+    
+    return {
+        "message": "Factura actualizada",
+        "updated_fields": list(update_fields.keys())
+    }
+
+
 # ============== STRIPE PAYMENT ROUTES ==============
 
 @router.get("/stripe/payments")

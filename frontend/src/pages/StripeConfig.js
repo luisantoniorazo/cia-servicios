@@ -44,7 +44,15 @@ import {
   Info,
   Loader2,
   Wallet,
+  Pencil,
 } from "lucide-react";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../components/ui/select";
 
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat("es-MX", {
@@ -78,6 +86,12 @@ export const StripeConfig = () => {
   const [pendingInvoices, setPendingInvoices] = useState([]);
   const [loadingInvoices, setLoadingInvoices] = useState(false);
   const [markingPaid, setMarkingPaid] = useState(null);
+  const [editingInvoice, setEditingInvoice] = useState(null);
+  const [editForm, setEditForm] = useState({
+    plan_id: "",
+    billing_cycle: "",
+    total: 0
+  });
   const [stats, setStats] = useState({
     total_collected: 0,
     total_pending: 0,
@@ -206,6 +220,28 @@ export const StripeConfig = () => {
       toast.error(error.response?.data?.detail || "Error al marcar como pagada");
     } finally {
       setMarkingPaid(null);
+    }
+  };
+
+  const handleEditInvoice = (invoice) => {
+    setEditForm({
+      plan_id: invoice.plan_id || "base",
+      billing_cycle: invoice.billing_cycle || "monthly",
+      total: invoice.total || 0
+    });
+    setEditingInvoice(invoice);
+  };
+
+  const handleSaveInvoiceEdit = async () => {
+    if (!editingInvoice) return;
+    
+    try {
+      await api.patch(`/subscriptions/admin/invoices/${editingInvoice.id}`, editForm);
+      toast.success("Factura actualizada");
+      setEditingInvoice(null);
+      fetchPendingInvoices();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || "Error al actualizar factura");
     }
   };
 
@@ -527,7 +563,14 @@ export const StripeConfig = () => {
                             {invoice.status === "overdue" ? "Vencida" : "Pendiente"}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="text-right space-x-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleEditInvoice(invoice)}
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
                           <Button
                             size="sm"
                             onClick={() => handleMarkAsPaid(invoice.id, "stripe")}
@@ -849,6 +892,74 @@ export const StripeConfig = () => {
                 <Save className="h-4 w-4 mr-2" />
               )}
               Guardar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Invoice Dialog */}
+      <Dialog open={!!editingInvoice} onOpenChange={() => setEditingInvoice(null)}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Editar Factura</DialogTitle>
+            <DialogDescription>
+              Corrige los datos de la factura {editingInvoice?.invoice_number}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit_plan">Plan</Label>
+              <Select
+                value={editForm.plan_id}
+                onValueChange={(value) => setEditForm({ ...editForm, plan_id: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar plan..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="base">Plan Base ($500/mes)</SelectItem>
+                  <SelectItem value="with_billing">Plan con Facturación ($3,000/mes)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit_cycle">Ciclo</Label>
+              <Select
+                value={editForm.billing_cycle}
+                onValueChange={(value) => setEditForm({ ...editForm, billing_cycle: value })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Seleccionar ciclo..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="monthly">Mensual</SelectItem>
+                  <SelectItem value="quarterly">Trimestral</SelectItem>
+                  <SelectItem value="biannual">Semestral</SelectItem>
+                  <SelectItem value="annual">Anual</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit_total">Total (MXN)</Label>
+              <Input
+                id="edit_total"
+                type="number"
+                value={editForm.total}
+                onChange={(e) => setEditForm({ ...editForm, total: parseFloat(e.target.value) || 0 })}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingInvoice(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleSaveInvoiceEdit}>
+              <Save className="h-4 w-4 mr-2" />
+              Guardar Cambios
             </Button>
           </DialogFooter>
         </DialogContent>

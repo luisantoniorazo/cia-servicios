@@ -828,7 +828,7 @@ class FacturamaConfig(BaseModel):
 
 class FacturamaConfigCreate(BaseModel):
     api_user: str
-    api_password: str
+    api_password: Optional[str] = None  # Optional when updating existing config
     environment: str = "sandbox"
     rfc_emisor: Optional[str] = None
     nombre_emisor: Optional[str] = None
@@ -5253,7 +5253,6 @@ async def save_facturama_config(data: FacturamaConfigCreate, current_user: dict 
     
     config_dict = {
         "api_user": data.api_user,
-        "api_password": data.api_password,  # TODO: Encrypt in production
         "environment": data.environment,
         "rfc_emisor": data.rfc_emisor,
         "nombre_emisor": data.nombre_emisor,
@@ -5264,6 +5263,13 @@ async def save_facturama_config(data: FacturamaConfigCreate, current_user: dict 
         "is_active": True,
         "updated_at": datetime.now(timezone.utc).isoformat()
     }
+    
+    # Only update password if provided
+    if data.api_password:
+        config_dict["api_password"] = data.api_password
+    elif not existing:
+        # New config requires password
+        raise HTTPException(status_code=400, detail="La contraseña de API es requerida para una nueva configuración")
     
     # Also save to server_config for the CFDI generation to use
     await db.server_config.update_one(
@@ -11999,6 +12005,10 @@ async def get_cfdi_status(current_user: dict = Depends(get_current_user)):
     company = await db.companies.find_one({"id": company_id}, {"_id": 0})
     cert = await db.csd_certificates.find_one({"company_id": company_id, "is_active": True})
     
+    # Check if company has billing included (uses master PAC)
+    billing_included = company.get("billing_included", False)
+    billing_mode = company.get("billing_mode", "manual")
+    
     issues = []
     
     # Check company data with specific error messages
@@ -12015,17 +12025,27 @@ async def get_cfdi_status(current_user: dict = Depends(get_current_user)):
     elif len(company.get("codigo_postal_fiscal", "")) != 5:
         issues.append(f"Código Postal Fiscal: El C.P. '{company.get('codigo_postal_fiscal')}' es inválido. Debe tener exactamente 5 dígitos.")
     
-    # Check certificate
-    if not cert:
-        issues.append("Certificado CSD: No hay certificado configurado. Ve a la pestaña 'Certificado CSD' y sube tus archivos .cer y .key del SAT.")
-    elif cert.get("pac_provider") == "none":
-        issues.append("Proveedor PAC: No hay proveedor de timbrado configurado. En la pestaña 'Certificado CSD', selecciona un proveedor PAC (ej. Facturama) e ingresa las credenciales.")
+    # Certificate check depends on billing mode
+    if billing_included or billing_mode == "master":
+        # Company uses master PAC - no need for own certificate
+        # Just check that master Facturama is configured
+        master_config = await db.facturama_config.find_one({"is_active": True}, {"_id": 0})
+        if not master_config:
+            issues.append("Facturación incluida: Tu plan incluye facturación, pero el sistema maestro de Facturama no está configurado. Contacta al administrador.")
+    else:
+        # Company needs own certificate/PAC
+        if not cert:
+            issues.append("Certificado CSD: No hay certificado configurado. Ve a la pestaña 'Certificado CSD' y sube tus archivos .cer y .key del SAT.")
+        elif cert.get("pac_provider") == "none":
+            issues.append("Proveedor PAC: No hay proveedor de timbrado configurado. En la pestaña 'Certificado CSD', selecciona un proveedor PAC (ej. Facturama) e ingresa las credenciales.")
     
     return {
         "ready": len(issues) == 0,
         "issues": issues,
-        "has_certificate": cert is not None,
-        "pac_provider": cert.get("pac_provider") if cert else None,
+        "has_certificate": cert is not None or billing_included,
+        "pac_provider": "master" if billing_included else (cert.get("pac_provider") if cert else None),
+        "billing_included": billing_included,
+        "billing_mode": billing_mode,
         "company_rfc": company.get("rfc"),
         "company_regimen": company.get("regimen_fiscal"),
         "company_cp": company.get("codigo_postal_fiscal")
