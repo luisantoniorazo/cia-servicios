@@ -1118,10 +1118,19 @@ async def get_checkout_status(
             "processed": True
         }
     
-    # Get live status from Stripe
+    # Get live status from Stripe - use API key from DB if not in env
     stripe_api_key = os.environ.get("STRIPE_API_KEY")
     if not stripe_api_key:
-        raise HTTPException(status_code=500, detail="Stripe no está configurado")
+        config = await _db.server_config.find_one({}, {"_id": 0, "stripe_api_key": 1})
+        if config:
+            stripe_api_key = config.get("stripe_api_key")
+    
+    if not stripe_api_key:
+        raise HTTPException(status_code=500, detail="Stripe no está configurado - falta API key")
+    
+    # Validate key type
+    if stripe_api_key.startswith("pk_"):
+        raise HTTPException(status_code=500, detail="Error: Se está usando una llave pública (pk_) en lugar de la llave secreta (sk_)")
     
     stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url="")
     
@@ -1224,22 +1233,44 @@ async def _process_successful_payment(invoice_id: str, session_id: str):
 
 async def handle_stripe_webhook(request: Request):
     """Handle Stripe webhook events"""
+    # Get Stripe API key from environment or database
     stripe_api_key = os.environ.get("STRIPE_API_KEY")
+    webhook_secret = None
+    
     if not stripe_api_key:
-        raise HTTPException(status_code=500, detail="Stripe no configurado")
+        config = await _db.server_config.find_one({}, {"_id": 0, "stripe_api_key": 1, "stripe_webhook_secret": 1})
+        if config:
+            stripe_api_key = config.get("stripe_api_key")
+            webhook_secret = config.get("stripe_webhook_secret")
+    
+    if not stripe_api_key:
+        logger.error("Stripe webhook: No API key configured")
+        raise HTTPException(status_code=500, detail="Stripe no configurado - falta API key")
+    
+    # Validate that it's a secret key, not publishable
+    if stripe_api_key.startswith("pk_"):
+        logger.error(f"Stripe webhook: Invalid key type (publishable key detected)")
+        raise HTTPException(status_code=500, detail="Error de configuración: Se está usando una llave pública (pk_) en lugar de la llave secreta (sk_)")
     
     body = await request.body()
     sig_header = request.headers.get("Stripe-Signature")
+    
+    logger.info(f"Stripe webhook received, signature present: {bool(sig_header)}")
     
     stripe_checkout = StripeCheckout(api_key=stripe_api_key, webhook_url="")
     
     try:
         webhook_response = await stripe_checkout.handle_webhook(body, sig_header)
         
+        logger.info(f"Webhook processed: payment_status={webhook_response.payment_status}, metadata={webhook_response.metadata}")
+        
         if webhook_response.payment_status == "paid":
             invoice_id = webhook_response.metadata.get("invoice_id")
             if invoice_id:
+                logger.info(f"Processing successful payment for invoice: {invoice_id}")
                 await _process_successful_payment(invoice_id, webhook_response.session_id)
+            else:
+                logger.warning("Webhook paid but no invoice_id in metadata")
         
         return {"received": True}
         
