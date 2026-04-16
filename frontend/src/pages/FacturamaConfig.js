@@ -74,6 +74,11 @@ export const FacturamaConfig = () => {
     api_password: "",
     environment: "sandbox",
     rfc_emisor: "",
+    nombre_emisor: "",
+    regimen_fiscal_emisor: "",
+    lugar_expedicion: "",
+    serie: "S",
+    auto_generate_on_payment: false,
   });
 
   const fetchData = useCallback(async () => {
@@ -95,6 +100,11 @@ export const FacturamaConfig = () => {
           api_password: "",
           environment: configRes.data.environment || "sandbox",
           rfc_emisor: configRes.data.rfc_emisor || "",
+          nombre_emisor: configRes.data.nombre_emisor || "",
+          regimen_fiscal_emisor: configRes.data.regimen_fiscal_emisor || "",
+          lugar_expedicion: configRes.data.lugar_expedicion || "",
+          serie: configRes.data.serie || "S",
+          auto_generate_on_payment: configRes.data.auto_generate_on_payment || false,
         });
       }
     } catch (error) {
@@ -539,13 +549,82 @@ export const FacturamaConfig = () => {
               </div>
               
               <div className="space-y-2">
-                <Label htmlFor="rfc_emisor">RFC del Emisor (opcional)</Label>
+                <Label htmlFor="rfc_emisor">RFC del Emisor (CIA) *</Label>
                 <Input
                   id="rfc_emisor"
                   value={form.rfc_emisor}
                   onChange={(e) => setForm({ ...form, rfc_emisor: e.target.value.toUpperCase() })}
-                  placeholder="RFC de tu empresa"
+                  placeholder="RFC de tu empresa (ej: XXXX000000XXX)"
                   maxLength={13}
+                  required
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="nombre_emisor">Nombre del Emisor *</Label>
+                <Input
+                  id="nombre_emisor"
+                  value={form.nombre_emisor}
+                  onChange={(e) => setForm({ ...form, nombre_emisor: e.target.value.toUpperCase() })}
+                  placeholder="Razón Social (ej: LUIS ANTONIO GARCIA LOPEZ)"
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="regimen_fiscal_emisor">Régimen Fiscal</Label>
+                  <Select
+                    value={form.regimen_fiscal_emisor}
+                    onValueChange={(value) => setForm({ ...form, regimen_fiscal_emisor: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Seleccionar..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="601">601 - General de Ley PM</SelectItem>
+                      <SelectItem value="603">603 - Personas Morales sin Fines de Lucro</SelectItem>
+                      <SelectItem value="612">612 - Personas Físicas con Act. Emp.</SelectItem>
+                      <SelectItem value="621">621 - Incorporación Fiscal</SelectItem>
+                      <SelectItem value="626">626 - Régimen Simplificado de Confianza</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="lugar_expedicion">C.P. Expedición *</Label>
+                  <Input
+                    id="lugar_expedicion"
+                    value={form.lugar_expedicion}
+                    onChange={(e) => setForm({ ...form, lugar_expedicion: e.target.value })}
+                    placeholder="44100"
+                    maxLength={5}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="serie">Serie de Facturas</Label>
+                  <Input
+                    id="serie"
+                    value={form.serie}
+                    onChange={(e) => setForm({ ...form, serie: e.target.value.toUpperCase() })}
+                    placeholder="S"
+                    maxLength={3}
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between p-3 bg-green-50 rounded-lg border border-green-200">
+                <div>
+                  <p className="font-medium text-green-800">Auto-generar CFDI al pagar</p>
+                  <p className="text-xs text-green-600">Genera automáticamente el CFDI cuando el cliente paga su suscripción</p>
+                </div>
+                <Switch
+                  checked={form.auto_generate_on_payment}
+                  onCheckedChange={(checked) => setForm({ ...form, auto_generate_on_payment: checked })}
                 />
               </div>
             </div>

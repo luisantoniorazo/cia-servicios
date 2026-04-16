@@ -102,21 +102,40 @@ async def require_super_admin_facturama(current_user: dict = Depends(get_current
 # ============== HELPER FUNCTIONS ==============
 async def get_facturama_config() -> dict:
     """Get Facturama configuration from database"""
-    config = await _db.server_config.find_one({}, {"_id": 0})
-    if not config:
-        return FacturamaConfig().model_dump()
+    # First try facturama_config collection (SuperAdmin config)
+    config = await _db.facturama_config.find_one({"is_active": True}, {"_id": 0})
     
-    return {
-        "enabled": config.get("facturama_enabled", False),
-        "environment": config.get("facturama_environment", "sandbox"),
-        "username": config.get("facturama_username", ""),
-        "password": config.get("facturama_password", ""),
-        "emisor_rfc": config.get("facturama_emisor_rfc"),
-        "emisor_nombre": config.get("facturama_emisor_nombre"),
-        "emisor_regimen_fiscal": config.get("facturama_emisor_regimen_fiscal"),
-        "serie": config.get("facturama_serie", "A"),
-        "auto_generate_on_payment": config.get("facturama_auto_generate", False),
-    }
+    if config:
+        return {
+            "enabled": True,
+            "environment": config.get("environment", "sandbox"),
+            "username": config.get("api_user", ""),
+            "password": config.get("api_password", ""),
+            "emisor_rfc": config.get("rfc_emisor"),
+            "emisor_nombre": config.get("nombre_emisor"),
+            "emisor_regimen_fiscal": config.get("regimen_fiscal_emisor"),
+            "lugar_expedicion": config.get("lugar_expedicion"),
+            "serie": config.get("serie", "S"),
+            "auto_generate_on_payment": config.get("auto_generate_on_payment", False),
+        }
+    
+    # Fallback to server_config for backward compatibility
+    server_config = await _db.server_config.find_one({}, {"_id": 0})
+    if server_config:
+        return {
+            "enabled": server_config.get("facturama_enabled", False),
+            "environment": server_config.get("facturama_environment", "sandbox"),
+            "username": server_config.get("facturama_username", ""),
+            "password": server_config.get("facturama_password", ""),
+            "emisor_rfc": server_config.get("facturama_emisor_rfc"),
+            "emisor_nombre": server_config.get("facturama_emisor_nombre"),
+            "emisor_regimen_fiscal": server_config.get("facturama_emisor_regimen_fiscal"),
+            "lugar_expedicion": server_config.get("lugar_expedicion"),
+            "serie": server_config.get("facturama_serie", "S"),
+            "auto_generate_on_payment": server_config.get("facturama_auto_generate", False),
+        }
+    
+    return FacturamaConfig().model_dump()
 
 def get_facturama_auth_header(username: str, password: str) -> dict:
     """Generate Basic Auth header for Facturama API"""
@@ -593,30 +612,54 @@ async def cancel_cfdi(
 async def auto_generate_cfdi_for_payment(invoice_id: str, company_id: str):
     """
     Automatically generate CFDI after successful payment
+    Generates CFDI from CIA SERVICIOS (emisor) to the client company (receptor)
     Called from the Stripe webhook handler
     """
     try:
         config = await get_facturama_config()
         
-        # Check if auto-generation is enabled
-        if not config.get("enabled") or not config.get("auto_generate_on_payment"):
-            logger.info(f"Auto CFDI generation skipped for invoice {invoice_id}")
+        # Check if Facturama is enabled
+        if not config.get("enabled"):
+            logger.info(f"Facturama not enabled, skipping CFDI for invoice {invoice_id}")
             return None
         
-        # Get company fiscal data
+        # Check if auto-generation is enabled
+        if not config.get("auto_generate_on_payment"):
+            logger.info(f"Auto CFDI generation disabled, skipping for invoice {invoice_id}")
+            return None
+        
+        # Check emisor (CIA SERVICIOS) configuration
+        emisor_rfc = config.get("emisor_rfc")
+        emisor_nombre = config.get("emisor_nombre")
+        # emisor_regimen is used by Facturama internally, we just need RFC and Nombre
+        
+        if not emisor_rfc or not emisor_nombre:
+            logger.error("Facturama emisor data not configured (RFC or Nombre missing)")
+            return None
+        
+        # Get company (receptor) fiscal data
         company = await _db.companies.find_one({"id": company_id}, {"_id": 0})
         if not company:
             logger.error(f"Company not found for CFDI: {company_id}")
             return None
         
-        # Check if company has fiscal data
-        if not company.get("rfc") or not company.get("fiscal_regime"):
-            logger.info(f"Company {company_id} missing fiscal data for CFDI")
-            return None
+        # Check if company has fiscal data for receiving CFDI
+        receptor_rfc = company.get("rfc")
+        receptor_nombre = company.get("business_name")
+        receptor_regimen = company.get("regimen_fiscal") or company.get("fiscal_regime")
+        receptor_cp = company.get("codigo_postal_fiscal") or company.get("postal_code")
+        receptor_uso_cfdi = company.get("uso_cfdi") or company.get("cfdi_use") or "G03"
         
-        # Check if company's plan includes CFDI
-        if not company.get("billing_included"):
-            logger.info(f"Company {company_id} plan does not include CFDI")
+        if not receptor_rfc:
+            logger.info(f"Company {company_id} missing RFC for CFDI - using generic")
+            receptor_rfc = "XAXX010101000"  # RFC genérico para público en general
+            receptor_nombre = company.get("business_name", "PUBLICO EN GENERAL")
+            receptor_regimen = "616"  # Sin obligaciones fiscales
+            receptor_cp = receptor_cp or "44100"  # CP por defecto
+            receptor_uso_cfdi = "S01"  # Sin efectos fiscales
+        
+        if not receptor_cp:
+            logger.error(f"Company {company_id} missing postal code for CFDI")
             return None
         
         # Get invoice
@@ -628,59 +671,64 @@ async def auto_generate_cfdi_for_payment(invoice_id: str, company_id: str):
         # Check if CFDI already exists
         if invoice.get("cfdi_uuid"):
             logger.info(f"CFDI already exists for invoice {invoice_id}")
-            return None
+            return invoice.get("cfdi_uuid")
         
-        # Create CFDI request
-        cfdi_request = CFDIRequest(
-            invoice_id=invoice_id,
-            receptor_rfc=company.get("rfc", ""),
-            receptor_nombre=company.get("business_name", ""),
-            receptor_regimen_fiscal=company.get("fiscal_regime", "601"),
-            receptor_uso_cfdi=company.get("cfdi_use", "G03"),
-            receptor_codigo_postal=company.get("postal_code", "")
-        )
+        # Get server config for expedition place (CIA's postal code)
+        server_config = await _db.server_config.find_one({}, {"_id": 0})
+        lugar_expedicion = server_config.get("lugar_expedicion") if server_config else None
         
-        # Generate CFDI
-        base_url = get_facturama_base_url(config["environment"])
-        headers = get_facturama_auth_header(config["username"], config["password"])
-        headers["Content-Type"] = "application/json"
+        if not lugar_expedicion:
+            # Try to get from Facturama config or use default
+            lugar_expedicion = config.get("lugar_expedicion", "44100")
         
-        subtotal = float(invoice.get("subtotal", invoice.get("total", 0)))
+        # Calculate amounts (subtotal without IVA, then add IVA)
+        total_con_iva = float(invoice.get("total", 0))
+        # Assuming price includes IVA, extract subtotal
+        subtotal = round(total_con_iva / 1.16, 2)
+        iva = round(subtotal * 0.16, 2)
+        total = round(subtotal + iva, 2)
         
+        # Create CFDI payload
         cfdi_payload = {
-            "Serie": config.get("serie", "A"),
+            "Serie": config.get("serie", "S"),  # S for Subscriptions
             "Currency": "MXN",
-            "ExpeditionPlace": cfdi_request.receptor_codigo_postal,
-            "PaymentForm": "03",  # Transferencia electrónica (Stripe)
-            "PaymentMethod": "PUE",
-            "CfdiType": "I",
+            "ExpeditionPlace": lugar_expedicion,  # CP of CIA SERVICIOS
+            "PaymentForm": "04",  # 04 = Tarjeta de crédito (Stripe)
+            "PaymentMethod": "PUE",  # PUE = Pago en una sola exhibición
+            "CfdiType": "I",  # Ingreso
             "Receiver": {
-                "Rfc": cfdi_request.receptor_rfc,
-                "Name": cfdi_request.receptor_nombre,
-                "CfdiUse": cfdi_request.receptor_uso_cfdi,
-                "FiscalRegime": cfdi_request.receptor_regimen_fiscal,
-                "TaxZipCode": cfdi_request.receptor_codigo_postal
+                "Rfc": receptor_rfc,
+                "Name": receptor_nombre,
+                "CfdiUse": receptor_uso_cfdi,
+                "FiscalRegime": receptor_regimen or "616",
+                "TaxZipCode": receptor_cp
             },
             "Items": [{
-                "ProductCode": "81112100",
+                "ProductCode": "81112100",  # Servicios de gestión empresarial
                 "IdentificationNumber": invoice.get("invoice_number", ""),
-                "Description": f"Suscripción {invoice.get('plan_name', 'Plan')} - {invoice.get('billing_cycle', 'Mensual')}",
-                "Unit": "E48",
+                "Description": f"Suscripción mensual plataforma CIA Servicios - {invoice.get('plan_name', 'Plan Básico')}",
+                "Unit": "E48",  # Unidad de servicio
                 "UnitCode": "E48",
                 "UnitPrice": subtotal,
                 "Quantity": 1,
                 "Subtotal": subtotal,
-                "TaxObject": "02",
+                "TaxObject": "02",  # Sí objeto de impuesto
                 "Taxes": [{
-                    "Total": round(subtotal * 0.16, 2),
+                    "Total": iva,
                     "Name": "IVA",
                     "Base": subtotal,
                     "Rate": 0.16,
                     "IsRetention": False
                 }],
-                "Total": round(subtotal * 1.16, 2)
+                "Total": total
             }]
         }
+        
+        logger.info(f"Generating CFDI for invoice {invoice_id}: {receptor_rfc} - {receptor_nombre}, Total: {total}")
+        
+        base_url = get_facturama_base_url(config["environment"])
+        headers = get_facturama_auth_header(config["username"], config["password"])
+        headers["Content-Type"] = "application/json"
         
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -704,34 +752,51 @@ async def auto_generate_cfdi_for_payment(invoice_id: str, company_id: str):
                     "serie": cfdi_data.get("Serie", ""),
                     "invoice_id": invoice_id,
                     "company_id": company_id,
-                    "receptor_rfc": cfdi_request.receptor_rfc,
-                    "receptor_nombre": cfdi_request.receptor_nombre,
-                    "total": cfdi_data.get("Total", 0),
+                    "emisor_rfc": emisor_rfc,
+                    "emisor_nombre": emisor_nombre,
+                    "receptor_rfc": receptor_rfc,
+                    "receptor_nombre": receptor_nombre,
+                    "subtotal": subtotal,
+                    "iva": iva,
+                    "total": total,
                     "fecha": cfdi_data.get("Date", ""),
                     "status": "active",
                     "auto_generated": True,
+                    "payment_method": "stripe",
                     "raw_response": cfdi_data,
                     "created_at": datetime.now(timezone.utc).isoformat()
                 }
                 await _db.cfdis.insert_one({**cfdi_record})
                 
-                # Update invoice
+                # Update invoice with CFDI info
                 await _db.subscription_invoices.update_one(
                     {"id": invoice_id},
                     {"$set": {
                         "cfdi_uuid": cfdi_uuid,
                         "cfdi_id": cfdi_id,
                         "cfdi_folio": f"{cfdi_data.get('Serie', '')}-{cfdi_data.get('Folio', '')}",
-                        "cfdi_generated_at": datetime.now(timezone.utc).isoformat()
+                        "cfdi_generated_at": datetime.now(timezone.utc).isoformat(),
+                        "cfdi_receptor_rfc": receptor_rfc
                     }}
                 )
                 
-                logger.info(f"Auto-generated CFDI {cfdi_uuid} for invoice {invoice_id}")
+                logger.info(f"✅ Auto-generated CFDI {cfdi_uuid} for invoice {invoice_id} to {receptor_rfc}")
                 return cfdi_uuid
             else:
-                logger.error(f"Failed to auto-generate CFDI: {response.text}")
+                error_text = response.text
+                logger.error(f"❌ Failed to auto-generate CFDI: {error_text}")
+                
+                # Save error for debugging
+                await _db.cfdi_errors.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "invoice_id": invoice_id,
+                    "company_id": company_id,
+                    "error": error_text,
+                    "payload": cfdi_payload,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                })
                 return None
                 
     except Exception as e:
-        logger.error(f"Error auto-generating CFDI: {str(e)}")
+        logger.error(f"❌ Error auto-generating CFDI: {str(e)}")
         return None

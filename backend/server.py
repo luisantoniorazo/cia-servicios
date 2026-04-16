@@ -831,6 +831,11 @@ class FacturamaConfigCreate(BaseModel):
     api_password: str
     environment: str = "sandbox"
     rfc_emisor: Optional[str] = None
+    nombre_emisor: Optional[str] = None
+    regimen_fiscal_emisor: Optional[str] = None
+    lugar_expedicion: Optional[str] = None  # CP del emisor
+    serie: str = "S"  # Serie para facturas de suscripción
+    auto_generate_on_payment: bool = False  # Generar CFDI automáticamente al pagar
 
 class CSDCertificate(BaseModel):
     """Certificado de Sello Digital para facturación electrónica"""
@@ -5229,6 +5234,11 @@ async def get_facturama_config(current_user: dict = Depends(require_super_admin)
         "api_user": config.get("api_user"),
         "environment": config.get("environment"),
         "rfc_emisor": config.get("rfc_emisor"),
+        "nombre_emisor": config.get("nombre_emisor"),
+        "regimen_fiscal_emisor": config.get("regimen_fiscal_emisor"),
+        "lugar_expedicion": config.get("lugar_expedicion"),
+        "serie": config.get("serie", "S"),
+        "auto_generate_on_payment": config.get("auto_generate_on_payment", False),
         "total_stamps_used": config.get("total_stamps_used", 0),
         "last_stamp_date": config.get("last_stamp_date"),
         "created_at": config.get("created_at"),
@@ -5246,9 +5256,21 @@ async def save_facturama_config(data: FacturamaConfigCreate, current_user: dict 
         "api_password": data.api_password,  # TODO: Encrypt in production
         "environment": data.environment,
         "rfc_emisor": data.rfc_emisor,
+        "nombre_emisor": data.nombre_emisor,
+        "regimen_fiscal_emisor": data.regimen_fiscal_emisor,
+        "lugar_expedicion": data.lugar_expedicion,
+        "serie": data.serie,
+        "auto_generate_on_payment": data.auto_generate_on_payment,
         "is_active": True,
         "updated_at": datetime.now(timezone.utc).isoformat()
     }
+    
+    # Also save to server_config for the CFDI generation to use
+    await db.server_config.update_one(
+        {},
+        {"$set": {"lugar_expedicion": data.lugar_expedicion}},
+        upsert=True
+    )
     
     if existing:
         await db.facturama_config.update_one(
