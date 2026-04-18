@@ -10182,12 +10182,26 @@ def generate_invoice_pdf(invoice: dict, company: dict, client: dict) -> bytes:
     elements.append(Spacer(1, 0.08*inch))
     
     # DATOS DE FACTURA - Single table with header spanning all columns
+    # Map forma_pago code to label
+    forma_pago_code = invoice.get('forma_pago') or '99'
+    forma_pago_labels = {
+        '01': '01 - Efectivo', '02': '02 - Cheque', '03': '03 - Transferencia',
+        '04': '04 - Tarjeta Crédito', '05': '05 - Monedero', '06': '06 - Dinero electrónico',
+        '08': '08 - Vales', '12': '12 - Dación en pago', '13': '13 - Subrogación',
+        '14': '14 - Consignación', '15': '15 - Condonación', '17': '17 - Compensación',
+        '23': '23 - Novación', '24': '24 - Confusión', '25': '25 - Remisión',
+        '26': '26 - Prescripción', '27': '27 - A satisfacción', '28': '28 - Tarjeta Débito',
+        '29': '29 - Tarjeta Servicios', '30': '30 - Anticipos', '31': '31 - Intermediario',
+        '99': '99 - Por definir'
+    }
+    forma_pago_display = forma_pago_labels.get(forma_pago_code, f'{forma_pago_code} - Otro')
+    
     factura_data = [
         [Paragraph("DATOS DE FACTURA", section_header), '', '', ''],  # Header row - will be merged
         [Paragraph("F. Emisión:", info_label), Paragraph(format_date_safe(invoice.get('invoice_date')), info_value),
          Paragraph("F. Vence:", info_label), Paragraph(format_date_safe(invoice.get('due_date')), info_value)],
         [Paragraph("Condiciones:", info_label), Paragraph((invoice.get('payment_terms') or 'Contado').replace('_', ' ').title(), info_value),
-         Paragraph("Forma Pago:", info_label), Paragraph(invoice.get('payment_method') or '99 - Por definir', info_value)],
+         Paragraph("Forma Pago:", info_label), Paragraph(forma_pago_display, info_value)],
         [Paragraph("Método:", info_label), Paragraph(invoice.get('metodo_pago') or 'PUE', info_value),
          Paragraph("Referencia:", info_label), Paragraph(invoice.get('reference') or 'N/A', info_value)],
     ]
