@@ -107,6 +107,15 @@ const MONEDAS = [
   { value: "EUR", label: "EUR - Euro" },
 ];
 
+const PAYMENT_TERMS_OPTIONS = [
+  { value: "contado", label: "Contado" },
+  { value: "15_dias", label: "15 días" },
+  { value: "30_dias", label: "30 días" },
+  { value: "45_dias", label: "45 días" },
+  { value: "60_dias", label: "60 días" },
+  { value: "90_dias", label: "90 días" },
+];
+
 export const Invoices = () => {
   const { api, company } = useAuth();
   const [invoices, setInvoices] = useState([]);
@@ -139,6 +148,7 @@ export const Invoices = () => {
     invoice_number: "",
     reference: "",  // OC Cliente / Orden de Trabajo
     payment_terms: "contado",
+    forma_pago: "99",  // SAT c_FormaPago - default: Por definir
     items: [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0, clave_prod_serv: "", clave_unidad: "" }],
     subtotal: 0,
     tax: 0,
@@ -277,7 +287,7 @@ export const Invoices = () => {
       const { subtotal, tax, total } = calculateTotals(formData.items);
       const concept = formData.items.map(i => i.description).filter(Boolean).join(", ") || "Factura";
       
-      const response = await api.post("/invoices", {
+      const invoicePayload = {
         company_id: company.id,
         ...formData,
         concept,
@@ -286,29 +296,41 @@ export const Invoices = () => {
         total,
         invoice_date: formData.invoice_date || new Date().toISOString().split("T")[0],
         due_date: formData.due_date || null,
-      });
-      toast.success("Factura registrada");
-      setDialogOpen(false);
-      resetForm();
-      fetchData();
+      };
       
-      // Send email notification
-      const client = clients.find(c => c.id === formData.client_id);
-      if (client?.email) {
-        try {
-          await api.post("/send-document-email", {
-            company_id: company.id,
-            document_type: "invoice",
-            document_id: response.data.id,
-            recipient_email: client.email,
-            recipient_name: client.trade_name || client.name,
-          });
-        } catch (emailError) {
-          console.log("Email notification failed:", emailError);
+      let response;
+      if (selectedInvoice) {
+        // Editing existing invoice
+        response = await api.put(`/invoices/${selectedInvoice.id}`, invoicePayload);
+        toast.success("Factura actualizada");
+      } else {
+        // Creating new invoice
+        response = await api.post("/invoices", invoicePayload);
+        toast.success("Factura registrada");
+        
+        // Send email notification only for new invoices
+        const client = clients.find(c => c.id === formData.client_id);
+        if (client?.email) {
+          try {
+            await api.post("/send-document-email", {
+              company_id: company.id,
+              document_type: "invoice",
+              document_id: response.data.id,
+              recipient_email: client.email,
+              recipient_name: client.trade_name || client.name,
+            });
+          } catch (emailError) {
+            console.log("Email notification failed:", emailError);
+          }
         }
       }
+      
+      setDialogOpen(false);
+      resetForm();
+      setSelectedInvoice(null);
+      fetchData();
     } catch (error) {
-      toast.error(getApiErrorMessage(error, "Error al registrar factura"));
+      toast.error(getApiErrorMessage(error, selectedInvoice ? "Error al actualizar factura" : "Error al registrar factura"));
     }
   };
 
@@ -583,6 +605,35 @@ export const Invoices = () => {
   const openNewInvoiceDialog = () => {
     resetForm();
     setFormData((prev) => ({ ...prev, invoice_number: generateInvoiceNumber() }));
+    setDialogOpen(true);
+  };
+
+  const openEditInvoiceDialog = (invoice) => {
+    // Check if invoice is already stamped
+    if (invoice.cfdi_status === "stamped") {
+      toast.error("No se puede editar una factura ya timbrada");
+      return;
+    }
+    
+    setSelectedInvoice(invoice);
+    setFormData({
+      client_id: invoice.client_id || "",
+      project_id: invoice.project_id || "",
+      invoice_number: invoice.invoice_number || "",
+      reference: invoice.reference || "",
+      payment_terms: invoice.payment_terms || "contado",
+      forma_pago: invoice.forma_pago || "99",
+      items: invoice.items && invoice.items.length > 0 
+        ? invoice.items 
+        : [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0, clave_prod_serv: "", clave_unidad: "" }],
+      subtotal: invoice.subtotal || 0,
+      tax: invoice.tax || 0,
+      total: invoice.total || 0,
+      invoice_date: invoice.invoice_date ? invoice.invoice_date.split("T")[0] : new Date().toISOString().split("T")[0],
+      due_date: invoice.due_date ? invoice.due_date.split("T")[0] : "",
+      custom_field: invoice.custom_field || "",
+      custom_field_label: invoice.custom_field_label || "",
+    });
     setDialogOpen(true);
   };
 
@@ -1016,6 +1067,14 @@ export const Invoices = () => {
                                   Descargar PDF
                                 </DropdownMenuItem>
                                 
+                                {/* Edit option - only if not stamped */}
+                                {invoice.cfdi_status !== "stamped" && (
+                                  <DropdownMenuItem onClick={() => openEditInvoiceDialog(invoice)}>
+                                    <FileText className="mr-2 h-4 w-4 text-amber-500" />
+                                    Editar Factura
+                                  </DropdownMenuItem>
+                                )}
+                                
                                 {/* CFDI Options */}
                                 {invoice.cfdi_status !== "stamped" && (
                                   <>
@@ -1228,8 +1287,12 @@ export const Invoices = () => {
         <DialogContent className="sm:max-w-[750px] max-h-[90vh] overflow-y-auto">
           <form onSubmit={handleSubmit}>
             <DialogHeader>
-              <DialogTitle>Nueva Factura</DialogTitle>
-              <DialogDescription>Registra una nueva factura con datos fiscales para CFDI</DialogDescription>
+              <DialogTitle>{selectedInvoice ? "Editar Factura" : "Nueva Factura"}</DialogTitle>
+              <DialogDescription>
+                {selectedInvoice 
+                  ? "Modifica los datos de la factura (no disponible para facturas timbradas)" 
+                  : "Registra una nueva factura con datos fiscales para CFDI"}
+              </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-4">
               <div className="grid grid-cols-3 gap-4">
@@ -1314,13 +1377,36 @@ export const Invoices = () => {
                   >
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="contado">Contado</SelectItem>
-                      <SelectItem value="credito_15">Crédito 15 días</SelectItem>
-                      <SelectItem value="credito_30">Crédito 30 días</SelectItem>
-                      <SelectItem value="credito_45">Crédito 45 días</SelectItem>
-                      <SelectItem value="credito_60">Crédito 60 días</SelectItem>
+                      {PAYMENT_TERMS_OPTIONS.map(opt => (
+                        <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="grid gap-2">
+                  <Label>Forma de Pago SAT</Label>
+                  <Select
+                    value={formData.forma_pago || "99"}
+                    onValueChange={(value) => setFormData({ ...formData, forma_pago: value })}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {SAT_FORMAS_PAGO.map(fp => (
+                        <SelectItem key={fp.value} value={fp.value}>{fp.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>{formData.custom_field_label || "Campo Libre"} <span className="text-xs text-muted-foreground">(Número de Orden)</span></Label>
+                  <Input
+                    value={formData.custom_field || ""}
+                    onChange={(e) => setFormData({ ...formData, custom_field: e.target.value })}
+                    placeholder="Ej: ORD-001"
+                  />
                 </div>
               </div>
 
