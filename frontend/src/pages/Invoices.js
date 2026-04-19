@@ -116,6 +116,11 @@ const PAYMENT_TERMS_OPTIONS = [
   { value: "90_dias", label: "90 días" },
 ];
 
+const METODO_PAGO_OPTIONS = [
+  { value: "PUE", label: "PUE - Pago en Una sola Exhibición" },
+  { value: "PPD", label: "PPD - Pago en Parcialidades o Diferido" },
+];
+
 export const Invoices = () => {
   const { api, company } = useAuth();
   const [invoices, setInvoices] = useState([]);
@@ -149,6 +154,7 @@ export const Invoices = () => {
     reference: "",  // OC Cliente / Orden de Trabajo
     payment_terms: "contado",
     forma_pago: "99",  // SAT c_FormaPago - default: Por definir
+    metodo_pago: "PUE",  // PUE = Pago en Una Exhibición, PPD = Pago en Parcialidades o Diferido
     items: [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0, clave_prod_serv: "", clave_unidad: "" }],
     subtotal: 0,
     tax: 0,
@@ -623,6 +629,7 @@ export const Invoices = () => {
       reference: invoice.reference || "",
       payment_terms: invoice.payment_terms || "contado",
       forma_pago: invoice.forma_pago || "99",
+      metodo_pago: invoice.metodo_pago || "PUE",
       items: invoice.items && invoice.items.length > 0 
         ? invoice.items 
         : [{ description: "", quantity: 1, unit: "pza", unit_price: 0, total: 0, clave_prod_serv: "", clave_unidad: "" }],
@@ -1385,7 +1392,7 @@ export const Invoices = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-3 gap-4">
                 <div className="grid gap-2">
                   <Label>Forma de Pago SAT</Label>
                   <Select
@@ -1401,7 +1408,21 @@ export const Invoices = () => {
                   </Select>
                 </div>
                 <div className="grid gap-2">
-                  <Label>{formData.custom_field_label || "Campo Libre"} <span className="text-xs text-muted-foreground">(Número de Orden)</span></Label>
+                  <Label>Método de Pago</Label>
+                  <Select
+                    value={formData.metodo_pago || "PUE"}
+                    onValueChange={(value) => setFormData({ ...formData, metodo_pago: value })}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      {METODO_PAGO_OPTIONS.map(mp => (
+                        <SelectItem key={mp.value} value={mp.value}>{mp.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label>{formData.custom_field_label || "Campo Libre"} <span className="text-xs text-muted-foreground">(Núm. Orden)</span></Label>
                   <Input
                     value={formData.custom_field || ""}
                     onChange={(e) => setFormData({ ...formData, custom_field: e.target.value })}

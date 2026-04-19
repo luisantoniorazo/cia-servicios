@@ -479,6 +479,7 @@ class InvoiceBase(BaseModel):
     # Payment terms and method
     payment_terms: Optional[str] = "contado"  # contado, 15_dias, 30_dias, 45_dias, 60_dias
     forma_pago: Optional[str] = "99"  # SAT c_FormaPago: 01-Efectivo, 03-Transferencia, 04-Tarjeta, 99-Por definir
+    metodo_pago: Optional[str] = "PUE"  # PUE = Pago en Una Exhibición, PPD = Pago en Parcialidades o Diferido
     # SAT Invoice data
     sat_invoice_uuid: Optional[str] = None
     sat_invoice_file: Optional[str] = None  # Base64 of PDF/XML
